@@ -1,0 +1,8 @@
+   repos:
+     - repo: local
+       hooks:
+         - id: no-commit-to-main
+           name: Block commits to main
+           entry: bash -c 'branch=$(git rev-parse --abbrev-ref HEAD); if [ "$branch" = "main" ]; then echo "❌ Direct commits to main are not allowed."; exit 1; fi'
+           language: system
+           stages: [pre-commit]
