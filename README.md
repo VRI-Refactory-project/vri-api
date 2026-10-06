@@ -215,6 +215,15 @@ Postgres only reads the password the first time it creates the database. Run `do
 
 ## Before deploying
 
+Production settings (`config.settings.prod`) refuse to start without a real `EMAIL_URL` and a long
+`SECRET_KEY`. Also:
+
+- Set `NUM_PROXIES` to the number of proxies in front of Django (usually 1 for nginx). Otherwise every user
+  looks like the same IP and login/recovery rate limits lock out the whole platform at once.
+- Set `CACHE_URL` to a shared cache (Redis, or `dbcache://django_cache` after `createcachetable`) so rate limits
+  work across server processes and survive restarts.
+- Create admin accounts **with an email**: admin-assisted password resets send the confirmation code there.
+
 - Remove `*` from `ALLOWED_HOSTS`.
 - Set `DJANGO_DEBUG=False` and `CORS_ALLOW_ALL_ORIGINS=False`.
 - Use a new `SECRET_KEY` and a strong database password.

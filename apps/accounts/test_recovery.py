@@ -240,14 +240,66 @@ class AdminResetTests(RecoveryTestCase):
 
     def test_regular_admin_cannot_reset_another_admin(self):
         other_admin = User.objects.create_user("0700000002", OLD, full_name="Admin B", role=User.Role.ADMIN)
-        self.assertEqual(self.admin_request(pk=other_admin.pk).status_code, 400)
+        self.assertEqual(self.admin_request(pk=other_admin.pk).status_code, 403)
 
     def test_admin_cannot_reset_self_this_way(self):
         self.assertEqual(self.admin_request(pk=self.admin.pk).status_code, 400)
 
 
-class EmailFailureTests(RecoveryTestCase):
-    def test_email_failure_returns_server_error_not_silent_success(self):
+class HardeningTests(RecoveryTestCase):
+    def backdate_codes(self, minutes=2):
+        RecoveryCode.objects.update(created_at=timezone.now() - timedelta(minutes=minutes))
+        cache.clear()
+
+    def test_email_failure_keeps_response_neutral_and_leaves_no_code(self):
         with mock.patch("apps.accounts.recovery.send_mail", side_effect=OSError("smtp down")):
-            with self.assertRaises(OSError):
-                self.request_code()
+            response = self.request_code()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, self.request_code("0799999999").data)
+        self.assertFalse(RecoveryCode.objects.exists())
+
+    def test_hourly_code_limit_per_account(self):
+        for _ in range(5):
+            self.request_code()
+            self.backdate_codes()  # skip the 60-second cooldown, stay within the hour
+        self.request_code()
+        self.assertEqual(len(mail.outbox), 5)
+
+    def test_account_locked_after_too_many_wrong_codes(self):
+        for _ in range(3):  # 3 codes x 5 wrong tries = 15 failures
+            self.request_code()
+            code = code_from_last_email()
+            wrong = "000000" if code != "000000" else "111111"
+            for _ in range(5):
+                cache.clear()
+                self.confirm(wrong)
+            self.backdate_codes()
+        sent_before = len(mail.outbox)
+        self.request_code()
+        self.assertEqual(len(mail.outbox), sent_before)  # no new code while locked
+
+    def test_code_cannot_be_claimed_twice(self):
+        from . import recovery
+        self.request_code()
+        rc = RecoveryCode.objects.get()
+        self.assertTrue(recovery.mark_used(rc))
+        self.assertFalse(recovery.mark_used(rc))
+
+
+class MustChangePasswordTests(RecoveryTestCase):
+    def test_server_blocks_everything_but_password_change(self):
+        admin = User.objects.create_user("0700000009", OLD, full_name="Admin Z", email="z@example.com",
+                                         role=User.Role.ADMIN)
+        access = self.login(OLD, identifier="0700000009").data["access"]
+        User.objects.filter(pk=admin.pk).update(must_change_password=True)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
+        blocked = self.client.post(reverse("manage-reset-password-request", args=[self.user.pk]))
+        self.assertEqual(blocked.status_code, 403)
+        self.assertEqual(blocked.data["code"], "password_change_required")
+        self.assertEqual(self.client.get(reverse("auth-me")).status_code, 200)
+        changed = self.client.post(reverse("auth-password-change"),
+                                   {"current_password": OLD, "new_password": NEW}, format="json")
+        self.assertEqual(changed.status_code, 200)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {changed.data['access']}")
+        allowed = self.client.post(reverse("manage-reset-password-request", args=[self.user.pk]))
+        self.assertEqual(allowed.status_code, 200)

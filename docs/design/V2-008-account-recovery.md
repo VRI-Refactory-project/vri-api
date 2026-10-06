@@ -134,10 +134,15 @@ A code is valid only if: newest unused code for that user, purpose and target; n
 | Lifetime | 15 minutes, single use |
 | Wrong attempts | 5 per code, then the code is dead |
 | Rate limit: request | 5 per hour per IP (`recovery_request` throttle) + 60-second cooldown per user |
+| Codes per account | Max 5 per hour and 10 per day |
+| Account lock | 15 wrong codes in 24 hours locks recovery for that account for 24 hours (stops slow guessing from many IPs) |
+| Email failure | Logged, the code is deleted, and the response stays the same neutral 200 |
 | Rate limit: confirm | 10 per minute per IP (`recovery_confirm` throttle) |
 | Deactivated accounts | No code is sent and confirm fails with the generic error. Recovery never reactivates an account. |
 | After success | Other unused codes deleted; other devices signed out (refresh tokens blacklisted; access tokens already issued expire within 30 minutes) |
 | Unchanged | Only the password changes. Role, profile, verification status and `is_active` are untouched. |
+| Temporary password | Enforced by the server: after an admin reset, every endpoint except `/auth/password/change/` and `/auth/me/` returns 403 `password_change_required` until the user picks a new one |
+| Same code twice | Claimed atomically: two simultaneous requests cannot both use one code |
 | Pending accounts | Pending interpreters/institutions can recover; they stay pending. |
 | Logging | Log `recovery_requested`, `recovery_succeeded`, `recovery_failed` with user id and IP (never the code or password) |
 
