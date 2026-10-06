@@ -56,6 +56,22 @@ class UserModelTests(TestCase):
         self.assertEqual(admin.role, User.Role.ADMIN)
         self.assertTrue(admin.is_staff and admin.is_superuser)
 
+    def test_role_is_required_and_must_be_valid(self):
+        with self.assertRaises(ValueError):
+            User.objects.create_user("0772123456", PASSWORD, full_name="No Role")
+        with self.assertRaises(ValueError):
+            make_user(role="superhero")
+        self.assertFalse(User.objects.exists())
+
+    def test_each_role_is_stored(self):
+        for i, role in enumerate(User.Role.values):
+            user = make_user(phone=f"070000001{i}", role=role)
+            user.refresh_from_db()
+            self.assertEqual(user.role, role)
+
+    def test_self_registration_roles_exclude_admin(self):
+        self.assertEqual(set(User.SELF_REGISTRATION_ROLES), {"deaf_hoh", "interpreter", "institution"})
+
     def test_backend_accepts_phone_or_email(self):
         user = make_user(email="sarah@example.com")
         self.assertEqual(authenticate(username="0772123456", password=PASSWORD), user)
