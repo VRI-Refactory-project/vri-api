@@ -27,10 +27,13 @@ INSTALLED_APPS = [
     # Third-party
     "rest_framework",
     "drf_spectacular",
+    "drf_spectacular_sidecar",  # Swagger UI / ReDoc files served by us, not a CDN
     "corsheaders",
     "phonenumber_field",
+    "rest_framework_simplejwt.token_blacklist",
     # Local apps
     "apps.accounts",
+    "apps.interpreters",
 ]
 
 MIDDLEWARE = [
@@ -110,6 +113,26 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# --- Cache (rate limits). Local memory is fine for development; production needs a shared cache,
+# e.g. CACHE_URL=redis://redis:6379/1 (needs the "redis" package) or dbcache://django_cache.
+CACHES = {"default": env.cache_url("CACHE_URL", default="locmemcache://")}
+
+# --- Email (account recovery codes) ---
+# Default prints emails in the backend logs, so codes are visible during development:
+#   docker compose logs -f backend
+# Production: set EMAIL_URL, e.g. smtp+tls://user:password@smtp.example.com:587
+EMAIL_CONFIG = env.email_url("EMAIL_URL", default="consolemail://")
+vars().update(EMAIL_CONFIG)
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="SignConnect <no-reply@signconnect.local>")
+
+# --- Logging (recovery events are logged for audit; codes and passwords never are) ---
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "loggers": {"apps.accounts.recovery": {"handlers": ["console"], "level": "INFO"}},
+}
+
 # --- CORS (React web dashboard + React Native app) ---
 CORS_ALLOW_ALL_ORIGINS = env("CORS_ALLOW_ALL_ORIGINS")
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
@@ -118,7 +141,7 @@ CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.accounts.authentication.EnforcePasswordChangeJWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
@@ -126,8 +149,13 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.ScopedRateThrottle",
     ],
+    # Number of proxies in front of Django (nginx, load balancer). 0 locally. Without this, every user
+    # looks like the proxy's IP and rate limits apply to the whole platform at once.
+    "NUM_PROXIES": env.int("NUM_PROXIES", default=0),
     "DEFAULT_THROTTLE_RATES": {
         "login": "10/minute",
+        "recovery_request": "5/hour",
+        "recovery_confirm": "10/minute",
     },
 }
 
@@ -148,4 +176,9 @@ SPECTACULAR_SETTINGS = {
     "SCHEMA_PATH_PREFIX": r"/api/v[0-9]+",
     "COMPONENT_SPLIT_REQUEST": True,
     "SWAGGER_UI_SETTINGS": {"persistAuthorization": True},
+    # Serve the docs UI from our own static files. Some networks (e.g. campus Wi-Fi) block
+    # cdn.jsdelivr.net, which leaves /api/docs/ as a blank page.
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
 }

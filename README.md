@@ -73,6 +73,13 @@ docker-compose exec backend python manage.py spectacular --validate --fail-on-wa
 | `GET /api/v1/auth/me/` | The signed-in user |
 | `GET /api/v1/auth/roles/` | Roles a new user can choose on the first screen (public; never lists `admin`) |
 | `GET /api/v1/auth/me/access/{role}/` | Can the signed-in user use that role's endpoints? 200 yes, 403 no, 401 not signed in |
+| `POST /api/v1/auth/password/change/` | Change my password/PIN |
+| `POST /api/v1/auth/recovery/request/` | Forgot password: email me a 6-digit code |
+| `POST /api/v1/auth/recovery/confirm/` | Code + new password, returns tokens |
+| `POST /api/v1/manage/users/{id}/reset-password/...` | Admin reset for phone-only users (see `docs/design/V2-008-account-recovery.md`) |
+
+**Recovery codes in development** are not really emailed: they are printed in the backend logs
+(`docker compose logs -f backend`).
 
 **Create your first admin** (you will be asked for a phone number, full name and password):
 
@@ -227,7 +234,20 @@ Read the reason with `docker-compose logs backend`.
 **Database login fails after changing the password**
 Postgres only reads the password the first time it creates the database. Run `docker-compose down -v`, then `docker-compose up --build`.
 
+**Swagger (`/api/docs/`) shows a blank white page**
+The Swagger UI files come from the `drf-spectacular-sidecar` package (served by us, not a CDN, because some networks block
+`cdn.jsdelivr.net`). If the page is blank, you are on old packages: run `docker-compose up --build`.
+
 ## Before deploying
+
+Production settings (`config.settings.prod`) refuse to start without a real `EMAIL_URL` and a long
+`SECRET_KEY`. Also:
+
+- Set `NUM_PROXIES` to the number of proxies in front of Django (usually 1 for nginx). Otherwise every user
+  looks like the same IP and login/recovery rate limits lock out the whole platform at once.
+- Set `CACHE_URL` to a shared cache (Redis, or `dbcache://django_cache` after `createcachetable`) so rate limits
+  work across server processes and survive restarts.
+- Create admin accounts **with an email**: admin-assisted password resets send the confirmation code there.
 
 - Remove `*` from `ALLOWED_HOSTS`.
 - Set `DJANGO_DEBUG=False` and `CORS_ALLOW_ALL_ORIGINS=False`.

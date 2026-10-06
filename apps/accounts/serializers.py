@@ -1,11 +1,13 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError as DjangoValidationError
 from django.db import transaction
 from phonenumber_field.serializerfields import PhoneNumberField
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from . import recovery
+from .models import RecoveryCode
 from .utils import find_user_by_identifier
 
 User = get_user_model()
@@ -18,7 +20,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "full_name", "phone_number", "email", "role", "date_joined"]
+        fields = ["id", "full_name", "phone_number", "email", "role", "must_change_password", "date_joined"]
         read_only_fields = fields
 
 
@@ -71,10 +73,7 @@ class BaseRegistrationSerializer(serializers.Serializer):
     def validate(self, attrs):
         attrs = super().validate(attrs)
         candidate = User(full_name=attrs.get("full_name", ""), email=attrs.get("email"))
-        try:
-            validate_password(attrs["password"], user=candidate)
-        except Exception as exc:  # django.core.exceptions.ValidationError
-            raise serializers.ValidationError({"password": list(getattr(exc, "messages", [str(exc)]))})
+        check_new_password(attrs["password"], candidate, field="password")
         return attrs
 
     def create_profile(self, user, validated_data):
@@ -134,3 +133,61 @@ class TokenPairSerializer(serializers.Serializer):
         refresh = RefreshToken.for_user(user)
         refresh["role"] = user.role
         return {"access": str(refresh.access_token), "refresh": str(refresh), "user": UserSerializer(user).data}
+
+
+def check_new_password(password, user, field="new_password"):
+    try:
+        validate_password(password, user=user)
+    except DjangoValidationError as exc:
+        raise serializers.ValidationError({field: list(exc.messages)})
+
+
+CodeField = serializers.RegexField(
+    r"^\d{6}$", max_length=6, min_length=6, error_messages={"invalid": "Enter the 6-digit code from the email."}
+)
+
+
+class RecoveryRequestSerializer(serializers.Serializer):
+    identifier = serializers.CharField(help_text="Phone number or email the account was registered with.")
+
+
+class RecoveryConfirmSerializer(serializers.Serializer):
+    identifier = serializers.CharField()
+    code = CodeField
+    new_password = serializers.CharField(write_only=True, style={"input_type": "password"})
+
+    default_error_messages = {"invalid_code": "Invalid or expired code. Request a new one."}
+
+    def validate(self, attrs):
+        user = find_user_by_identifier(attrs["identifier"])
+        if user is not None and not user.is_active:
+            user = None  # recovery never reactivates a deactivated account
+        rc = recovery.check_code(user, attrs["code"], RecoveryCode.Purpose.SELF_RECOVERY)
+        if rc is None:
+            raise serializers.ValidationError({"code": [self.error_messages["invalid_code"]]})
+        # Only now (code proven) do we reveal password-rule errors.
+        check_new_password(attrs["new_password"], user)
+        attrs["user"], attrs["recovery_code"] = user, rc
+        return attrs
+
+
+class AdminResetConfirmSerializer(serializers.Serializer):
+    code = CodeField
+    temporary_password = serializers.CharField(
+        write_only=True, style={"input_type": "password"},
+        help_text="Temporary password/PIN to give the user in person. They must change it at next sign-in.",
+    )
+
+
+class PasswordChangeSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True, style={"input_type": "password"})
+    new_password = serializers.CharField(write_only=True, style={"input_type": "password"})
+
+    def validate(self, attrs):
+        user = self.context["request"].user
+        if not user.check_password(attrs["current_password"]):
+            raise serializers.ValidationError({"current_password": ["Incorrect password."]})
+        if attrs["current_password"] == attrs["new_password"]:
+            raise serializers.ValidationError({"new_password": ["Choose a different password from your current one."]})
+        check_new_password(attrs["new_password"], user)
+        return attrs

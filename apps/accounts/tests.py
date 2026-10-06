@@ -1,4 +1,5 @@
 from django.contrib.auth import authenticate, get_user_model
+from django.contrib.staticfiles import finders
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
 from django.db import IntegrityError, transaction
@@ -26,6 +27,13 @@ class HealthAndDocsTests(TestCase):
     def test_swagger_and_schema_load(self):
         self.assertEqual(self.client.get(reverse("swagger-ui")).status_code, 200)
         self.assertEqual(self.client.get(reverse("schema")).status_code, 200)
+
+    def test_docs_ui_is_served_locally_not_from_a_cdn(self):
+        for name in ("swagger-ui", "redoc"):
+            html = self.client.get(reverse(name)).content.decode()
+            self.assertNotIn("cdn.jsdelivr.net", html, name)
+            self.assertIn("/static/drf_spectacular_sidecar/", html, name)
+        self.assertIsNotNone(finders.find("drf_spectacular_sidecar/swagger-ui-dist/swagger-ui-bundle.js"))
 
 
 class RoleOptionsApiTests(TestCase):
