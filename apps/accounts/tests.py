@@ -1,12 +1,14 @@
 from django.contrib.auth import authenticate, get_user_model
+from django.contrib.staticfiles import finders
 from django.core.cache import cache
+from django.core.exceptions import ImproperlyConfigured
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework import serializers
 from rest_framework.test import APITestCase
 
-from .serializers import BaseRegistrationSerializer
+from .serializers import BaseRegistrationSerializer, TokenPairSerializer
 
 User = get_user_model()
 PASSWORD = "Sign-Connect-2026"
@@ -25,6 +27,29 @@ class HealthAndDocsTests(TestCase):
     def test_swagger_and_schema_load(self):
         self.assertEqual(self.client.get(reverse("swagger-ui")).status_code, 200)
         self.assertEqual(self.client.get(reverse("schema")).status_code, 200)
+
+    def test_docs_ui_is_served_locally_not_from_a_cdn(self):
+        for name in ("swagger-ui", "redoc"):
+            html = self.client.get(reverse(name)).content.decode()
+            self.assertNotIn("cdn.jsdelivr.net", html, name)
+            self.assertIn("/static/drf_spectacular_sidecar/", html, name)
+        self.assertIsNotNone(finders.find("drf_spectacular_sidecar/swagger-ui-dist/swagger-ui-bundle.js"))
+
+
+class RoleOptionsApiTests(TestCase):
+    def test_roles_lists_self_registration_roles_without_admin(self):
+        response = self.client.get(reverse("auth-roles"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [
+            {"value": "deaf_hoh", "label": "Deaf / Hard of Hearing"},
+            {"value": "interpreter", "label": "Interpreter"},
+            {"value": "institution", "label": "Institution"},
+        ])
+
+    def test_roles_ignores_stale_tokens(self):
+        # The role screen is the first thing a user sees, so an old token must not block it.
+        response = self.client.get(reverse("auth-roles"), HTTP_AUTHORIZATION="Bearer expired-or-invalid")
+        self.assertEqual(response.status_code, 200)
 
 
 class UserModelTests(TestCase):
@@ -55,6 +80,22 @@ class UserModelTests(TestCase):
         admin = User.objects.create_superuser("0700000001", PASSWORD, full_name="Admin")
         self.assertEqual(admin.role, User.Role.ADMIN)
         self.assertTrue(admin.is_staff and admin.is_superuser)
+
+    def test_role_is_required_and_must_be_valid(self):
+        with self.assertRaises(ValueError):
+            User.objects.create_user("0772123456", PASSWORD, full_name="No Role")
+        with self.assertRaises(ValueError):
+            make_user(role="superhero")
+        self.assertFalse(User.objects.exists())
+
+    def test_each_role_is_stored(self):
+        for i, role in enumerate(User.Role.values):
+            user = make_user(phone=f"070000001{i}", role=role)
+            user.refresh_from_db()
+            self.assertEqual(user.role, role)
+
+    def test_self_registration_roles_exclude_admin(self):
+        self.assertEqual(set(User.SELF_REGISTRATION_ROLES), {"deaf_hoh", "interpreter", "institution"})
 
     def test_backend_accepts_phone_or_email(self):
         user = make_user(email="sarah@example.com")
@@ -117,6 +158,34 @@ class LoginApiTests(APITestCase):
         self.assertEqual(self.login("0772123456").status_code, 429)
 
 
+class RoleAccessApiTests(APITestCase):
+    def setUp(self):
+        self.user = make_user(role=User.Role.INTERPRETER)
+
+    def check(self, role, user=None):
+        if user is not None:
+            access = TokenPairSerializer.for_user(user)["access"]
+            self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
+        return self.client.get(reverse("auth-me-access", args=[role]))
+
+    def test_own_role_is_granted(self):
+        response = self.check("interpreter", self.user)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, {"role": "interpreter", "detail": "Access granted."})
+
+    def test_other_roles_are_forbidden(self):
+        for role in ("deaf_hoh", "institution", "admin"):
+            response = self.check(role, self.user)
+            self.assertEqual(response.status_code, 403, role)
+            self.assertIn("account type", str(response.data["detail"]))
+
+    def test_requires_sign_in(self):
+        self.assertEqual(self.check("interpreter").status_code, 401)
+
+    def test_unknown_role_is_404(self):
+        self.assertEqual(self.check("superhero", self.user).status_code, 404)
+
+
 class ExampleRegistrationSerializer(BaseRegistrationSerializer):
     role = User.Role.INTERPRETER
     email_required = True
@@ -169,6 +238,24 @@ class BaseRegistrationSerializerTests(TestCase):
     def test_six_digit_pin_accepted(self):
         s = ExampleRegistrationSerializer(data=self.data(password="482913"))
         self.assertTrue(s.is_valid(), s.errors)
+
+    def test_each_self_registration_role_is_stored(self):
+        for i, role in enumerate(User.SELF_REGISTRATION_ROLES):
+            serializer_class = type("RoleRegistration", (BaseRegistrationSerializer,), {"role": role})
+            s = serializer_class(data=self.data(phone_number=f"070000002{i}", email=f"user{i}@example.com"))
+            self.assertTrue(s.is_valid(), s.errors)
+            self.assertEqual(s.save().role, role)
+            self.assertEqual(s.data["role"], role)
+
+    def test_registration_cannot_create_admins(self):
+        class AdminRegistrationSerializer(BaseRegistrationSerializer):
+            role = User.Role.ADMIN
+
+        s = AdminRegistrationSerializer(data=self.data())
+        self.assertTrue(s.is_valid(), s.errors)
+        with self.assertRaises(ImproperlyConfigured):
+            s.save()
+        self.assertFalse(User.objects.exists())
 
     def test_failed_profile_rolls_back_user(self):
         s = ExampleRegistrationSerializer(data=self.data(city="fail"))

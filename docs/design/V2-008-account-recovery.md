@@ -185,7 +185,7 @@ and password change.
 | `apps/accounts/recovery.py` | All the rules: issuing and checking codes, sending email, signing out everywhere |
 | `apps/accounts/views.py`, `urls.py` | The five endpoints |
 | `apps/accounts/serializers.py` | Request/confirm/change-password validation |
-| `apps/accounts/permissions.py` | `IsActiveAdmin` (to be replaced by Shadia's `IsAdmin`) |
+| `apps/core/permissions.py` | Admin endpoints use Shadia's `IsAdminRole` |
 | `apps/accounts/migrations/0002_...` | `RecoveryCode` + `must_change_password` |
 | `config/settings/base.py` | Token blacklist app, throttles, email and logging settings |
 
