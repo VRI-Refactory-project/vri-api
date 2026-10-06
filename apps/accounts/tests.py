@@ -7,7 +7,7 @@ from django.urls import reverse
 from rest_framework import serializers
 from rest_framework.test import APITestCase
 
-from .serializers import BaseRegistrationSerializer
+from .serializers import BaseRegistrationSerializer, TokenPairSerializer
 
 User = get_user_model()
 PASSWORD = "Sign-Connect-2026"
@@ -148,6 +148,34 @@ class LoginApiTests(APITestCase):
         for _ in range(10):
             self.login("0772123456", "wrong-password")
         self.assertEqual(self.login("0772123456").status_code, 429)
+
+
+class RoleAccessApiTests(APITestCase):
+    def setUp(self):
+        self.user = make_user(role=User.Role.INTERPRETER)
+
+    def check(self, role, user=None):
+        if user is not None:
+            access = TokenPairSerializer.for_user(user)["access"]
+            self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
+        return self.client.get(reverse("auth-me-access", args=[role]))
+
+    def test_own_role_is_granted(self):
+        response = self.check("interpreter", self.user)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, {"role": "interpreter", "detail": "Access granted."})
+
+    def test_other_roles_are_forbidden(self):
+        for role in ("deaf_hoh", "institution", "admin"):
+            response = self.check(role, self.user)
+            self.assertEqual(response.status_code, 403, role)
+            self.assertIn("account type", str(response.data["detail"]))
+
+    def test_requires_sign_in(self):
+        self.assertEqual(self.check("interpreter").status_code, 401)
+
+    def test_unknown_role_is_404(self):
+        self.assertEqual(self.check("superhero", self.user).status_code, 404)
 
 
 class ExampleRegistrationSerializer(BaseRegistrationSerializer):

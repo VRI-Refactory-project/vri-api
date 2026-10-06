@@ -45,3 +45,12 @@ class IsInstitution(HasRole):
 
 class IsAdminRole(HasRole):
     allowed_roles = (User.Role.ADMIN,)
+
+
+# The permission class for each role, for code that picks the check at runtime.
+ROLE_PERMISSIONS = {
+    User.Role.DEAF_HOH: IsDeafUser,
+    User.Role.INTERPRETER: IsInterpreter,
+    User.Role.INSTITUTION: IsInstitution,
+    User.Role.ADMIN: IsAdminRole,
+}

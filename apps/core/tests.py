@@ -6,16 +6,10 @@ from rest_framework.views import APIView
 
 from apps.accounts.serializers import TokenPairSerializer
 
-from .permissions import IsAdminRole, IsDeafUser, IsInstitution, IsInterpreter
+from .permissions import ROLE_PERMISSIONS, IsAdminRole, IsDeafUser, IsInstitution, IsInterpreter
 
 User = get_user_model()
 PASSWORD = "Sign-Connect-2026"
-ROLE_PERMISSIONS = {
-    User.Role.DEAF_HOH: IsDeafUser,
-    User.Role.INTERPRETER: IsInterpreter,
-    User.Role.INSTITUTION: IsInstitution,
-    User.Role.ADMIN: IsAdminRole,
-}
 
 
 def make_user(role, phone="0772123456"):
