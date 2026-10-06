@@ -16,6 +16,8 @@ class UserManager(BaseUserManager):
     def _create_user(self, phone_number, password, **extra_fields):
         if not phone_number:
             raise ValueError("A phone number is required.")
+        if extra_fields.get("role") not in self.model.Role.values:
+            raise ValueError(f"A valid role is required, one of: {', '.join(self.model.Role.values)}.")
         email = extra_fields.pop("email", None)
         extra_fields["email"] = self.normalize_email(email).lower() if email else None
         user = self.model(phone_number=phone_number, **extra_fields)
@@ -49,6 +51,9 @@ class User(AbstractBaseUser, PermissionsMixin):
         INTERPRETER = "interpreter", "Interpreter"
         INSTITUTION = "institution", "Institution"
         ADMIN = "admin", "Administrator"
+
+    # Roles a new user can pick when they first open the platform. Admins are only created by staff.
+    SELF_REGISTRATION_ROLES = (Role.DEAF_HOH, Role.INTERPRETER, Role.INSTITUTION)
 
     full_name = models.CharField(max_length=150)
     phone_number = PhoneNumberField(
