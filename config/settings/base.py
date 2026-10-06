@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     "phonenumber_field",
     # Local apps
     "apps.accounts",
+    "apps.interpreters",
 ]
 
 MIDDLEWARE = [
