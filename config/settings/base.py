@@ -5,11 +5,15 @@ import environ
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-env = environ.Env(DEBUG=(bool, False))
+env = environ.Env(
+    DJANGO_DEBUG=(bool, False),
+    CORS_ALLOW_ALL_ORIGINS=(bool, False),
+)
+# Loads .env when running outside Docker. In Docker, compose injects the same values.
 environ.Env.read_env(BASE_DIR / ".env")
 
 SECRET_KEY = env("SECRET_KEY")
-DEBUG = env("DEBUG")
+DEBUG = env("DJANGO_DEBUG")
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
 INSTALLED_APPS = [
@@ -22,11 +26,13 @@ INSTALLED_APPS = [
     # Third-party
     "rest_framework",
     "drf_spectacular",
+    "corsheaders",
     # Local apps
     "apps.accounts",
 ]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",  # must be first
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -56,8 +62,17 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
-# PostgreSQL per the project charter. Set DATABASE_URL in .env.
-DATABASES = {"default": env.db("DATABASE_URL")}
+# PostgreSQL. The same POSTGRES_* values configure the db container in docker-compose.yml.
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": env("POSTGRES_DB"),
+        "USER": env("POSTGRES_USER"),
+        "PASSWORD": env("POSTGRES_PASSWORD"),
+        "HOST": env("DATABASE_HOST", default="db"),  # "db" = service name in docker-compose.yml
+        "PORT": env("DATABASE_PORT", default="5432"),
+    }
+}
 
 # Custom user model -- must exist before the first migration.
 AUTH_USER_MODEL = "accounts.User"
@@ -78,6 +93,10 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# --- CORS (React web dashboard + React Native app) ---
+CORS_ALLOW_ALL_ORIGINS = env("CORS_ALLOW_ALL_ORIGINS")
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 
 # --- Django REST Framework ---
 REST_FRAMEWORK = {

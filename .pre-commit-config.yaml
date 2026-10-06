@@ -1,8 +1,19 @@
-   repos:
-     - repo: local
-       hooks:
-         - id: no-commit-to-main
-           name: Block commits to main
-           entry: bash -c 'branch=$(git rev-parse --abbrev-ref HEAD); if [ "$branch" = "main" ]; then echo "❌ Direct commits to main are not allowed."; exit 1; fi'
-           language: system
-           stages: [pre-commit]
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: no-commit-to-branch
+        args: ['--branch', 'main']
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        args: ['--max-line-length=120']
+        exclude: migrations/
