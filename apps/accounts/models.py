@@ -1,15 +1,83 @@
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
+from django.contrib.auth.models import PermissionsMixin
 from django.db import models
+from django.utils import timezone
+from phonenumber_field.modelfields import PhoneNumberField
 
 
-class User(AbstractUser):
-    """Custom user. Defined before the first migration so it can be extended
-    in Sprint 1 (V2-066 role selection, V2-001 registration) without a
-    painful migration later."""
+class UserManager(BaseUserManager):
+    """Creates users identified by phone number (stored in E.164, e.g. +256772123456)."""
+
+    use_in_migrations = True
+
+    def _create_user(self, phone_number, password, **extra_fields):
+        if not phone_number:
+            raise ValueError("A phone number is required.")
+        email = extra_fields.pop("email", None)
+        extra_fields["email"] = self.normalize_email(email).lower() if email else None
+        user = self.model(phone_number=phone_number, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_user(self, phone_number, password=None, **extra_fields):
+        extra_fields.setdefault("is_staff", False)
+        extra_fields.setdefault("is_superuser", False)
+        return self._create_user(phone_number, password, **extra_fields)
+
+    def create_superuser(self, phone_number, password=None, **extra_fields):
+        extra_fields.setdefault("is_staff", True)
+        extra_fields.setdefault("is_superuser", True)
+        extra_fields.setdefault("role", User.Role.ADMIN)
+        if not extra_fields["is_staff"] or not extra_fields["is_superuser"]:
+            raise ValueError("A superuser must have is_staff=True and is_superuser=True.")
+        return self._create_user(phone_number, password, **extra_fields)
+
+
+class User(AbstractBaseUser, PermissionsMixin):
+    """One account table for every role. Role-specific data lives in one-to-one profile
+    models in each role's app (DeafUserProfile, InterpreterProfile, InstitutionProfile).
+
+    Login: phone number OR email, plus password/PIN (see apps.accounts.backends).
+    """
 
     class Role(models.TextChoices):
-        DEAF_USER = "deaf_user", "Deaf user"
+        DEAF_HOH = "deaf_hoh", "Deaf / Hard of Hearing"
         INTERPRETER = "interpreter", "Interpreter"
         INSTITUTION = "institution", "Institution"
+        ADMIN = "admin", "Administrator"
 
-    role = models.CharField(max_length=20, choices=Role.choices, blank=True)
+    full_name = models.CharField(max_length=150)
+    phone_number = PhoneNumberField(
+        unique=True,
+        help_text="Stored in international format, e.g. +256772123456. Local numbers default to Uganda.",
+    )
+    # Optional for most roles, required for interpreters (enforced in their registration serializer).
+    # NULL (not "") when empty, so the unique constraint ignores users without an email.
+    email = models.EmailField(unique=True, null=True, blank=True)
+    role = models.CharField(max_length=20, choices=Role.choices)
+
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Untick to deactivate the account. Deactivated users cannot sign in.",
+    )
+    is_staff = models.BooleanField(default=False, help_text="Can log in to the Django admin site.")
+    date_joined = models.DateTimeField(default=timezone.now)
+
+    objects = UserManager()
+
+    USERNAME_FIELD = "phone_number"
+    REQUIRED_FIELDS = ["full_name"]
+
+    class Meta:
+        ordering = ["-date_joined"]
+
+    def __str__(self):
+        return f"{self.full_name} ({self.phone_number})"
+
+    def save(self, *args, **kwargs):
+        if self.email:
+            self.email = self.email.strip().lower()
+        else:
+            self.email = None
+        super().save(*args, **kwargs)

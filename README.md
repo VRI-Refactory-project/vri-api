@@ -27,6 +27,18 @@ When it is ready:
 
 Tables are created automatically on start (`migrate` runs before the server).
 
+## Check your setup
+
+With Docker running (or your `.venv` active), run from the project root:
+
+```bash
+python scripts/check_setup.py
+```
+
+It checks your branch, the pre-commit hook, `.env`, the database connection and Swagger,
+and ends with `RESULT: READY` or a list of what to fix. Paste the full output to the tech lead.
+It only uses the Python standard library, so it works before you install anything.
+
 ## API docs (Swagger)
 
 | URL | What |
@@ -44,6 +56,34 @@ Tables are created automatically on start (`migrate` runs before the server).
 ```bash
 docker-compose exec backend python manage.py spectacular --validate --fail-on-warn --file schema.yml
 ```
+
+## Users and signing in
+
+- One `User` table for all roles (`deaf_hoh`, `interpreter`, `institution`, `admin`). Role-specific data goes in
+  one-to-one profile models in each role's app.
+- Users sign in with **phone number or email** plus a **password or PIN** (minimum 6 characters; common ones like
+  `123456` are rejected). Local numbers like `0772123456` are stored as `+256772123456`.
+- Login returns JWT tokens. Clients send `Authorization: Bearer <access token>`. Access tokens last 30 minutes;
+  get a new one from `POST /api/v1/auth/token/refresh/` with the refresh token (valid 7 days).
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/v1/auth/login/` | Sign in with `{"identifier": "<phone or email>", "password": "..."}` |
+| `POST /api/v1/auth/token/refresh/` | New access token from a refresh token |
+| `GET /api/v1/auth/me/` | The signed-in user |
+
+**Create your first admin** (you will be asked for a phone number, full name and password):
+
+```bash
+docker compose exec backend python manage.py createsuperuser
+```
+
+**Try authenticated endpoints in Swagger:** call `/auth/login/`, copy the `access` value, click **Authorize**
+at the top of the page and paste it. Swagger then sends the token with every request.
+
+**Building a registration endpoint:** subclass `BaseRegistrationSerializer` from `apps/accounts/serializers.py`.
+It already validates and normalises the phone number, rejects duplicates, checks the password, hashes it with
+Argon2 and wraps user + profile creation in one transaction. See its docstring for an example.
 
 ## Running without Docker (optional)
 
@@ -116,7 +156,7 @@ If a hook fixes a file, the commit stops. Run `git add .` and commit again.
 ```
 vri-api/
 ├── apps/
-│   └── accounts/           Custom User model (role: deaf_user / interpreter / institution)
+│   └── accounts/           User model, login (JWT), shared registration serializer
 ├── config/
 │   ├── settings/           base.py (shared), dev.py, prod.py
 │   └── urls.py             Root URLs, incl. /api/v1/ and the Swagger docs
