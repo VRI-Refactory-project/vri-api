@@ -206,6 +206,10 @@ Read the reason with `docker-compose logs backend`.
 **Database login fails after changing the password**
 Postgres only reads the password the first time it creates the database. Run `docker-compose down -v`, then `docker-compose up --build`.
 
+**Swagger (`/api/docs/`) shows a blank white page**
+The Swagger UI files come from the `drf-spectacular-sidecar` package (served by us, not a CDN, because some networks block
+`cdn.jsdelivr.net`). If the page is blank, you are on old packages: run `docker-compose up --build`.
+
 ## Before deploying
 
 - Remove `*` from `ALLOWED_HOSTS`.
