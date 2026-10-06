@@ -11,7 +11,7 @@ from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.mail import send_mail
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Sum
 from django.utils import timezone
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
@@ -20,6 +20,9 @@ from .models import RecoveryCode
 logger = logging.getLogger("apps.accounts.recovery")
 
 RESEND_COOLDOWN_SECONDS = 60
+MAX_CODES_PER_HOUR = 5
+MAX_CODES_PER_DAY = 10
+MAX_FAILED_ATTEMPTS_PER_DAY = 15  # across all codes; after this, recovery is locked for 24 hours
 # Used to spend the same hashing time when there is no code to check (unknown account).
 _DUMMY_HASH = make_password("000000")
 
@@ -28,37 +31,57 @@ def _generate_code():
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
-def issue_code(user, purpose, target_user=None, ip=None):
-    """Create a new code for `user`, replacing older unused ones, and email it.
+def is_locked(user, purpose):
+    """Too many wrong codes for this account in the last 24 hours."""
+    since = timezone.now() - timedelta(days=1)
+    failed = (RecoveryCode.objects.filter(user=user, purpose=purpose, created_at__gte=since)
+              .aggregate(total=Sum("attempts"))["total"] or 0)
+    return failed >= MAX_FAILED_ATTEMPTS_PER_DAY
 
-    Returns False (and sends nothing) if a code was sent less than RESEND_COOLDOWN_SECONDS ago.
+
+def issue_code(user, purpose, target_user=None, ip=None):
+    """Create a new code for `user` (older ones stop working) and email it.
+
+    Returns "sent", or why nothing was sent: "cooldown", "limited", "locked" or "failed".
     """
     now = timezone.now()
-    open_codes = RecoveryCode.objects.filter(user=user, purpose=purpose, target_user=target_user, used_at__isnull=True)
-    if open_codes.filter(created_at__gte=now - timedelta(seconds=RESEND_COOLDOWN_SECONDS)).exists():
-        logger.info("recovery_code_cooldown user=%s purpose=%s", user.pk, purpose)
-        return False
+    history = RecoveryCode.objects.filter(user=user, purpose=purpose)
+    if history.filter(target_user=target_user, used_at__isnull=True,
+                      created_at__gte=now - timedelta(seconds=RESEND_COOLDOWN_SECONDS)).exists():
+        reason = "cooldown"
+    elif (history.filter(created_at__gte=now - timedelta(hours=1)).count() >= MAX_CODES_PER_HOUR
+          or history.filter(created_at__gte=now - timedelta(days=1)).count() >= MAX_CODES_PER_DAY):
+        reason = "limited"
+    elif is_locked(user, purpose):
+        reason = "locked"
+    else:
+        reason = None
+    if reason:
+        logger.warning("recovery_code_not_sent reason=%s user=%s purpose=%s ip=%s", reason, user.pk, purpose, ip)
+        return reason
 
     code = _generate_code()
     with transaction.atomic():
-        open_codes.delete()  # only the newest code is ever valid
-        RecoveryCode.objects.create(
-            user=user,
-            target_user=target_user,
-            purpose=purpose,
-            code_hash=make_password(code),
-            expires_at=now + RecoveryCode.LIFETIME,
-            requested_ip=ip,
+        # Older codes stop working but are kept, so the hourly/daily limits can count them.
+        history.filter(target_user=target_user, used_at__isnull=True, expires_at__gt=now).update(expires_at=now)
+        rc = RecoveryCode.objects.create(
+            user=user, target_user=target_user, purpose=purpose, code_hash=make_password(code),
+            expires_at=now + RecoveryCode.LIFETIME, requested_ip=ip,
         )
-    _send_code_email(user, code, purpose, target_user)
+    try:
+        _send_code_email(user, code, purpose, target_user)
+    except Exception:  # noqa: BLE001 - any mail failure: keep the response neutral, never leak it
+        rc.delete()
+        logger.exception("recovery_email_failed user=%s purpose=%s", user.pk, purpose)
+        return "failed"
     logger.info("recovery_code_sent user=%s purpose=%s target=%s ip=%s",
                 user.pk, purpose, getattr(target_user, "pk", None), ip)
-    return True
+    return "sent"
 
 
 def check_code(user, code, purpose, target_user=None):
     """Return the matching usable RecoveryCode, or None. A wrong guess counts as an attempt."""
-    if user is None:
+    if user is None or is_locked(user, purpose):
         check_password(code, _DUMMY_HASH)
         return None
     rc = (RecoveryCode.objects
@@ -75,8 +98,9 @@ def check_code(user, code, purpose, target_user=None):
 
 
 def mark_used(recovery_code):
-    recovery_code.used_at = timezone.now()
-    recovery_code.save(update_fields=["used_at"])
+    """Atomically claim the code. Returns False if another request used it first."""
+    return RecoveryCode.objects.filter(pk=recovery_code.pk, used_at__isnull=True).update(
+        used_at=timezone.now()) == 1
 
 
 def sign_out_everywhere(user):
@@ -93,7 +117,8 @@ def set_new_password(user, new_password, *, must_change=False):
     user.set_password(new_password)
     user.must_change_password = must_change
     user.save(update_fields=["password", "must_change_password"])
-    RecoveryCode.objects.filter(user=user, purpose=RecoveryCode.Purpose.SELF_RECOVERY, used_at__isnull=True).delete()
+    RecoveryCode.objects.filter(user=user, purpose=RecoveryCode.Purpose.SELF_RECOVERY, used_at__isnull=True,
+                                expires_at__gt=timezone.now()).update(expires_at=timezone.now())
     sign_out_everywhere(user)
 
 

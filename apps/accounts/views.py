@@ -12,18 +12,18 @@ from drf_spectacular.utils import (
 )
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.generics import RetrieveAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from apps.core.permissions import ROLE_PERMISSIONS
+from apps.core.permissions import ROLE_PERMISSIONS, IsAdminRole
 
 from . import recovery
 from .models import RecoveryCode
-from .permissions import IsActiveAdmin
 from .serializers import (
     AdminResetConfirmSerializer,
     LoginSerializer,
@@ -38,6 +38,12 @@ from .utils import find_user_by_identifier
 
 User = get_user_model()
 DetailSerializer = inline_serializer("Detail", {"detail": serializers.CharField()})
+ADMIN_CODE_ERRORS = {
+    "cooldown": "A code was sent less than a minute ago. Check your email or wait before trying again.",
+    "limited": "Too many codes requested. Try again later.",
+    "locked": "Too many wrong codes. Admin resets are locked for 24 hours.",
+    "failed": "The email could not be sent. Check the email settings and try again.",
+}
 RECOVERY_REQUEST_MESSAGE = (
     "If an account matches, we have sent a recovery code to its registered email. "
     "If you registered with a phone number only, please contact support to reset your PIN."
@@ -45,7 +51,8 @@ RECOVERY_REQUEST_MESSAGE = (
 
 
 def client_ip(request):
-    return request.META.get("REMOTE_ADDR")
+    # Same logic as the rate limiter: respects NUM_PROXIES (X-Forwarded-For) behind a proxy.
+    return BaseThrottle().get_ident(request)
 
 
 User = get_user_model()
@@ -209,7 +216,8 @@ class RecoveryConfirmView(APIView):
         serializer = RecoveryConfirmSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data["user"]
-        recovery.mark_used(serializer.validated_data["recovery_code"])
+        if not recovery.mark_used(serializer.validated_data["recovery_code"]):
+            raise ValidationError({"code": ["Invalid or expired code. Request a new one."]})
         recovery.set_new_password(user, serializer.validated_data["new_password"])
         recovery.logger.info("recovery_succeeded user=%s ip=%s", user.pk, client_ip(request))
         return Response(TokenPairSerializer.for_user(user))
@@ -232,14 +240,14 @@ class PasswordChangeView(APIView):
 class AdminResetBase(APIView):
     """Shared checks for admin-assisted resets (users who registered without an email)."""
 
-    permission_classes = [IsActiveAdmin]
+    permission_classes = [IsAdminRole]
 
     def get_target(self, request, pk):
         target = get_object_or_404(User, pk=pk)
         if target == request.user:
             self.fail("Use account recovery or change password for your own account.")
         if target.role == User.Role.ADMIN and not request.user.is_superuser:
-            self.fail("Only a super-admin can reset another administrator.")
+            raise PermissionDenied("Only a super-admin can reset another administrator.")
         if not request.user.email:
             self.fail("Add an email address to your admin account first. The confirmation code is sent there.")
         return target
@@ -258,10 +266,10 @@ class AdminResetRequestView(AdminResetBase):
                    request=None, responses={200: DetailSerializer})
     def post(self, request, pk):
         target = self.get_target(request, pk)
-        sent = recovery.issue_code(request.user, RecoveryCode.Purpose.ADMIN_RESET, target_user=target,
-                                   ip=client_ip(request))
-        if not sent:
-            self.fail("A code was sent less than a minute ago. Check your email or wait before trying again.")
+        result = recovery.issue_code(request.user, RecoveryCode.Purpose.ADMIN_RESET, target_user=target,
+                                     ip=client_ip(request))
+        if result != "sent":
+            self.fail(ADMIN_CODE_ERRORS[result])
         return Response({"detail": f"Confirmation code sent to {recovery.mask_email(request.user.email)}."})
 
 
@@ -282,7 +290,8 @@ class AdminResetConfirmView(AdminResetBase):
         if rc is None:
             raise ValidationError({"code": ["Invalid or expired code. Request a new one."]})
         check_new_password(serializer.validated_data["temporary_password"], target, field="temporary_password")
-        recovery.mark_used(rc)
+        if not recovery.mark_used(rc):
+            raise ValidationError({"code": ["Invalid or expired code. Request a new one."]})
         recovery.set_new_password(target, serializer.validated_data["temporary_password"], must_change=True)
         recovery.logger.warning("admin_reset_completed admin=%s user=%s ip=%s",
                                 request.user.pk, target.pk, client_ip(request))
