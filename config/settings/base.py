@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     # Third-party
     "rest_framework",
     "drf_spectacular",
+    "drf_spectacular_sidecar",  # Swagger UI / ReDoc files served by us, not a CDN
     "corsheaders",
     "phonenumber_field",
     "rest_framework_simplejwt.token_blacklist",
@@ -168,4 +169,9 @@ SPECTACULAR_SETTINGS = {
     "SCHEMA_PATH_PREFIX": r"/api/v[0-9]+",
     "COMPONENT_SPLIT_REQUEST": True,
     "SWAGGER_UI_SETTINGS": {"persistAuthorization": True},
+    # Serve the docs UI from our own static files. Some networks (e.g. campus Wi-Fi) block
+    # cdn.jsdelivr.net, which leaves /api/docs/ as a blank page.
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
 }
