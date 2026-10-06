@@ -1,4 +1,5 @@
 """Base settings shared by every environment. Secrets come from .env."""
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -27,6 +28,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "drf_spectacular",
     "corsheaders",
+    "phonenumber_field",
     # Local apps
     "apps.accounts",
 ]
@@ -74,14 +76,28 @@ DATABASES = {
     }
 }
 
-# Custom user model -- must exist before the first migration.
+# --- Users and authentication ---
 AUTH_USER_MODEL = "accounts.User"
 
+# Users sign in with phone number OR email (see apps/accounts/backends.py).
+AUTHENTICATION_BACKENDS = ["apps.accounts.backends.PhoneOrEmailBackend"]
+
+# Local numbers like 0772123456 are read as Ugandan and stored as +256772123456.
+PHONENUMBER_DEFAULT_REGION = "UG"
+PHONENUMBER_DB_FORMAT = "E164"
+
+# Argon2 first; existing PBKDF2 hashes still verify and are upgraded on next login.
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+]
+
+# Password or numeric PIN, minimum 6 characters. Common PINs/passwords (123456, password...)
+# are rejected, and login attempts are rate-limited (see "login" throttle below).
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 6}},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
-    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
 LANGUAGE_CODE = "en-us"
@@ -102,11 +118,25 @@ CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.ScopedRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "login": "10/minute",
+    },
+}
+
+# --- JWT (mobile app and web dashboards send: Authorization: Bearer <access token>) ---
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "UPDATE_LAST_LOGIN": True,
 }
 
 # --- Swagger / OpenAPI (drf-spectacular) ---
@@ -117,4 +147,5 @@ SPECTACULAR_SETTINGS = {
     "SERVE_INCLUDE_SCHEMA": False,
     "SCHEMA_PATH_PREFIX": r"/api/v[0-9]+",
     "COMPONENT_SPLIT_REQUEST": True,
+    "SWAGGER_UI_SETTINGS": {"persistAuthorization": True},
 }

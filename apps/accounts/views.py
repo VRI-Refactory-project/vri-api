@@ -1,17 +1,75 @@
-from drf_spectacular.utils import extend_schema, inline_serializer
-from rest_framework import serializers
+from django.db import connection
+from django.db.utils import OperationalError
+from drf_spectacular.utils import OpenApiExample, extend_schema, inline_serializer
+from rest_framework import serializers, status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.generics import RetrieveAPIView
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework_simplejwt.views import TokenRefreshView
+
+from .serializers import LoginSerializer, TokenPairSerializer, UserSerializer
+
+HealthSerializer = inline_serializer(
+    "Health",
+    {"status": serializers.CharField(), "database": serializers.CharField()},
+)
 
 
 @extend_schema(
-    tags=["health"],
+    tags=["Health"],
     summary="Health check",
-    responses=inline_serializer("Health", {"status": serializers.CharField()}),
+    responses={200: HealthSerializer, 503: HealthSerializer},
 )
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def health(request):
-    """Confirms the API is up. Placeholder so Swagger has one endpoint."""
-    return Response({"status": "ok"})
+    """Confirms the API is up and can reach the database."""
+    try:
+        connection.ensure_connection()
+    except OperationalError:
+        return Response({"status": "error", "database": "unavailable"}, status=503)
+    return Response({"status": "ok", "database": "ok"})
+
+
+class LoginView(APIView):
+    """Sign in with phone number or email plus password/PIN. Returns JWT tokens.
+
+    Send the access token on later requests as: `Authorization: Bearer <access>`.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_scope = "login"
+
+    @extend_schema(
+        tags=["Auth"],
+        summary="Sign in (phone or email)",
+        request=LoginSerializer,
+        responses={200: TokenPairSerializer},
+        examples=[
+            OpenApiExample("With phone", value={"identifier": "0772123456", "password": "your-password"},
+                           request_only=True),
+            OpenApiExample("With email", value={"identifier": "sarah@example.com", "password": "your-password"},
+                           request_only=True),
+        ],
+    )
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(TokenPairSerializer.for_user(serializer.validated_data["user"]), status=status.HTTP_200_OK)
+
+
+@extend_schema(tags=["Auth"], summary="Get a new access token from a refresh token")
+class RefreshView(TokenRefreshView):
+    pass
+
+
+@extend_schema(tags=["Auth"], summary="Current signed-in user")
+class MeView(RetrieveAPIView):
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user
