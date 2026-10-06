@@ -1,8 +1,9 @@
+from django.contrib.auth import get_user_model
 from django.db import connection
 from django.db.utils import OperationalError
 from drf_spectacular.utils import OpenApiExample, extend_schema, inline_serializer
 from rest_framework import serializers, status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.generics import RetrieveAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -11,9 +12,17 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from .serializers import LoginSerializer, TokenPairSerializer, UserSerializer
 
+User = get_user_model()
+
 HealthSerializer = inline_serializer(
     "Health",
     {"status": serializers.CharField(), "database": serializers.CharField()},
+)
+
+RoleOptionSerializer = inline_serializer(
+    "RoleOption",
+    {"value": serializers.CharField(), "label": serializers.CharField()},
+    many=True,
 )
 
 
@@ -31,6 +40,20 @@ def health(request):
     except OperationalError:
         return Response({"status": "error", "database": "unavailable"}, status=503)
     return Response({"status": "ok", "database": "ok"})
+
+
+@extend_schema(
+    tags=["Auth"],
+    summary="Roles a new user can choose",
+    responses={200: RoleOptionSerializer},
+)
+@api_view(["GET"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def roles(request):
+    """The account types shown on the role selection screen. The chosen `value` decides which
+    registration form the user is sent to. Admin accounts are created by staff only, so they are not listed."""
+    return Response([{"value": role.value, "label": role.label} for role in User.SELF_REGISTRATION_ROLES])
 
 
 class LoginView(APIView):

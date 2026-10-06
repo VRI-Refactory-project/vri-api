@@ -28,6 +28,22 @@ class HealthAndDocsTests(TestCase):
         self.assertEqual(self.client.get(reverse("schema")).status_code, 200)
 
 
+class RoleOptionsApiTests(TestCase):
+    def test_roles_lists_self_registration_roles_without_admin(self):
+        response = self.client.get(reverse("auth-roles"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [
+            {"value": "deaf_hoh", "label": "Deaf / Hard of Hearing"},
+            {"value": "interpreter", "label": "Interpreter"},
+            {"value": "institution", "label": "Institution"},
+        ])
+
+    def test_roles_ignores_stale_tokens(self):
+        # The role screen is the first thing a user sees, so an old token must not block it.
+        response = self.client.get(reverse("auth-roles"), HTTP_AUTHORIZATION="Bearer expired-or-invalid")
+        self.assertEqual(response.status_code, 200)
+
+
 class UserModelTests(TestCase):
     def test_local_phone_is_stored_in_e164(self):
         user = make_user(phone="0772 123456")
