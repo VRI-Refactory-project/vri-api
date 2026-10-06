@@ -71,6 +71,13 @@ docker-compose exec backend python manage.py spectacular --validate --fail-on-wa
 | `POST /api/v1/auth/login/` | Sign in with `{"identifier": "<phone or email>", "password": "..."}` |
 | `POST /api/v1/auth/token/refresh/` | New access token from a refresh token |
 | `GET /api/v1/auth/me/` | The signed-in user |
+| `POST /api/v1/auth/password/change/` | Change my password/PIN |
+| `POST /api/v1/auth/recovery/request/` | Forgot password: email me a 6-digit code |
+| `POST /api/v1/auth/recovery/confirm/` | Code + new password, returns tokens |
+| `POST /api/v1/manage/users/{id}/reset-password/...` | Admin reset for phone-only users (see `docs/design/V2-008-account-recovery.md`) |
+
+**Recovery codes in development** are not really emailed: they are printed in the backend logs
+(`docker compose logs -f backend`).
 
 **Create your first admin** (you will be asked for a phone number, full name and password):
 
