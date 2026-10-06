@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "corsheaders",
     "phonenumber_field",
+    "rest_framework_simplejwt.token_blacklist",
     # Local apps
     "apps.accounts",
 ]
@@ -110,6 +111,22 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# --- Email (account recovery codes) ---
+# Default prints emails in the backend logs, so codes are visible during development:
+#   docker compose logs -f backend
+# Production: set EMAIL_URL, e.g. smtp+tls://user:password@smtp.example.com:587
+EMAIL_CONFIG = env.email_url("EMAIL_URL", default="consolemail://")
+vars().update(EMAIL_CONFIG)
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="SignConnect <no-reply@signconnect.local>")
+
+# --- Logging (recovery events are logged for audit; codes and passwords never are) ---
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "loggers": {"apps.accounts.recovery": {"handlers": ["console"], "level": "INFO"}},
+}
+
 # --- CORS (React web dashboard + React Native app) ---
 CORS_ALLOW_ALL_ORIGINS = env("CORS_ALLOW_ALL_ORIGINS")
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
@@ -128,6 +145,8 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_THROTTLE_RATES": {
         "login": "10/minute",
+        "recovery_request": "5/hour",
+        "recovery_confirm": "10/minute",
     },
 }
 
