@@ -134,6 +134,10 @@ This deletes all data in the local database.
 
 ## Git workflow
 
+The full team rules (branches, pull requests, migrations, tests, Swagger) are in
+[CONTRIBUTING.md](CONTRIBUTING.md). Read it before your first pull request.
+
+
 - Branches: `main` (stable) and `dev` (integration).
 - Create your own branch from `dev`, for example `feature/interpreter-model`.
 - Open a pull request into `dev`. Do not commit directly to `main`.
