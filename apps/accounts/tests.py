@@ -1,5 +1,6 @@
 from django.contrib.auth import authenticate, get_user_model
 from django.core.cache import cache
+from django.core.exceptions import ImproperlyConfigured
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
@@ -185,6 +186,24 @@ class BaseRegistrationSerializerTests(TestCase):
     def test_six_digit_pin_accepted(self):
         s = ExampleRegistrationSerializer(data=self.data(password="482913"))
         self.assertTrue(s.is_valid(), s.errors)
+
+    def test_each_self_registration_role_is_stored(self):
+        for i, role in enumerate(User.SELF_REGISTRATION_ROLES):
+            serializer_class = type("RoleRegistration", (BaseRegistrationSerializer,), {"role": role})
+            s = serializer_class(data=self.data(phone_number=f"070000002{i}", email=f"user{i}@example.com"))
+            self.assertTrue(s.is_valid(), s.errors)
+            self.assertEqual(s.save().role, role)
+            self.assertEqual(s.data["role"], role)
+
+    def test_registration_cannot_create_admins(self):
+        class AdminRegistrationSerializer(BaseRegistrationSerializer):
+            role = User.Role.ADMIN
+
+        s = AdminRegistrationSerializer(data=self.data())
+        self.assertTrue(s.is_valid(), s.errors)
+        with self.assertRaises(ImproperlyConfigured):
+            s.save()
+        self.assertFalse(User.objects.exists())
 
     def test_failed_profile_rolls_back_user(self):
         s = ExampleRegistrationSerializer(data=self.data(city="fail"))

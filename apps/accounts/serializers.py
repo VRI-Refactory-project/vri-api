@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ImproperlyConfigured
 from django.db import transaction
 from phonenumber_field.serializerfields import PhoneNumberField
 from rest_framework import serializers
@@ -82,6 +83,11 @@ class BaseRegistrationSerializer(serializers.Serializer):
     def create(self, validated_data):
         if self.role is None:
             raise NotImplementedError("Registration serializers must set `role`.")
+        if self.role not in User.SELF_REGISTRATION_ROLES:
+            # Public registration must never create admins (or any role users cannot pick themselves).
+            raise ImproperlyConfigured(
+                f"Registration serializers can only create these roles: {', '.join(User.SELF_REGISTRATION_ROLES)}."
+            )
         user_data = {k: validated_data.pop(k) for k in self.USER_FIELDS if k in validated_data}
         with transaction.atomic():
             user = User.objects.create_user(role=self.role, **user_data)
