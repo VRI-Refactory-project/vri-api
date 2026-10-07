@@ -1,6 +1,14 @@
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from .models import CertificationDocument, InterpreterProfile, VerificationStatus
+from apps.accounts.serializers import BaseRegistrationSerializer
+
+from .models import (
+    CertificationDocument,
+    InterpreterProfile,
+    Specialisation,
+    VerificationStatus,
+)
 
 
 class CertificationDocumentSerializer(serializers.ModelSerializer):
@@ -10,9 +18,15 @@ class CertificationDocumentSerializer(serializers.ModelSerializer):
             "id",
             "document",
             "document_name",
+            "certificate_type",
+            "issuing_organisation",
             "uploaded_at",
             "rejection_reason",
         )
+        extra_kwargs = {
+            "certificate_type": {"required": True, "allow_blank": False},
+            "issuing_organisation": {"required": True, "allow_blank": False},
+        }
         read_only_fields = (
             "id",
             "document_name",
@@ -29,14 +43,14 @@ class CertificationDocumentSerializer(serializers.ModelSerializer):
 
 class InterpreterProfileSerializer(serializers.ModelSerializer):
     certifications = CertificationDocumentSerializer(many=True, read_only=True)
-    username = serializers.CharField(source="user.username", read_only=True)
+    full_name = serializers.CharField(source="user.full_name", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
 
     class Meta:
         model = InterpreterProfile
         fields = (
             "id",
-            "username",
+            "full_name",
             "email",
             "verification_status",
             "is_available",
@@ -57,3 +71,22 @@ class InterpreterProfileSerializer(serializers.ModelSerializer):
                 "You can only set yourself available after your profile is approved."
             )
         return value
+
+
+class InterpreterRegistrationSerializer(BaseRegistrationSerializer):
+    """V2-003 step 1: account details. An email is required (certification results are sent to it).
+
+    The account starts INACTIVE / pending review: the profile is created with the default
+    verification status, so the interpreter cannot receive requests until an admin approves them.
+    """
+
+    role = get_user_model().Role.INTERPRETER
+    email_required = True
+    specialisation = serializers.ChoiceField(
+        choices=Specialisation.choices, required=False, default=Specialisation.GENERAL
+    )
+
+    def create_profile(self, user, validated_data):
+        InterpreterProfile.objects.create(
+            user=user, specialisation=validated_data["specialisation"]
+        )
