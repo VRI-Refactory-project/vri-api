@@ -4,6 +4,7 @@ services:
     name: signconnect-api
     runtime: docker
     plan: free
+    region: virginia # same region as the Neon database (AWS us-east-1)
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/docs/
     dockerCommand: >-
