@@ -18,13 +18,19 @@ class InterpreterProfileAdmin(admin.ModelAdmin):
         "created_at",
     ]
     list_filter = ["verification_status", "specialisation", "is_available"]
-    search_fields = ["user__username", "user__email"]
+    search_fields = ["user__full_name", "user__email", "user__phone_number"]
     list_select_related = ["user"]
     inlines = [CertificationDocumentInline]
 
 
 @admin.register(CertificationDocument)
 class CertificationDocumentAdmin(admin.ModelAdmin):
-    list_display = ["interpreter", "document_name", "uploaded_at"]
-    search_fields = ["interpreter__user__username", "document_name"]
+    list_display = [
+        "interpreter",
+        "document_name",
+        "certificate_type",
+        "issuing_organisation",
+        "uploaded_at",
+    ]
+    search_fields = ["interpreter__user__full_name", "document_name"]
     list_select_related = ["interpreter__user"]

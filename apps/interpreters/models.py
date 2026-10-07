@@ -51,7 +51,7 @@ class InterpreterProfile(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.user.username} ({self.get_verification_status_display()})"
+        return f"{self.user.full_name} ({self.get_verification_status_display()})"
 
 
 class CertificationDocument(models.Model):
@@ -65,6 +65,10 @@ class CertificationDocument(models.Model):
         validators=[FileExtensionValidator(["pdf", "jpg", "jpeg", "png"])],
     )
     document_name = models.CharField(max_length=255)
+    # What the certificate is and who issued it (asked for on the web upload page, V2-003).
+    # Blank defaults keep existing rows valid; the API requires both for new uploads.
+    certificate_type = models.CharField(max_length=100, blank=True, default="")
+    issuing_organisation = models.CharField(max_length=255, blank=True, default="")
     uploaded_at = models.DateTimeField(auto_now_add=True)
     rejection_reason = models.TextField(blank=True, default="")
 
@@ -72,4 +76,4 @@ class CertificationDocument(models.Model):
         ordering = ["-uploaded_at"]  # noqa: RUF012
 
     def __str__(self):
-        return f"Certification: {self.document_name} - {self.interpreter.user.username}"
+        return f"Certification: {self.document_name} - {self.interpreter.user.full_name}"

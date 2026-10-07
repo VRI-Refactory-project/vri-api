@@ -97,6 +97,16 @@ class BaseRegistrationSerializer(serializers.Serializer):
         return UserSerializer(instance).data
 
 
+class DeafRegistrationSerializer(BaseRegistrationSerializer):
+    """V2-001 first step: name, phone number and a password/PIN. Email is optional.
+
+    Communication method, location and emergency contact belong to the profile that is completed
+    after sign-up (a DeafUserProfile does not exist yet), so they are not collected here.
+    """
+
+    role = User.Role.DEAF_HOH
+
+
 class LoginSerializer(serializers.Serializer):
     identifier = serializers.CharField(
         help_text="Phone number (e.g. 0772123456 or +256772123456) or email address."

@@ -1,0 +1,81 @@
+from django.core.cache import cache
+from django.urls import reverse
+from rest_framework.test import APITestCase
+
+from apps.accounts.models import User
+
+from .models import InstitutionProfile, InstitutionStatus
+
+PASSWORD = "Sign-Connect-2026"
+
+
+class InstitutionRegistrationTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+
+    def data(self, **overrides):
+        data = {
+            "full_name": "Grace Namutebi",
+            "phone_number": "0772555000",
+            "email": "grace@mulago.example",
+            "password": PASSWORD,
+            "organisation_name": "Mulago Hospital",
+            "organisation_type": "HOSPITAL",
+        }
+        data.update(overrides)
+        return data
+
+    def test_registrant_becomes_institution_administrator_and_is_signed_in(self):
+        res = self.client.post(reverse("auth-register-institution"), self.data(), format="json")
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data["user"]["role"], "institution")
+        self.assertIn("access", res.data)
+        profile = InstitutionProfile.objects.get(user__phone_number="+256772555000")
+        self.assertEqual(profile.organisation_name, "Mulago Hospital")
+        self.assertEqual(profile.organisation_type, "HOSPITAL")
+
+    def test_institution_starts_pending_approval(self):
+        self.client.post(reverse("auth-register-institution"), self.data(), format="json")
+        self.assertEqual(InstitutionProfile.objects.get().status, InstitutionStatus.PENDING)
+
+    def test_cannot_register_as_platform_admin(self):
+        res = self.client.post(
+            reverse("auth-register-institution"), self.data(role="admin"), format="json"
+        )
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data["user"]["role"], "institution")
+        self.assertFalse(User.objects.filter(role="admin").exists())
+
+    def test_organisation_name_and_type_are_required(self):
+        for field in ("organisation_name", "organisation_type"):
+            data = self.data()
+            del data[field]
+            res = self.client.post(reverse("auth-register-institution"), data, format="json")
+            self.assertEqual(res.status_code, 400, field)
+            self.assertIn(field, res.data)
+        self.assertFalse(User.objects.exists())
+
+    def test_email_is_required(self):
+        data = self.data()
+        del data["email"]
+        res = self.client.post(reverse("auth-register-institution"), data, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("email", res.data)
+
+    def test_invalid_organisation_type_rejected(self):
+        res = self.client.post(
+            reverse("auth-register-institution"), self.data(organisation_type="CIRCUS"), format="json"
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("organisation_type", res.data)
+
+    def test_duplicate_phone_rejected(self):
+        self.client.post(reverse("auth-register-institution"), self.data(), format="json")
+        res = self.client.post(
+            reverse("auth-register-institution"),
+            self.data(email="other@example.com"),
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("phone_number", res.data)
+        self.assertEqual(InstitutionProfile.objects.count(), 1)

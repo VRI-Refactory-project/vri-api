@@ -24,8 +24,12 @@ from apps.core.permissions import ROLE_PERMISSIONS, IsAdminRole
 
 from . import recovery
 from .models import RecoveryCode
+from apps.institutions.serializers import InstitutionRegistrationSerializer
+from apps.interpreters.serializers import InterpreterRegistrationSerializer
+
 from .serializers import (
     AdminResetConfirmSerializer,
+    DeafRegistrationSerializer,
     LoginSerializer,
     PasswordChangeSerializer,
     RecoveryConfirmSerializer,
@@ -174,6 +178,54 @@ class RoleAccessView(APIView):
     )
     def get(self, request, role):
         return Response({"role": role, "detail": "Access granted."})
+
+
+# --- Registration (V2-001 deaf user, V2-003 interpreter) -----------------------------------------
+
+
+class BaseRegisterView(APIView):
+    """Creates an account for one role and signs the user in (returns the same payload as login)."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_scope = "register"
+    serializer_class = None
+
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(TokenPairSerializer.for_user(user), status=status.HTTP_201_CREATED)
+
+
+@extend_schema(
+    tags=["Auth"],
+    summary="Register a Deaf / Hard of Hearing user",
+    request=DeafRegistrationSerializer,
+    responses={201: TokenPairSerializer},
+)
+class DeafRegisterView(BaseRegisterView):
+    serializer_class = DeafRegistrationSerializer
+
+
+@extend_schema(
+    tags=["Auth"],
+    summary="Register an interpreter (account starts pending review)",
+    request=InterpreterRegistrationSerializer,
+    responses={201: TokenPairSerializer},
+)
+class InterpreterRegisterView(BaseRegisterView):
+    serializer_class = InterpreterRegistrationSerializer
+
+
+@extend_schema(
+    tags=["Auth"],
+    summary="Register an institution (the registrant becomes its administrator; pending approval)",
+    request=InstitutionRegistrationSerializer,
+    responses={201: TokenPairSerializer},
+)
+class InstitutionRegisterView(BaseRegisterView):
+    serializer_class = InstitutionRegistrationSerializer
 
 
 # --- V2-008: account recovery ---------------------------------------------------------------

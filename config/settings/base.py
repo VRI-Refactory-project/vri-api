@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     # Local apps
     "apps.accounts",
     "apps.interpreters",
+    "apps.institutions",
     "apps.users",
 ]
 
@@ -155,6 +156,7 @@ REST_FRAMEWORK = {
     "NUM_PROXIES": env.int("NUM_PROXIES", default=0),
     "DEFAULT_THROTTLE_RATES": {
         "login": "10/minute",
+        "register": "20/hour",
         "recovery_request": "5/hour",
         "recovery_confirm": "10/minute",
     },
