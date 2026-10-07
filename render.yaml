@@ -1,0 +1,29 @@
+# Render Blueprint for the free demo backend. Database: Neon (see DEPLOY.md), set DATABASE_URL by hand.
+services:
+  - type: web
+    name: signconnect-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/docs/
+    dockerCommand: >-
+      sh -c "python manage.py migrate --noinput &&
+      python manage.py collectstatic --noinput &&
+      gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 60"
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.staging
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: ALLOWED_HOSTS
+        value: localhost
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: CSRF_TRUSTED_ORIGINS
+        sync: false
+      - key: NUM_PROXIES
+        value: "1"
+      - key: PYTHON_UNBUFFERED
+        value: "1"
