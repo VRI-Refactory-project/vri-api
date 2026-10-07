@@ -71,6 +71,8 @@ docker-compose exec backend python manage.py spectacular --validate --fail-on-wa
 | `POST /api/v1/auth/login/` | Sign in with `{"identifier": "<phone or email>", "password": "..."}` |
 | `POST /api/v1/auth/token/refresh/` | New access token from a refresh token |
 | `GET /api/v1/auth/me/` | The signed-in user |
+| `GET /api/v1/auth/roles/` | Roles a new user can choose on the first screen (public; never lists `admin`) |
+| `GET /api/v1/auth/me/access/{role}/` | Can the signed-in user use that role's endpoints? 200 yes, 403 no, 401 not signed in |
 | `POST /api/v1/auth/password/change/` | Change my password/PIN |
 | `POST /api/v1/auth/recovery/request/` | Forgot password: email me a 6-digit code |
 | `POST /api/v1/auth/recovery/confirm/` | Code + new password, returns tokens |
@@ -91,6 +93,24 @@ at the top of the page and paste it. Swagger then sends the token with every req
 **Building a registration endpoint:** subclass `BaseRegistrationSerializer` from `apps/accounts/serializers.py`.
 It already validates and normalises the phone number, rejects duplicates, checks the password, hashes it with
 Argon2 and wraps user + profile creation in one transaction. See its docstring for an example.
+The role comes from the serializer's `role` attribute, never from the request, and it must be one of
+`User.SELF_REGISTRATION_ROLES`: a registration serializer cannot create admins.
+
+**Protecting endpoints by role:** use the permission classes in `apps/core/permissions.py`.
+
+```python
+from apps.core.permissions import IsDeafUser, IsInstitution, IsInterpreter
+
+class AvailabilityView(APIView):
+    permission_classes = [IsInterpreter]
+
+class RequestListView(ListAPIView):
+    permission_classes = [IsDeafUser | IsInstitution]   # either role
+```
+
+Not signed in returns 401, a different role returns 403. The role is read from the database on every request, so
+a role change applies straight away. Superusers are checked by role like everyone else. To see the rules in Swagger,
+sign in, click **Authorize**, then try `GET /auth/me/access/{role}/` with each role.
 
 ## Running without Docker (optional)
 
@@ -167,7 +187,8 @@ If a hook fixes a file, the commit stops. Run `git add .` and commit again.
 ```
 vri-api/
 ├── apps/
-│   └── accounts/           User model, login (JWT), shared registration serializer
+│   ├── accounts/           User model, login (JWT), shared registration serializer, role list
+│   └── core/               Shared code: role permission classes (permissions.py)
 ├── config/
 │   ├── settings/           base.py (shared), dev.py, prod.py
 │   └── urls.py             Root URLs, incl. /api/v1/ and the Swagger docs
