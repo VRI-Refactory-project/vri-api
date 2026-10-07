@@ -69,17 +69,21 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
-# PostgreSQL. The same POSTGRES_* values configure the db container in docker-compose.yml.
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": env("POSTGRES_DB"),
-        "USER": env("POSTGRES_USER"),
-        "PASSWORD": env("POSTGRES_PASSWORD"),
-        "HOST": env("DATABASE_HOST", default="db"),  # "db" = service name in docker-compose.yml
-        "PORT": env("DATABASE_PORT", default="5432"),
+# PostgreSQL. Hosted databases (Neon, Render, ...) give one DATABASE_URL, which wins when set.
+# Otherwise the POSTGRES_* values configure the db container in docker-compose.yml.
+if env("DATABASE_URL", default=""):
+    DATABASES = {"default": env.db("DATABASE_URL")}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": env("POSTGRES_DB"),
+            "USER": env("POSTGRES_USER"),
+            "PASSWORD": env("POSTGRES_PASSWORD"),
+            "HOST": env("DATABASE_HOST", default="db"),  # "db" = service name in docker-compose.yml
+            "PORT": env("DATABASE_PORT", default="5432"),
+        }
     }
-}
 
 # --- Users and authentication ---
 AUTH_USER_MODEL = "accounts.User"
