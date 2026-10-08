@@ -18,6 +18,12 @@ class UserManager(BaseUserManager):
             raise ValueError("A phone number is required.")
         if extra_fields.get("role") not in self.model.Role.values:
             raise ValueError(f"A valid role is required, one of: {', '.join(self.model.Role.values)}.")
+        
+        #validating that same user cannot register
+
+        if extra_fields.get("phone_number") not in self.model.UserManager.values:
+            raise ValueError(f"A unique phone number is required for registration.")
+        
         email = extra_fields.pop("email", None)
         extra_fields["email"] = self.normalize_email(email).lower() if email else None
         user = self.model(phone_number=phone_number, **extra_fields)
