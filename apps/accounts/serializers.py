@@ -12,6 +12,11 @@ from .utils import find_user_by_identifier
 
 User = get_user_model()
 
+class PlusPhoneNumberField(PhoneNumberField):
+    default_error_messages = {
+        "invalid": "Enter a valid phone number.",
+    }
+
 
 class UserSerializer(serializers.ModelSerializer):
     """Public view of a user. Reuse this inside role-specific profile responses."""
@@ -45,7 +50,7 @@ class BaseRegistrationSerializer(serializers.Serializer):
     email_required = False
 
     full_name = serializers.CharField(max_length=150)
-    phone_number = PhoneNumberField()
+    phone_number = PlusPhoneNumberField()
     email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
     password = serializers.CharField(write_only=True, style={"input_type": "password"})
 
@@ -65,10 +70,23 @@ class BaseRegistrationSerializer(serializers.Serializer):
     def validate_email(self, value):
         if not value:
             return None
+
         value = value.strip().lower()
+
+        local_part = value.split("@", 1)[0]
+
+        if local_part.isdigit():
+            raise serializers.ValidationError(
+            "Email address cannot contain only numbers before the @ symbol."
+        )
+
         if User.objects.filter(email__iexact=value).exists():
-            raise serializers.ValidationError("An account with this email already exists.")
+              raise serializers.ValidationError(
+            "An account with this email already exists."
+        )
+
         return value
+
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
