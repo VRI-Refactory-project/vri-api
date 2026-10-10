@@ -6,7 +6,7 @@ services:
     plan: free
     region: virginia # same region as the Neon database (AWS us-east-1)
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /api/docs/
+    healthCheckPath: /api/health/
     dockerCommand: sh ./start.sh
     envVars:
       - key: DJANGO_SETTINGS_MODULE

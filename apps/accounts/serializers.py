@@ -12,6 +12,7 @@ from .utils import find_user_by_identifier
 
 User = get_user_model()
 
+
 class PlusPhoneNumberField(PhoneNumberField):
     default_error_messages = {
         "invalid": "Enter a valid phone number.",
@@ -77,16 +78,13 @@ class BaseRegistrationSerializer(serializers.Serializer):
 
         if local_part.isdigit():
             raise serializers.ValidationError(
-            "Email address cannot contain only numbers before the @ symbol."
-        )
+                "Email address cannot contain only numbers before the @ symbol."
+            )
 
         if User.objects.filter(email__iexact=value).exists():
-              raise serializers.ValidationError(
-            "An account with this email already exists."
-        )
+            raise serializers.ValidationError("An account with this email already exists.")
 
         return value
-
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
