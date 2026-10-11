@@ -5,7 +5,7 @@
 | **Story** | V2-045: As a system administrator, I want to review interpreter certification and activate or deactivate interpreter accounts, so that only qualified, verified interpreters can provide services. |
 | **Owner** | Zipporah (backend), John Busuulwa (frontend) |
 | **Estimate** | 2 days |
-| **Status** | In progress |
+| **Status** | **Implemented** (11 Oct 2026). Logic in `apps/interpreters/verification.py`, tests in `apps/interpreters/test_verification.py`. |
 
 ## 1. What the backlog requires
 

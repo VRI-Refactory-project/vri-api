@@ -9,13 +9,17 @@ from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_sche
 from rest_framework import generics, permissions
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.permissions import IsAdminRole
 
-from .models import CertificationDocument, InterpreterProfile, VerificationStatus
+from . import verification
+from .models import CertificationDocument, InterpreterProfile, VerificationDecision, VerificationStatus
 from .serializers import (
     CertificationDocumentSerializer,
+    DecisionReasonOptionalSerializer,
+    DecisionReasonRequiredSerializer,
     InterpreterProfileSerializer,
     ManageInterpreterDetailSerializer,
     ManageInterpreterListSerializer,
@@ -57,6 +61,13 @@ def manageable_interpreters():
     return InterpreterProfile.objects.filter(user__role=User.Role.INTERPRETER).select_related("user")
 
 
+def review_queryset():
+    """Everything the review page shows, fetched in a few queries."""
+    return manageable_interpreters().annotate(certification_count=Count("certifications")).prefetch_related(
+        "certifications", "decisions__admin"
+    )
+
+
 @extend_schema(
     tags=["Manage"],
     summary="Interpreter verification queue",
@@ -89,9 +100,7 @@ class ManageInterpreterDetailView(generics.RetrieveAPIView):
     serializer_class = ManageInterpreterDetailSerializer
 
     def get_queryset(self):
-        return manageable_interpreters().annotate(certification_count=Count("certifications")).prefetch_related(
-            "certifications", "decisions__admin"
-        )
+        return review_queryset()
 
 
 class CertificationFileView(APIView):
@@ -117,3 +126,78 @@ class CertificationFileView(APIView):
         except FileNotFoundError:
             raise Http404("The file for this certificate is missing.")
         return FileResponse(handle, filename=os.path.basename(cert.document.name))
+
+
+class ManageInterpreterDecisionView(APIView):
+    """Shared code for approve / reject / deactivate / reactivate.
+
+    Applies the decision, then returns the updated review details.
+    """
+
+    permission_classes = [IsAdminRole]
+    action = None
+    serializer_class = DecisionReasonOptionalSerializer
+
+    def post(self, request, pk):
+        profile = get_object_or_404(manageable_interpreters(), pk=pk)
+        body = self.serializer_class(data=request.data)
+        body.is_valid(raise_exception=True)
+        verification.decide(profile.pk, self.action, request.user, body.validated_data["reason"])
+        updated = review_queryset().get(pk=profile.pk)
+        return Response(ManageInterpreterDetailSerializer(updated, context={"request": request}).data)
+
+
+DECISION_ERRORS = {
+    400: OpenApiResponse(description="Not allowed from the interpreter's current status, or a field is missing."),
+    404: OpenApiResponse(description="No interpreter with this id."),
+}
+
+
+@extend_schema(
+    tags=["Manage"],
+    summary="Approve an interpreter (they can then receive requests)",
+    request=DecisionReasonOptionalSerializer,
+    responses={200: ManageInterpreterDetailSerializer, **DECISION_ERRORS},
+)
+class ApproveInterpreterView(ManageInterpreterDecisionView):
+    """Pending or rejected -> APPROVED. Needs at least one uploaded certificate."""
+
+    action = VerificationDecision.Action.APPROVE
+
+
+@extend_schema(
+    tags=["Manage"],
+    summary="Reject an interpreter's verification (reason required)",
+    request=DecisionReasonRequiredSerializer,
+    responses={200: ManageInterpreterDetailSerializer, **DECISION_ERRORS},
+)
+class RejectInterpreterView(ManageInterpreterDecisionView):
+    """Pending -> REJECTED. The reason is shown to the interpreter on their latest certificate."""
+
+    action = VerificationDecision.Action.REJECT
+    serializer_class = DecisionReasonRequiredSerializer
+
+
+@extend_schema(
+    tags=["Manage"],
+    summary="Deactivate an interpreter (stops new requests immediately; reason required)",
+    request=DecisionReasonRequiredSerializer,
+    responses={200: ManageInterpreterDetailSerializer, **DECISION_ERRORS},
+)
+class DeactivateInterpreterView(ManageInterpreterDecisionView):
+    """APPROVED -> DEACTIVATED, e.g. a lapsed certificate or a concern raised. They can still sign in."""
+
+    action = VerificationDecision.Action.DEACTIVATE
+    serializer_class = DecisionReasonRequiredSerializer
+
+
+@extend_schema(
+    tags=["Manage"],
+    summary="Reactivate a deactivated interpreter",
+    request=DecisionReasonOptionalSerializer,
+    responses={200: ManageInterpreterDetailSerializer, **DECISION_ERRORS},
+)
+class ReactivateInterpreterView(ManageInterpreterDecisionView):
+    """DEACTIVATED -> APPROVED. The interpreter sets themselves available again when ready."""
+
+    action = VerificationDecision.Action.REACTIVATE

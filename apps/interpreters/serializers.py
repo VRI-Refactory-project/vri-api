@@ -186,3 +186,17 @@ class ManageInterpreterDetailSerializer(ManageInterpreterListSerializer):
             "decisions",
         )
         read_only_fields = fields
+
+
+# --- V2-045: admin verification (decisions) ---------------------------------------------------
+
+
+class DecisionReasonOptionalSerializer(serializers.Serializer):
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=2000, default="")
+
+
+class DecisionReasonRequiredSerializer(serializers.Serializer):
+    reason = serializers.CharField(
+        max_length=2000,
+        help_text="Shown to the interpreter (for a rejection) and kept in the audit log.",
+    )

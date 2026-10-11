@@ -112,6 +112,25 @@ Not signed in returns 401, a different role returns 403. The role is read from t
 a role change applies straight away. Superusers are checked by role like everyone else. To see the rules in Swagger,
 sign in, click **Authorize**, then try `GET /auth/me/access/{role}/` with each role.
 
+## Interpreter verification (admins)
+
+New interpreters start as `INACTIVE` (pending review). Admins review their certificates and decide. Every decision
+is kept in an audit log (`VerificationDecision`, read-only in Django admin). Design and rules:
+`docs/design/V2-045-interpreter-verification.md`.
+
+| Endpoint (admins only) | Purpose |
+|---|---|
+| `GET /api/v1/manage/interpreters/?status=INACTIVE` | Verification queue, oldest first |
+| `GET /api/v1/manage/interpreters/{id}/` | Review page: profile, certificates, decision history |
+| `GET /api/v1/manage/interpreters/{id}/certifications/{cert_id}/file/` | Download a certificate (never a public URL) |
+| `POST /api/v1/manage/interpreters/{id}/approve/` | Pending or rejected → `APPROVED` (needs a certificate) |
+| `POST /api/v1/manage/interpreters/{id}/reject/` | `{"reason": "..."}` required. Pending → `REJECTED` |
+| `POST /api/v1/manage/interpreters/{id}/deactivate/` | `{"reason": "..."}` required. `APPROVED` → `DEACTIVATED`: no new requests from now on |
+| `POST /api/v1/manage/interpreters/{id}/reactivate/` | `DEACTIVATED` → `APPROVED` |
+
+Approval and rejection email the interpreter (the rejection email includes the reason). In development the emails
+are printed in the backend logs. Uploaded files are saved in `media/` (git-ignored) and are not served publicly.
+
 ## Running without Docker (optional)
 
 ```bash

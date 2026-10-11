@@ -1,7 +1,9 @@
 import shutil
 import tempfile
+from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
@@ -159,3 +161,191 @@ class ManageReviewApiTests(TempMediaMixin, APITestCase):
         self.client.force_authenticate(self.admin)
         url = reverse("manage-interpreters:certification-file", args=[self.pending.pk, self.cert.pk])
         self.assertEqual(self.client.get(url).status_code, 404)
+
+
+class DecisionApiMixin(TempMediaMixin):
+    def setUp(self):
+        self.use_temp_media()
+        self.admin = make_admin()
+        self.client.force_authenticate(self.admin)
+
+    def act(self, action, profile, reason=None):
+        data = {} if reason is None else {"reason": reason}
+        url = reverse(f"manage-interpreters:{action}", args=[profile.pk])
+        with self.captureOnCommitCallbacks(execute=True):
+            return self.client.post(url, data, format="json")
+
+
+class ApproveRejectApiTests(DecisionApiMixin, APITestCase):
+    def setUp(self):
+        super().setUp()
+        self.profile = make_interpreter("0772000011")
+        self.cert = add_certificate(self.profile)
+
+    def test_requires_admin(self):
+        self.client.force_authenticate(None)
+        self.assertEqual(self.act("approve", self.profile).status_code, 401)
+        interpreter = self.profile.user
+        self.client.force_authenticate(interpreter)
+        self.assertEqual(self.act("approve", self.profile).status_code, 403)  # cannot approve themselves
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.verification_status, VerificationStatus.INACTIVE)
+
+    def test_approve_pending_interpreter(self):
+        response = self.act("approve", self.profile)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["verification_status"], "APPROVED")
+        decision = response.data["decisions"][0]
+        self.assertEqual((decision["action"], decision["previous_status"], decision["new_status"]),
+                         ("approve", "INACTIVE", "APPROVED"))
+        self.assertEqual(decision["admin"], self.admin.pk)
+
+    def test_approved_interpreter_becomes_routable_once_available(self):
+        from .services import get_eligible_interpreters
+
+        self.act("approve", self.profile)
+        self.profile.refresh_from_db()
+        self.assertNotIn(self.profile, get_eligible_interpreters())  # approved but not yet available
+        self.profile.is_available = True
+        self.profile.save()
+        self.assertIn(self.profile, get_eligible_interpreters())
+
+    def test_approve_needs_a_certificate(self):
+        no_cert = make_interpreter("0772000012")
+        response = self.act("approve", no_cert)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("certificate", str(response.data["detail"]))
+        self.assertFalse(VerificationDecision.objects.exists())
+
+    def test_reject_needs_a_reason(self):
+        for body in (None, "", "   "):
+            response = self.act("reject", self.profile, body)
+            self.assertEqual(response.status_code, 400, body)
+            self.assertIn("reason", response.data)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.verification_status, VerificationStatus.INACTIVE)
+
+    def test_reject_records_reason_on_decision_and_latest_certificate(self):
+        response = self.act("reject", self.profile, "The certificate scan is unreadable.")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["verification_status"], "REJECTED")
+        decision = VerificationDecision.objects.get()
+        self.assertEqual((decision.action, decision.reason, decision.admin),
+                         ("reject", "The certificate scan is unreadable.", self.admin))
+        self.cert.refresh_from_db()
+        self.assertEqual(self.cert.rejection_reason, "The certificate scan is unreadable.")
+
+    def test_rejected_interpreter_can_be_approved_later_and_old_reason_is_cleared(self):
+        self.act("reject", self.profile, "Expired certificate.")
+        response = self.act("approve", self.profile, "New certificate checked.")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["verification_status"], "APPROVED")
+        self.cert.refresh_from_db()
+        self.assertEqual(self.cert.rejection_reason, "")
+        self.assertEqual([d.action for d in self.profile.decisions.all()], ["approve", "reject"])
+
+    def test_invalid_transitions_change_nothing(self):
+        approved = make_interpreter("0772000013", status=VerificationStatus.APPROVED)
+        add_certificate(approved)
+        self.assertEqual(self.act("approve", approved).status_code, 400)
+        self.assertEqual(self.act("reject", approved, "Too late").status_code, 400)
+        approved.refresh_from_db()
+        self.assertEqual(approved.verification_status, VerificationStatus.APPROVED)
+        self.assertFalse(VerificationDecision.objects.exists())
+
+    def test_unknown_or_non_interpreter_profile_is_404(self):
+        self.assertEqual(self.client.post(reverse("manage-interpreters:approve", args=[99999])).status_code, 404)
+        deaf_user = User.objects.create_user("0701000004", PASSWORD, full_name="Deaf User", role=User.Role.DEAF_HOH)
+        stray = InterpreterProfile.objects.create(user=deaf_user)
+        add_certificate(stray)
+        self.assertEqual(self.act("approve", stray).status_code, 404)
+
+
+class DeactivateReactivateApiTests(DecisionApiMixin, APITestCase):
+    def setUp(self):
+        super().setUp()
+        self.profile = make_interpreter("0772000021", status=VerificationStatus.APPROVED, is_available=True)
+        add_certificate(self.profile)
+
+    def test_deactivation_stops_new_requests_immediately(self):
+        from .services import get_eligible_interpreters
+
+        self.assertIn(self.profile, get_eligible_interpreters())
+        response = self.act("deactivate", self.profile, "Certificate lapsed in September.")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["verification_status"], "DEACTIVATED")
+        self.assertFalse(response.data["is_available"])
+        self.assertNotIn(self.profile, get_eligible_interpreters())
+
+    def test_deactivation_needs_a_reason_and_is_audited(self):
+        self.assertEqual(self.act("deactivate", self.profile).status_code, 400)
+        self.act("deactivate", self.profile, "Complaint under review.")
+        decision = VerificationDecision.objects.get()
+        self.assertEqual((decision.action, decision.previous_status, decision.new_status, decision.reason),
+                         ("deactivate", "APPROVED", "DEACTIVATED", "Complaint under review."))
+
+    def test_deactivated_interpreter_can_still_sign_in_but_cannot_go_available(self):
+        self.act("deactivate", self.profile, "Certificate lapsed.")
+        self.client.force_authenticate(None)
+        login = self.client.post(reverse("auth-login"), {"identifier": "0772000021", "password": PASSWORD},
+                                 format="json")
+        self.assertEqual(login.status_code, 200)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login.data['access']}")
+        me = self.client.patch(reverse("interpreters:interpreter-profile-detail"), {"is_available": True},
+                               format="json")
+        self.assertEqual(me.status_code, 400)
+
+    def test_reactivate_returns_to_approved_but_not_available(self):
+        self.act("deactivate", self.profile, "Certificate lapsed.")
+        response = self.act("reactivate", self.profile, "Renewed certificate received.")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["verification_status"], "APPROVED")
+        self.assertFalse(response.data["is_available"])
+        self.assertEqual([d["action"] for d in response.data["decisions"]], ["reactivate", "deactivate"])
+
+    def test_only_approved_can_be_deactivated_and_only_deactivated_reactivated(self):
+        pending = make_interpreter("0772000022")
+        self.assertEqual(self.act("deactivate", pending, "x").status_code, 400)
+        self.assertEqual(self.act("reactivate", self.profile).status_code, 400)
+        self.assertFalse(VerificationDecision.objects.exists())
+
+    def test_requires_admin(self):
+        self.client.force_authenticate(self.profile.user)
+        self.assertEqual(self.act("deactivate", self.profile, "x").status_code, 403)
+        self.client.force_authenticate(None)
+        self.assertEqual(self.act("reactivate", self.profile).status_code, 401)
+
+
+class VerificationEmailTests(DecisionApiMixin, APITestCase):
+    def setUp(self):
+        super().setUp()
+        self.profile = make_interpreter("0772000031")
+        add_certificate(self.profile)
+
+    def test_approval_email(self):
+        self.act("approve", self.profile)
+        self.assertEqual(len(mail.outbox), 1)
+        email = mail.outbox[0]
+        self.assertEqual(email.to, [self.profile.user.email])
+        self.assertIn("approved", email.subject)
+
+    def test_rejection_email_includes_the_reason(self):
+        self.act("reject", self.profile, "Please upload a certificate issued by UNAD.")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("not approved", mail.outbox[0].subject)
+        self.assertIn("Reason: Please upload a certificate issued by UNAD.", mail.outbox[0].body)
+
+    def test_no_email_for_failed_or_unnotified_decisions(self):
+        self.act("reject", self.profile)  # missing reason -> 400
+        self.assertEqual(len(mail.outbox), 0)
+        approved = make_interpreter("0772000032", status=VerificationStatus.APPROVED)
+        self.act("deactivate", approved, "Certificate lapsed.")  # not in the backlog's notifications
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_email_failure_does_not_undo_the_decision(self):
+        with mock.patch("apps.interpreters.verification.send_mail", side_effect=OSError("smtp down")), \
+                self.assertLogs("apps.interpreters.verification", level="ERROR"):
+            response = self.act("approve", self.profile)
+        self.assertEqual(response.status_code, 200)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.verification_status, VerificationStatus.APPROVED)
