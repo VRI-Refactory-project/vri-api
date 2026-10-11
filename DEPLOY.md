@@ -44,7 +44,7 @@ docker compose run --rm -e DATABASE_URL="<neon connection string>" -e DJANGO_SET
 ## Limits of the free setup
 
 - Render sleeps the backend after 15 minutes without traffic; the next request takes about a minute.
-  Open the site a few minutes before a demo, or ping `/api/docs/` with a free uptime monitor.
+  Open the site a few minutes before a demo, or ping `/api/health/` (it also wakes the Neon database) with a free uptime monitor.
 - No persistent disk: uploaded certificates are lost on every redeploy or restart.
 - No email: account recovery codes are printed in the Render logs.
 - One gunicorn worker and an in-memory cache, so rate limits are per process. Fine for a demo.
