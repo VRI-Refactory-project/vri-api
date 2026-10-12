@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import update_last_login
 from django.db import connection
 from django.db.utils import OperationalError
 from django.shortcuts import get_object_or_404
@@ -133,7 +134,9 @@ class LoginView(APIView):
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        return Response(TokenPairSerializer.for_user(serializer.validated_data["user"]), status=status.HTTP_200_OK)
+        user = serializer.validated_data["user"]
+        update_last_login(None, user)  # when the user last signed in, shown in the admin site
+        return Response(TokenPairSerializer.for_user(user), status=status.HTTP_200_OK)
 
 
 @extend_schema(tags=["Auth"], summary="Get a new access token from a refresh token")
