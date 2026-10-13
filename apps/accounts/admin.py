@@ -31,7 +31,7 @@ class UserAdmin(BaseUserAdmin):
     fieldsets = (
         (None, {"fields": ("full_name", "phone_number", "email", "role", "password")}),
         ("Status", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
-        ("Dates", {"fields": ("last_login", "date_joined")}),
+        ("Dates", {"fields": ("last_login", "date_joined", "terms_accepted_at")}),
     )
     add_fieldsets = (
         (None, {
@@ -39,4 +39,4 @@ class UserAdmin(BaseUserAdmin):
             "fields": ("full_name", "phone_number", "email", "role", "password1", "password2"),
         }),
     )
-    readonly_fields = ("last_login", "date_joined")
+    readonly_fields = ("last_login", "date_joined", "terms_accepted_at")

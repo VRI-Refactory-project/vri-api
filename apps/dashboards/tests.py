@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -89,6 +90,9 @@ class AdminDashboardTests(TestCase):
 
 
 class SignInRecordedTests(TestCase):
+    def setUp(self):
+        cache.clear()  # reset the login rate limit
+
     def test_signing_in_records_the_time(self):
         admin = make_user(User.Role.ADMIN, "0700000400")
         self.assertIsNone(admin.last_login)

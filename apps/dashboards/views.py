@@ -1,10 +1,8 @@
-"""Dashboard data for each role (V2-062 Deaf user, V2-064 administrator).
 
-Each view is limited to its role with the shared permission classes (apps/core/permissions.py):
-not signed in -> 401, another role -> 403.
+"""Dashboard data for each role.
 
-Sessions, requests and chats do not exist in the API yet, so those lists are empty for now. They are
-already in the response so the web and mobile screens can be built against the final shape.
+Deaf, interpreter, and administrator dashboard endpoints are restricted
+by shared permission classes in apps/core/permissions.py.
 """
 from django.contrib.auth import get_user_model
 from django.db.models import Count
@@ -14,13 +12,18 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.serializers import UserSerializer
-
-from apps.core.permissions import (CanAccessInterpreterDashboard,IsAdminRole,IsDeafUser,)
-
+from apps.audit.models import AuditLog
+from apps.core.permissions import (
+    CanAccessInterpreterDashboard,
+    IsAdminRole,
+    IsDeafUser,
+)
 from apps.institutions.models import InstitutionProfile, InstitutionStatus
 from apps.interpreters.models import InterpreterProfile, VerificationStatus
 
 User = get_user_model()
+
+RECENT_SIGN_INS = 10
 
 DeafDashboardSerializer = inline_serializer(
     "DeafDashboard",
@@ -38,7 +41,19 @@ AdminDashboardSerializer = inline_serializer(
         "user": UserSerializer(),
         "interpreters_pending_verification": serializers.IntegerField(),
         "institutions_pending_approval": serializers.IntegerField(),
-        "users_by_role": serializers.DictField(child=serializers.IntegerField()),
+        "users_by_role": serializers.DictField(
+            child=serializers.IntegerField()
+        ),
+        "recent_admin_sign_ins": inline_serializer(
+            "AdminSignIn",
+            {
+                "id": serializers.IntegerField(),
+                "admin": serializers.CharField(),
+                "ip_address": serializers.CharField(allow_null=True),
+                "at": serializers.DateTimeField(),
+            },
+            many=True,
+        ),
     },
 )
 
@@ -76,7 +91,7 @@ class DeafDashboardView(APIView):
 
 
 class AdminDashboardView(APIView):
-    """Summary numbers for the administrator's home screen."""
+    """Summary numbers and latest administrator sign-ins."""
 
     permission_classes = [IsAdminRole]
 
@@ -87,18 +102,43 @@ class AdminDashboardView(APIView):
     )
     def get(self, request):
         counts = dict(
-            User.objects.filter(is_active=True).values_list("role").annotate(total=Count("id"))
+            User.objects.filter(is_active=True)
+            .values_list("role")
+            .annotate(total=Count("id"))
         )
+
         return Response(
             {
                 "user": UserSerializer(request.user).data,
-                "interpreters_pending_verification": InterpreterProfile.objects.filter(
-                    verification_status=VerificationStatus.INACTIVE
-                ).count(),
-                "institutions_pending_approval": InstitutionProfile.objects.filter(
-                    status=InstitutionStatus.PENDING
-                ).count(),
-                "users_by_role": {role: counts.get(role, 0) for role in User.Role.values},
+                "interpreters_pending_verification": (
+                    InterpreterProfile.objects.filter(
+                        verification_status=VerificationStatus.INACTIVE
+                    ).count()
+                ),
+                "institutions_pending_approval": (
+                    InstitutionProfile.objects.filter(
+                        status=InstitutionStatus.PENDING
+                    ).count()
+                ),
+                "users_by_role": {
+                    role: counts.get(role, 0) for role in User.Role.values
+                },
+                "recent_admin_sign_ins": [
+                    {
+                        "id": entry.id,
+                        "admin": (
+                            entry.user.full_name if entry.user else None
+                        ),
+                        "ip_address": entry.ip_address,
+                        "at": entry.created_at,
+                    }
+                    for entry in (
+                        AuditLog.objects.filter(
+                            event=AuditLog.Event.ADMIN_SIGN_IN
+                        )
+                        .select_related("user")[:RECENT_SIGN_INS]
+                    )
+                ],
             }
         )
 
