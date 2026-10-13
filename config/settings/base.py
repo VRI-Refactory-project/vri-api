@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     "apps.interpreters",
     "apps.institutions",
     "apps.users",
+    "apps.audit",
 ]
 
 MIDDLEWARE = [
@@ -105,8 +106,9 @@ PASSWORD_HASHERS = [
 # are rejected, and login attempts are rate-limited (see "login" throttle below).
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 6}},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 8}},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "apps.core.validators.NumberAndSpecialCharacterValidator"},
 ]
 
 LANGUAGE_CODE = "en-us"

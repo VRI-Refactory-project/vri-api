@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ImproperlyConfigured, ValidationError as DjangoValidationError
 from django.db import transaction
+from django.utils import timezone
 from phonenumber_field.serializerfields import PhoneNumberField
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -54,6 +55,8 @@ class BaseRegistrationSerializer(serializers.Serializer):
     phone_number = PlusPhoneNumberField()
     email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
     password = serializers.CharField(write_only=True, style={"input_type": "password"})
+    # Sent as true when the person ticks "I accept the Terms and Privacy Policy". The time is stored.
+    terms_accepted = serializers.BooleanField(required=False, default=False, write_only=True)
 
     USER_FIELDS = ("full_name", "phone_number", "email", "password")
 
@@ -104,6 +107,8 @@ class BaseRegistrationSerializer(serializers.Serializer):
                 f"Registration serializers can only create these roles: {', '.join(User.SELF_REGISTRATION_ROLES)}."
             )
         user_data = {k: validated_data.pop(k) for k in self.USER_FIELDS if k in validated_data}
+        if validated_data.pop("terms_accepted", False):
+            user_data["terms_accepted_at"] = timezone.now()
         with transaction.atomic():
             user = User.objects.create_user(role=self.role, **user_data)
             self.create_profile(user, validated_data)

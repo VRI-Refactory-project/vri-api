@@ -34,6 +34,35 @@ class InstitutionRegistrationTests(APITestCase):
         self.assertEqual(profile.organisation_name, "Mulago Hospital")
         self.assertEqual(profile.organisation_type, "HOSPITAL")
 
+    def test_other_type_stores_what_the_registrant_wrote(self):
+        res = self.client.post(
+            reverse("auth-register-institution"),
+            self.data(organisation_type="OTHER", organisation_type_other="  Deaf school  "),
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201, res.data)
+        profile = InstitutionProfile.objects.get()
+        self.assertEqual(profile.organisation_type, "OTHER")
+        self.assertEqual(profile.organisation_type_other, "Deaf school")
+
+    def test_other_type_needs_a_description(self):
+        for text in ({}, {"organisation_type_other": ""}, {"organisation_type_other": "   "}):
+            res = self.client.post(
+                reverse("auth-register-institution"), self.data(organisation_type="OTHER", **text), format="json"
+            )
+            self.assertEqual(res.status_code, 400, text)
+            self.assertIn("organisation_type_other", res.data)
+        self.assertFalse(InstitutionProfile.objects.exists())
+
+    def test_the_description_is_dropped_for_the_listed_types(self):
+        res = self.client.post(
+            reverse("auth-register-institution"),
+            self.data(organisation_type="HOSPITAL", organisation_type_other="ignored"),
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(InstitutionProfile.objects.get().organisation_type_other, "")
+
     def test_institution_starts_pending_approval(self):
         self.client.post(reverse("auth-register-institution"), self.data(), format="json")
         self.assertEqual(InstitutionProfile.objects.get().status, InstitutionStatus.PENDING)

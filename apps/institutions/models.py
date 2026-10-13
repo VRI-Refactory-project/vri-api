@@ -27,6 +27,8 @@ class InstitutionProfile(models.Model):
     )
     organisation_name = models.CharField(max_length=200)
     organisation_type = models.CharField(max_length=20, choices=OrganisationType.choices)
+    # What the institution is, in the registrant's own words. Only filled when the type is OTHER.
+    organisation_type_other = models.CharField(max_length=100, blank=True, default="")
     status = models.CharField(
         max_length=20,
         choices=InstitutionStatus.choices,

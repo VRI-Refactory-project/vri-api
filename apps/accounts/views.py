@@ -21,6 +21,8 @@ from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenRefreshView
 
+from apps.audit import services as audit
+from apps.audit.models import AuditLog
 from apps.core.permissions import ROLE_PERMISSIONS, IsAdminRole
 
 from . import recovery
@@ -136,6 +138,8 @@ class LoginView(APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data["user"]
         update_last_login(None, user)  # when the user last signed in, shown in the admin site
+        if user.role == User.Role.ADMIN:
+            audit.record(AuditLog.Event.ADMIN_SIGN_IN, user, request)
         return Response(TokenPairSerializer.for_user(user), status=status.HTTP_200_OK)
 
 
