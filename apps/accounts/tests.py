@@ -235,9 +235,11 @@ class BaseRegistrationSerializerTests(TestCase):
             self.assertFalse(s.is_valid(), weak)
             self.assertIn("password", s.errors)
 
-    def test_six_digit_pin_accepted(self):
+    def test_a_six_digit_pin_is_no_longer_accepted(self):
+        # Sprint 1 password rule: at least 8 characters, with a number and a special character.
         s = ExampleRegistrationSerializer(data=self.data(password="482913"))
-        self.assertTrue(s.is_valid(), s.errors)
+        self.assertFalse(s.is_valid())
+        self.assertIn("password", s.errors)
 
     def test_each_self_registration_role_is_stored(self):
         for i, role in enumerate(User.SELF_REGISTRATION_ROLES):

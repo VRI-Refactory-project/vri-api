@@ -75,6 +75,11 @@ class User(AbstractBaseUser, PermissionsMixin):
         help_text="Set after an admin reset. The app should ask the user to choose a new password/PIN.",
     )
     date_joined = models.DateTimeField(default=timezone.now)
+    terms_accepted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the user accepted the Terms and Privacy Policy at sign-up. Empty if they never did.",
+    )
 
     objects = UserManager()
 

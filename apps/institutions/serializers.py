@@ -19,10 +19,25 @@ class InstitutionRegistrationSerializer(BaseRegistrationSerializer):
     email_required = True
     organisation_name = serializers.CharField(max_length=200)
     organisation_type = serializers.ChoiceField(choices=OrganisationType.choices)
+    organisation_type_other = serializers.CharField(max_length=100, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        other = (attrs.get("organisation_type_other") or "").strip()
+        if attrs["organisation_type"] == OrganisationType.OTHER:
+            if not other:
+                raise serializers.ValidationError(
+                    {"organisation_type_other": "Tell us what kind of institution this is."}
+                )
+            attrs["organisation_type_other"] = other
+        else:
+            attrs["organisation_type_other"] = ""  # only kept for "Other"
+        return attrs
 
     def create_profile(self, user, validated_data):
         InstitutionProfile.objects.create(
             user=user,
             organisation_name=validated_data["organisation_name"].strip(),
             organisation_type=validated_data["organisation_type"],
+            organisation_type_other=validated_data["organisation_type_other"],
         )
