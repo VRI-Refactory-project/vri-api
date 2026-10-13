@@ -14,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.serializers import UserSerializer
+from apps.audit.models import AuditLog
 from apps.core.permissions import IsAdminRole, IsDeafUser
 from apps.institutions.models import InstitutionProfile, InstitutionStatus
 from apps.interpreters.models import InterpreterProfile, VerificationStatus
@@ -37,8 +38,20 @@ AdminDashboardSerializer = inline_serializer(
         "interpreters_pending_verification": serializers.IntegerField(),
         "institutions_pending_approval": serializers.IntegerField(),
         "users_by_role": serializers.DictField(child=serializers.IntegerField()),
+        "recent_admin_sign_ins": inline_serializer(
+            "AdminSignIn",
+            {
+                "id": serializers.IntegerField(),
+                "admin": serializers.CharField(),
+                "ip_address": serializers.CharField(allow_null=True),
+                "at": serializers.DateTimeField(),
+            },
+            many=True,
+        ),
     },
 )
+
+RECENT_SIGN_INS = 10
 
 
 class DeafDashboardView(APIView):
@@ -63,7 +76,7 @@ class DeafDashboardView(APIView):
 
 
 class AdminDashboardView(APIView):
-    """Summary numbers for the administrator's home screen."""
+    """Summary numbers and the latest administrator sign-ins (audit log) for the administrator's home screen."""
 
     permission_classes = [IsAdminRole]
 
@@ -86,5 +99,15 @@ class AdminDashboardView(APIView):
                     status=InstitutionStatus.PENDING
                 ).count(),
                 "users_by_role": {role: counts.get(role, 0) for role in User.Role.values},
+                "recent_admin_sign_ins": [
+                    {
+                        "id": entry.id,
+                        "admin": entry.user.full_name if entry.user else None,
+                        "ip_address": entry.ip_address,
+                        "at": entry.created_at,
+                    }
+                    for entry in AuditLog.objects.filter(event=AuditLog.Event.ADMIN_SIGN_IN)
+                    .select_related("user")[:RECENT_SIGN_INS]
+                ],
             }
         )
