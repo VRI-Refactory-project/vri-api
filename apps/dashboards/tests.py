@@ -107,3 +107,74 @@ class SignInRecordedTests(TestCase):
         self.assertEqual(response.status_code, 400)
         admin.refresh_from_db()
         self.assertIsNone(admin.last_login)
+
+
+class InterpreterDashboardTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.url = "/api/v1/dashboard/interpreter/"
+
+        self.interpreter = make_user(
+            User.Role.INTERPRETER,
+            "0700000500",
+        )
+        self.profile = InterpreterProfile.objects.create(
+            user=self.interpreter,
+            verification_status=VerificationStatus.APPROVED,
+        )
+
+    def test_approved_active_interpreter_can_access_dashboard(self):
+        self.client.force_authenticate(user=self.interpreter)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["user"]["role"], User.Role.INTERPRETER)
+        self.assertEqual(
+            response.data["verification_status"],
+            VerificationStatus.APPROVED,
+        )
+        self.assertIn("is_available", response.data)
+        self.assertIn("working_hours_schedule", response.data)
+
+    def test_unauthenticated_user_cannot_access_dashboard(self):
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_other_roles_cannot_access_interpreter_dashboard(self):
+        for index, role in enumerate(
+            [User.Role.DEAF_HOH, User.Role.INSTITUTION, User.Role.ADMIN]
+        ):
+            user = make_user(role, f"070000051{index}0")
+            self.client.force_authenticate(user=user)
+
+            response = self.client.get(self.url)
+
+            self.assertEqual(response.status_code, 403, role)
+
+    def test_unapproved_interpreter_cannot_access_dashboard(self):
+        self.profile.verification_status = VerificationStatus.INACTIVE
+        self.profile.save()
+
+        self.client.force_authenticate(user=self.interpreter)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_inactive_account_cannot_access_dashboard(self):
+        self.interpreter.is_active = False
+        self.interpreter.save()
+
+        self.client.force_authenticate(user=self.interpreter)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_interpreter_without_profile_cannot_access_dashboard(self):
+        self.profile.delete()
+
+        self.client.force_authenticate(user=self.interpreter)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 403)

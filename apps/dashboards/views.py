@@ -14,7 +14,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.serializers import UserSerializer
-from apps.core.permissions import IsAdminRole, IsDeafUser
+
+from apps.core.permissions import (CanAccessInterpreterDashboard,IsAdminRole,IsDeafUser,)
+
 from apps.institutions.models import InstitutionProfile, InstitutionStatus
 from apps.interpreters.models import InterpreterProfile, VerificationStatus
 
@@ -37,6 +39,17 @@ AdminDashboardSerializer = inline_serializer(
         "interpreters_pending_verification": serializers.IntegerField(),
         "institutions_pending_approval": serializers.IntegerField(),
         "users_by_role": serializers.DictField(child=serializers.IntegerField()),
+    },
+)
+
+InterpreterDashboardSerializer = inline_serializer(
+    "InterpreterDashboard",
+    {
+        "user": UserSerializer(),
+        "verification_status": serializers.CharField(),
+        "is_available": serializers.BooleanField(),
+        "specialisation": serializers.CharField(allow_null=True),
+        "working_hours_schedule": serializers.DictField(),
     },
 )
 
@@ -86,5 +99,29 @@ class AdminDashboardView(APIView):
                     status=InstitutionStatus.PENDING
                 ).count(),
                 "users_by_role": {role: counts.get(role, 0) for role in User.Role.values},
+            }
+        )
+
+
+class InterpreterDashboardView(APIView):
+    """Dashboard data for active, approved interpreters."""
+
+    permission_classes = [CanAccessInterpreterDashboard]
+
+    @extend_schema(
+        tags=["Dashboards"],
+        summary="Interpreter dashboard",
+        responses={200: InterpreterDashboardSerializer},
+    )
+    def get(self, request):
+        profile = InterpreterProfile.objects.get(user=request.user)
+
+        return Response(
+            {
+                "user": UserSerializer(request.user).data,
+                "verification_status": profile.verification_status,
+                "is_available": profile.is_available,
+                "specialisation": profile.specialisation,
+                "working_hours_schedule": profile.working_hours_schedule,
             }
         )

@@ -54,3 +54,28 @@ ROLE_PERMISSIONS = {
     User.Role.INSTITUTION: IsInstitution,
     User.Role.ADMIN: IsAdminRole,
 }
+
+
+
+class CanAccessInterpreterDashboard(BasePermission):
+    """Allow only active, verified interpreters to access their dashboard."""
+
+    message = "Only active, approved interpreters can access this dashboard."
+
+    def has_permission(self, request, view):
+        user = request.user
+
+        if not (
+            user
+            and user.is_authenticated
+            and user.is_active
+            and user.role == User.Role.INTERPRETER
+        ):
+            return False
+
+        from apps.interpreters.models import InterpreterProfile, VerificationStatus
+
+        return InterpreterProfile.objects.filter(
+            user=user,
+            verification_status=VerificationStatus.APPROVED,
+        ).exists()
