@@ -1,11 +1,24 @@
+from datetime import date, timedelta
+
+from django.contrib.auth import get_user_model
+from django.db import transaction
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, permissions
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from .models import InterpreterProfile
+from .availability import monday_of, week_schedule
+from .models import DateException, InterpreterProfile, WeeklyAvailability
 from .serializers import (
     CertificationDocumentSerializer,
+    DayScheduleSerializer,
+    DayUpdateSerializer,
     InterpreterProfileSerializer,
+    WeekQuerySerializer,
+    WeekScheduleSerializer,
 )
 
 
@@ -51,3 +64,109 @@ class InterpreterProfileDetailView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         profile, _ = InterpreterProfile.objects.get_or_create(user=self.request.user)
         return profile
+
+
+# ---- V2-021 availability schedule (new) ----
+
+
+def get_interpreter_profile(user):
+    """The signed-in interpreter's profile. Other roles have no schedule."""
+    if user.role != get_user_model().Role.INTERPRETER:
+        raise PermissionDenied("Only interpreters have an availability schedule.")
+    profile, _ = InterpreterProfile.objects.get_or_create(user=user)
+    return profile
+
+
+@extend_schema(
+    tags=["Interpreter Availability"],
+    summary="Get the availability schedule for one week",
+    description=(
+        "Returns the 7 days (Monday to Sunday) of the week that contains week_start. "
+        "Defaults to the current week. Each day says whether its hours come from the "
+        "default week ('default') or from a change for that one date ('exception')."
+    ),
+    parameters=[WeekQuerySerializer],
+    responses=WeekScheduleSerializer,
+)
+class WeeklyScheduleView(APIView):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get(self, request):
+        profile = get_interpreter_profile(request.user)
+
+        query = WeekQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+
+        any_day = query.validated_data.get("week_start") or timezone.localdate()
+        week_start = monday_of(any_day)
+
+        data = {
+            "week_start": week_start,
+            "week_end": week_start + timedelta(days=6),
+            "days": week_schedule(profile, week_start),
+        }
+        return Response(WeekScheduleSerializer(data).data)
+
+
+@extend_schema(
+    tags=["Interpreter Availability"],
+    summary="Save the availability for one day",
+    description=(
+        "Saves one day from the schedule screen. The date is in the URL (YYYY-MM-DD).\n\n"
+        "- `repeat_weekly: false` (default): changes only that date.\n"
+        "- `repeat_weekly: true`: changes that weekday in the default week, so every "
+        "future week uses it (a change saved earlier for this one date is removed).\n"
+        "- `is_available: false` means unavailable all day (times are ignored).\n\n"
+        "Past dates cannot be changed. The change applies to the very next routing decision."
+    ),
+    request=DayUpdateSerializer,
+    responses=DayScheduleSerializer,
+)
+class DayAvailabilityView(APIView):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def patch(self, request, day):
+        profile = get_interpreter_profile(request.user)
+
+        try:
+            the_date = date.fromisoformat(day)
+        except ValueError:
+            raise ValidationError({"date": "Use the format YYYY-MM-DD."}) from None
+        if the_date < timezone.localdate():
+            raise ValidationError(
+                {"date": "You cannot change availability for a past date."}
+            )
+
+        serializer = DayUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        values = {
+            "is_available": data["is_available"],
+            "start_time": data["start_time"],
+            "end_time": data["end_time"],
+        }
+
+        with transaction.atomic():
+            if data["repeat_weekly"]:
+                # Change the default week for this weekday ...
+                WeeklyAvailability.objects.update_or_create(
+                    interpreter=profile,
+                    weekday=the_date.weekday(),
+                    defaults=values,
+                )
+                # ... and drop any one-off change for this date, which would
+                # otherwise hide the new default.
+                DateException.objects.filter(
+                    interpreter=profile, date=the_date
+                ).delete()
+            else:
+                # Change only this date.
+                DateException.objects.update_or_create(
+                    interpreter=profile,
+                    date=the_date,
+                    defaults=values,
+                )
+
+        updated_day = week_schedule(profile, monday_of(the_date))[the_date.weekday()]
+        return Response(DayScheduleSerializer(updated_day).data)

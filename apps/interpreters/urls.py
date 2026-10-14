@@ -1,11 +1,26 @@
 from django.urls import path
-from .views import CertificationUploadView, InterpreterProfileDetailView
+from .views import (
+    CertificationUploadView,
+    DayAvailabilityView,
+    InterpreterProfileDetailView,
+    WeeklyScheduleView,
+)
 
 app_name = "interpreters"
 
 urlpatterns = [
     path(
         "me/", InterpreterProfileDetailView.as_view(), name="interpreter-profile-detail"
+    ),
+    path(
+        "me/availability/",
+        WeeklyScheduleView.as_view(),
+        name="availability-week",
+    ),
+    path(
+        "me/availability/days/<str:day>/",
+        DayAvailabilityView.as_view(),
+        name="availability-day",
     ),
     path(
         "certifications/upload/",
