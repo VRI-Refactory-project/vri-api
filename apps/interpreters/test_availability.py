@@ -21,9 +21,11 @@ MONDAY_1PM = datetime(2026, 10, 12, 13, 0, tzinfo=EAT)
 SATURDAY_10AM = datetime(2026, 10, 17, 10, 0, tzinfo=EAT)
 
 
-def make_interpreter(specialisation=Specialisation.MEDICAL):
+def make_interpreter(
+    specialisation=Specialisation.MEDICAL, phone_number="+256700000001"
+):
     user = get_user_model().objects.create_user(
-        phone_number="+256700000001",
+        phone_number=phone_number,
         password="Pass1234!",
         full_name="Test Interpreter",
         role="interpreter",

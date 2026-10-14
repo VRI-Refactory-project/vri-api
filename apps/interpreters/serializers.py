@@ -204,3 +204,27 @@ class AvailabilityStatusUpdateSerializer(serializers.Serializer):
                 "You can only set yourself available after your profile is approved."
             )
         return value
+
+
+class MonthQuerySerializer(serializers.Serializer):
+    """The ?month= value, like 2026-10. Defaults to the current month."""
+
+    month = serializers.RegexField(regex=r"^20\d{2}-(0[1-9]|1[0-2])$", required=False)
+
+
+class ExceptionSerializer(serializers.Serializer):
+    """One one-off date on the Exceptions calendar.
+
+    kind: "unavailable" (red dot) or "modified_hours" (teal dot).
+    """
+
+    date = serializers.DateField()
+    is_available = serializers.BooleanField()
+    start_time = serializers.TimeField(allow_null=True)
+    end_time = serializers.TimeField(allow_null=True)
+    kind = serializers.ChoiceField(choices=["unavailable", "modified_hours"])
+
+
+class MonthExceptionsSerializer(serializers.Serializer):
+    month = serializers.CharField()
+    exceptions = ExceptionSerializer(many=True)
