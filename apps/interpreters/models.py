@@ -54,6 +54,39 @@ class InterpreterProfile(models.Model):
         return f"{self.user.full_name} ({self.get_verification_status_display()})"
 
 
+class InterpreterAvailability(models.Model):
+    interpreter = models.ForeignKey(
+        InterpreterProfile,
+        on_delete=models.CASCADE,
+        related_name="availability_periods",
+    )
+    start_at = models.DateTimeField()
+    end_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["start_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(end_at__gt=models.F("start_at")),
+                name="availability_end_after_start",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["interpreter", "start_at", "end_at"],
+                name="interp_avail_period_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.interpreter.user.full_name}: "
+            f"{self.start_at} - {self.end_at}"
+        )
+
+
 class CertificationDocument(models.Model):
     interpreter = models.ForeignKey(
         InterpreterProfile,

@@ -1,4 +1,9 @@
 from django.core.cache import cache
+
+from django.core import mail
+from django.test import override_settings
+
+from apps.audit.models import AuditLog
 from django.urls import reverse
 from rest_framework.test import APITestCase
 
@@ -108,3 +113,111 @@ class InstitutionRegistrationTests(APITestCase):
         self.assertEqual(res.status_code, 400)
         self.assertIn("phone_number", res.data)
         self.assertEqual(InstitutionProfile.objects.count(), 1)
+
+
+class InstitutionApprovalTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+
+        self.admin = User.objects.create_user(
+            phone_number="+256772555001",
+            password=PASSWORD,
+            full_name="Platform Admin",
+            email="admin@example.com",
+            role=User.Role.ADMIN,
+        )
+
+        self.institution_user = User.objects.create_user(
+            phone_number="+256772555002",
+            password=PASSWORD,
+            full_name="Grace Namutebi",
+            email="grace@mulago.example",
+            role=User.Role.INSTITUTION,
+        )
+
+        self.profile = InstitutionProfile.objects.create(
+            user=self.institution_user,
+            organisation_name="Mulago Hospital",
+            organisation_type="HOSPITAL",
+            status=InstitutionStatus.PENDING,
+        )
+
+        self.client.force_authenticate(user=self.admin)
+
+    def test_admin_can_list_pending_applications(self):
+        response = self.client.get(reverse("institution-pending"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(
+            response.data[0]["organisation_name"],
+            "Mulago Hospital",
+        )
+
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"
+    )
+    def test_admin_can_approve_and_notification_is_sent(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                reverse("institution-approve", args=[self.profile.pk])
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], InstitutionStatus.APPROVED)
+
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.status, InstitutionStatus.APPROVED)
+
+        self.assertTrue(
+            AuditLog.objects.filter(
+                event=AuditLog.Event.INSTITUTION_APPROVED,
+                user=self.admin,
+            ).exists()
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(
+            mail.outbox[0].to,
+            ["grace@mulago.example"],
+        )
+
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"
+    )
+    def test_admin_can_reject_application(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                reverse("institution-reject", args=[self.profile.pk])
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], InstitutionStatus.REJECTED)
+
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.status, InstitutionStatus.REJECTED)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_non_admin_cannot_approve_application(self):
+        self.client.force_authenticate(user=self.institution_user)
+
+        response = self.client.post(
+            reverse("institution-approve", args=[self.profile.pk])
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.status, InstitutionStatus.PENDING)
+
+    def test_already_decided_application_cannot_be_approved_again(self):
+        self.profile.status = InstitutionStatus.APPROVED
+        self.profile.save(update_fields=["status"])
+
+        response = self.client.post(
+            reverse("institution-approve", args=[self.profile.pk])
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.status, InstitutionStatus.APPROVED)
