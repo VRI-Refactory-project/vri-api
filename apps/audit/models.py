@@ -5,14 +5,12 @@ from django.db import models
 class AuditLog(models.Model):
     """A record of something an administrator did that the platform must be able to account for.
 
-    Administrator sign-ins (V2-064) and institutions created by an administrator (V2-005). Add an `Event`
-    when another action needs recording. Entries are written by `apps.audit.services.record` and are
-    read-only in the admin site.
+    For now this is administrator sign-ins (V2-064). Add an `Event` when another action needs recording.
+    Entries are written by `apps.audit.services.record` and are read-only in the admin site.
     """
 
     class Event(models.TextChoices):
         ADMIN_SIGN_IN = "admin_sign_in", "Administrator signed in"
-        INSTITUTION_CREATED = "institution_created", "Administrator created an institution"
 
     # SET_NULL: the history stays even if the account is later deleted.
     user = models.ForeignKey(

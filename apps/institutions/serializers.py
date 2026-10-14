@@ -1,11 +1,9 @@
 from django.contrib.auth import get_user_model
-from django.db import transaction
 from rest_framework import serializers
 
 from apps.accounts.serializers import BaseRegistrationSerializer
 
-from . import credentials
-from .models import InstitutionProfile, InstitutionStatus, OrganisationType
+from .models import InstitutionProfile, OrganisationType
 
 User = get_user_model()
 
@@ -25,9 +23,6 @@ class InstitutionRegistrationSerializer(BaseRegistrationSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        return self.clean_organisation_type(attrs)
-
-    def clean_organisation_type(self, attrs):
         other = (attrs.get("organisation_type_other") or "").strip()
         if attrs["organisation_type"] == OrganisationType.OTHER:
             if not other:
@@ -39,45 +34,13 @@ class InstitutionRegistrationSerializer(BaseRegistrationSerializer):
             attrs["organisation_type_other"] = ""  # only kept for "Other"
         return attrs
 
-    def create_profile(self, user, validated_data, status=InstitutionStatus.PENDING):
+    def create_profile(self, user, validated_data):
         InstitutionProfile.objects.create(
             user=user,
             organisation_name=validated_data["organisation_name"].strip(),
             organisation_type=validated_data["organisation_type"],
             organisation_type_other=validated_data["organisation_type_other"],
-            status=status,
         )
-
-
-class AdminInstitutionCreateSerializer(InstitutionRegistrationSerializer):
-    """V2-005: a platform administrator creates an institution that is APPROVED straight away.
-
-    Same fields and checks as self-registration, minus the password (a temporary one is emailed to the
-    institution, see credentials.py) and the Terms box (only the institution can accept them).
-    After save(), `temporary_password` holds the password to email.
-    """
-
-    def get_fields(self):
-        fields = super().get_fields()
-        del fields["password"], fields["terms_accepted"]
-        return fields
-
-    def validate(self, attrs):
-        # Skip the password rules: there is no password yet.
-        return self.clean_organisation_type(serializers.Serializer.validate(self, attrs))
-
-    def create_profile(self, user, validated_data, status=InstitutionStatus.APPROVED):
-        super().create_profile(user, validated_data, status=status)
-
-    def create(self, validated_data):
-        validated_data["password"] = None  # unusable until the temporary password is set below
-        with transaction.atomic():
-            user = super().create(validated_data)
-            self.temporary_password = credentials.generate_temporary_password(user)
-            user.set_password(self.temporary_password)
-            user.must_change_password = True
-            user.save(update_fields=["password", "must_change_password"])
-        return user
 
 
 class InstitutionSerializer(serializers.ModelSerializer):
