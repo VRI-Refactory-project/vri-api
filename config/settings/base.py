@@ -190,7 +190,10 @@ SPECTACULAR_SETTINGS = {
     "COMPONENT_SPLIT_REQUEST": True,
     "SWAGGER_UI_SETTINGS": {"persistAuthorization": True},
     # One name for a choice list that several fields share (otherwise Swagger warns about it).
-    "ENUM_NAME_OVERRIDES": {"VerificationStatusEnum": "apps.interpreters.models.VerificationStatus"},
+    "ENUM_NAME_OVERRIDES": {
+        "VerificationStatusEnum": "apps.interpreters.models.VerificationStatus",
+        "StaffRoleEnum": "apps.institutions.models.StaffRole",  # V2-006, so it is not confused with user roles
+    },
     # Serve the docs UI from our own static files. Some networks (e.g. campus Wi-Fi) block
     # cdn.jsdelivr.net, which leaves /api/docs/ as a blank page.
     "SWAGGER_UI_DIST": "SIDECAR",
