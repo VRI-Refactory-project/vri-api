@@ -1,5 +1,6 @@
 from django.urls import path
 from .views import (
+    AvailabilityStatusView,
     CertificationUploadView,
     DayAvailabilityView,
     InterpreterProfileDetailView,
@@ -16,6 +17,11 @@ urlpatterns = [
         "me/availability/",
         WeeklyScheduleView.as_view(),
         name="availability-week",
+    ),
+    path(
+        "me/availability/status/",
+        AvailabilityStatusView.as_view(),
+        name="availability-status",
     ),
     path(
         "me/availability/days/<str:day>/",
