@@ -282,3 +282,33 @@ class DayUpdateSerializer(serializers.Serializer):
             attrs["start_time"] = None
             attrs["end_time"] = None
         return attrs
+
+
+class AvailabilityStatusSerializer(serializers.Serializer):
+    """What the dashboard shows.
+
+    is_available: the dashboard switch.
+    available_now: can she be offered a request at this very moment?
+    reason: why not (null when available_now is true).
+    """
+
+    is_available = serializers.BooleanField()
+    available_now = serializers.BooleanField()
+    reason = serializers.ChoiceField(
+        choices=["not_approved", "switched_off", "day_off", "outside_hours"],
+        allow_null=True,
+    )
+
+
+class AvailabilityStatusUpdateSerializer(serializers.Serializer):
+    """What the dashboard sends to flip the switch."""
+
+    is_available = serializers.BooleanField()
+
+    def validate_is_available(self, value):
+        profile = self.context["profile"]
+        if value and profile.verification_status != VerificationStatus.APPROVED:
+            raise serializers.ValidationError(
+                "You can only set yourself available after your profile is approved."
+            )
+        return value

@@ -2,7 +2,7 @@ from datetime import time, timedelta
 
 from django.utils import timezone
 
-from .models import DateException, WeeklyAvailability
+from .models import DateException, VerificationStatus, WeeklyAvailability
 
 # Used when an interpreter has not saved a row for a weekday yet.
 # Placeholder default: Monday to Friday, 08:00 to 17:00. Confirm with the team.
@@ -42,21 +42,41 @@ def hours_for(interpreter, day):
     return default_hours(day.weekday())
 
 
-def is_available_now(interpreter, now=None):
-    """True only if this interpreter can be offered a request at this moment."""
+def unavailable_reason(interpreter, now=None):
+    """Why this interpreter cannot be offered a request right now.
+
+    Returns None when she CAN be offered one. Otherwise one of:
+      "not_approved"  - her profile is not approved yet
+      "switched_off"  - she switched herself off on the dashboard
+      "day_off"       - today is a day off (date exception or default week)
+      "outside_hours" - today is a working day but it is outside her hours
+
+    This is the single rule. Routing and the dashboard status both use it,
+    so they can never disagree.
+    """
     now = now or timezone.localtime()  # uses TIME_ZONE (should be Africa/Kampala)
 
-    # 1. The dashboard switch beats everything.
-    if not interpreter.is_available:
-        return False
+    if interpreter.verification_status != VerificationStatus.APPROVED:
+        return "not_approved"
 
-    # 2. Otherwise look at today's hours (date exception, then default week).
+    # The dashboard switch beats the schedule.
+    if not interpreter.is_available:
+        return "switched_off"
+
+    # Otherwise look at today's hours (date exception, then default week).
     available, start, end = hours_for(interpreter, now.date())
     if not available or start is None or end is None:
-        return False
+        return "day_off"
 
-    # 3. Are we inside today's hours?
-    return start <= now.time() <= end
+    if not start <= now.time() <= end:
+        return "outside_hours"
+
+    return None
+
+
+def is_available_now(interpreter, now=None):
+    """True only if this interpreter can be offered a request at this moment."""
+    return unavailable_reason(interpreter, now) is None
 
 
 def week_schedule(interpreter, week_start):
