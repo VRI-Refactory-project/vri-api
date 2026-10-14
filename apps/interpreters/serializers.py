@@ -37,7 +37,7 @@ class CertificationDocumentSerializer(serializers.ModelSerializer):
         )
 
     def create(self, validated_data):
-        # fill document_name from the uploaded file's name
+        # Fill document_name from the uploaded file's name
         if "document" in validated_data:
             validated_data["document_name"] = validated_data["document"].name
         return super().create(validated_data)
@@ -57,6 +57,8 @@ class InterpreterProfileSerializer(serializers.ModelSerializer):
             "verification_status",
             "is_available",
             "specialisation",
+            "specialisation_other",
+            "sign_languages",
             "working_hours_schedule",
             "certifications",
             "created_at",
@@ -74,12 +76,34 @@ class InterpreterProfileSerializer(serializers.ModelSerializer):
             )
         return value
 
+    def validate(self, attrs):
+        specialisation = attrs.get(
+            "specialisation",
+            getattr(self.instance, "specialisation", Specialisation.GENERAL),
+        )
+        specialisation_other = attrs.get(
+            "specialisation_other",
+            getattr(self.instance, "specialisation_other", ""),
+        )
+
+        # Enforce free-text entry if 'OTHER' is selected
+        if specialisation == Specialisation.OTHER and not specialisation_other.strip():
+            raise serializers.ValidationError(
+                {
+                    "specialisation_other": (
+                        "Please specify your specialisation when 'OTHER' is selected."
+                    )
+                }
+            )
+        return attrs
+
 
 class InterpreterRegistrationSerializer(BaseRegistrationSerializer):
-    """V2-003 step 1: account details. An email is required (certification results are sent to it).
+    """V2-003 step 1: account details.
 
-    The account starts INACTIVE / pending review: the profile is created with the default
-    verification status, so the interpreter cannot receive requests until an admin approves them.
+    An email is required (certification results are sent to it). The account starts
+    INACTIVE / pending review: the profile is created with the default verification status,
+    so the interpreter cannot receive requests until an admin approves them.
     """
 
     role = get_user_model().Role.INTERPRETER
@@ -87,7 +111,8 @@ class InterpreterRegistrationSerializer(BaseRegistrationSerializer):
     specialisation = serializers.ChoiceField(
         choices=Specialisation.choices,
         required=False,
-        default=Specialisation.GENERAL,)
+        default=Specialisation.GENERAL,
+    )
 
     def create_profile(self, user, validated_data):
         InterpreterProfile.objects.create(
@@ -200,3 +225,60 @@ class DecisionReasonRequiredSerializer(serializers.Serializer):
         max_length=2000,
         help_text="Shown to the interpreter (for a rejection) and kept in the audit log.",
     )
+
+
+# ---- V2-021 availability schedule (new) ----
+
+
+class WeekQuerySerializer(serializers.Serializer):
+    """The ?week_start= value. Any date inside the week works (YYYY-MM-DD)."""
+
+    week_start = serializers.DateField(required=False)
+
+
+class DayScheduleSerializer(serializers.Serializer):
+    """One day on the schedule screen (weekday: 0 = Monday ... 6 = Sunday)."""
+
+    date = serializers.DateField()
+    weekday = serializers.IntegerField()
+    is_available = serializers.BooleanField()
+    start_time = serializers.TimeField(allow_null=True)
+    end_time = serializers.TimeField(allow_null=True)
+    source = serializers.ChoiceField(choices=["default", "exception"])
+
+
+class WeekScheduleSerializer(serializers.Serializer):
+    week_start = serializers.DateField()
+    week_end = serializers.DateField()
+    days = DayScheduleSerializer(many=True)
+
+
+class DayUpdateSerializer(serializers.Serializer):
+    """What the pencil card sends when the interpreter saves one day.
+
+    repeat_weekly False (the default): change only that date.
+    repeat_weekly True: change that weekday in the default week.
+    """
+
+    is_available = serializers.BooleanField()
+    start_time = serializers.TimeField(required=False, allow_null=True)
+    end_time = serializers.TimeField(required=False, allow_null=True)
+    repeat_weekly = serializers.BooleanField(default=False)
+
+    def validate(self, attrs):
+        if attrs["is_available"]:
+            start = attrs.get("start_time")
+            end = attrs.get("end_time")
+            if start is None or end is None:
+                raise serializers.ValidationError(
+                    "start_time and end_time are required when you are available."
+                )
+            if end <= start:
+                raise serializers.ValidationError(
+                    {"end_time": "End time must be after start time."}
+                )
+        else:
+            # Unavailable all day: no hours to store.
+            attrs["start_time"] = None
+            attrs["end_time"] = None
+        return attrs
