@@ -56,7 +56,6 @@ ROLE_PERMISSIONS = {
 }
 
 
-
 class CanAccessInterpreterDashboard(BasePermission):
     """Allow only active, verified interpreters to access their dashboard."""
 

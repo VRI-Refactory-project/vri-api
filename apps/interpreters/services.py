@@ -3,12 +3,6 @@ from django.utils import timezone
 
 from .models import InterpreterProfile, VerificationStatus
 
-from .models import (
-    InterpreterAvailability,
-    InterpreterProfile,
-    VerificationStatus,
-)
-
 
 def get_eligible_interpreters(
     specialisation_required=None,

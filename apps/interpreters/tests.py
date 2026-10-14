@@ -1,3 +1,4 @@
+
 import shutil
 import tempfile
 
@@ -37,11 +38,17 @@ class CertificationUploadTests(APITestCase):
 
     def pdf(self):
         return SimpleUploadedFile(
-            "cert.pdf", b"%PDF-1.4 test", content_type="application/pdf"
+            "cert.pdf",
+            b"%PDF-1.4 test",
+            content_type="application/pdf",
         )
 
     def test_requires_sign_in(self):
-        response = self.client.post(self.url, {"document": self.pdf()}, format="multipart")
+        response = self.client.post(
+            self.url,
+            {"document": self.pdf()},
+            format="multipart",
+        )
         self.assertEqual(response.status_code, 401)
 
     def test_stores_type_and_organisation(self):
@@ -55,15 +62,28 @@ class CertificationUploadTests(APITestCase):
             },
             format="multipart",
         )
+
         self.assertEqual(response.status_code, 201, response.content)
-        self.assertEqual(response.json()["certificate_type"], "Sign Language Interpreter")
+        self.assertEqual(
+            response.json()["certificate_type"],
+            "Sign Language Interpreter",
+        )
+
         cert = CertificationDocument.objects.get()
         self.assertEqual(cert.issuing_organisation, "UNAD")
-        self.assertEqual(cert.interpreter, InterpreterProfile.objects.get(user=self.user))
+        self.assertEqual(
+            cert.interpreter,
+            InterpreterProfile.objects.get(user=self.user),
+        )
 
     def test_type_and_organisation_are_required(self):
         self.client.force_authenticate(self.user)
-        response = self.client.post(self.url, {"document": self.pdf()}, format="multipart")
+        response = self.client.post(
+            self.url,
+            {"document": self.pdf()},
+            format="multipart",
+        )
+
         self.assertEqual(response.status_code, 400)
         self.assertIn("certificate_type", response.json())
         self.assertIn("issuing_organisation", response.json())
@@ -71,14 +91,24 @@ class CertificationUploadTests(APITestCase):
 
     def test_rejects_unsupported_file_types(self):
         self.client.force_authenticate(self.user)
-        bad = SimpleUploadedFile("cert.txt", b"hello", content_type="text/plain")
+        bad = SimpleUploadedFile(
+            "cert.txt",
+            b"hello",
+            content_type="text/plain",
+        )
         response = self.client.post(
             self.url,
-            {"document": bad, "certificate_type": "Other", "issuing_organisation": "UNAD"},
+            {
+                "document": bad,
+                "certificate_type": "Other",
+                "issuing_organisation": "UNAD",
+            },
             format="multipart",
         )
+
         self.assertEqual(response.status_code, 400)
         self.assertIn("document", response.json())
+
 
 class InterpreterAvailabilityTests(APITestCase):
     def setUp(self):
@@ -115,7 +145,9 @@ class InterpreterAvailabilityTests(APITestCase):
 
     def test_interpreter_can_create_availability(self):
         response = self.client.post(
-            self.list_url, self.valid_period(), format="json"
+            self.list_url,
+            self.valid_period(),
+            format="json",
         )
 
         self.assertEqual(response.status_code, 201, response.content)
@@ -126,7 +158,11 @@ class InterpreterAvailabilityTests(APITestCase):
 
     def test_interpreter_can_list_own_availability(self):
         self.client.force_authenticate(self.user)
-        self.client.post(self.list_url, self.valid_period(), format="json")
+        self.client.post(
+            self.list_url,
+            self.valid_period(),
+            format="json",
+        )
 
         response = self.client.get(self.list_url)
 
@@ -141,7 +177,9 @@ class InterpreterAvailabilityTests(APITestCase):
         period["end_at"] = period["start_at"]
 
         response = self.client.post(
-            self.list_url, period, format="json"
+            self.list_url,
+            period,
+            format="json",
         )
 
         self.assertEqual(response.status_code, 400)
@@ -162,7 +200,9 @@ class InterpreterAvailabilityTests(APITestCase):
 
     def test_rejects_overlapping_periods(self):
         response = self.client.post(
-            self.list_url, self.valid_period(), format="json"
+            self.list_url,
+            self.valid_period(),
+            format="json",
         )
         self.assertEqual(response.status_code, 201, response.content)
 
@@ -204,7 +244,9 @@ class InterpreterAvailabilityTests(APITestCase):
         self.client.force_authenticate(deaf_user)
 
         response = self.client.post(
-            self.list_url, self.valid_period(), format="json"
+            self.list_url,
+            self.valid_period(),
+            format="json",
         )
 
         self.assertEqual(response.status_code, 403)
@@ -219,7 +261,9 @@ class InterpreterAvailabilityTests(APITestCase):
 
     def test_interpreter_can_update_and_delete_own_period(self):
         response = self.client.post(
-            self.list_url, self.valid_period(), format="json"
+            self.list_url,
+            self.valid_period(),
+            format="json",
         )
         self.assertEqual(response.status_code, 201, response.content)
 

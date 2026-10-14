@@ -73,6 +73,7 @@ class InterpreterProfileSerializer(serializers.ModelSerializer):
             )
         return value
 
+
 class InterpreterAvailabilitySerializer(serializers.ModelSerializer):
     class Meta:
         model = InterpreterAvailability

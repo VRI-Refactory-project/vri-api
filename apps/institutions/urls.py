@@ -13,4 +13,3 @@ urlpatterns = [
     path("<int:pk>/approve/", ApproveInstitutionView.as_view(), name="institution-approve"),
     path("<int:pk>/reject/", RejectInstitutionView.as_view(), name="institution-reject"),
 ]
-
