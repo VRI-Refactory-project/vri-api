@@ -1,17 +1,169 @@
+import logging
+
+from django.conf import settings
+from django.core.mail import send_mail
+from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import RetrieveAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.permissions import IsApprovedInstitution, IsInstitutionAdmin, user_institution
+from apps.audit import services as audit
+from apps.audit.models import AuditLog
+from apps.core.permissions import (
+    IsAdminRole,
+    IsApprovedInstitution,
+    IsInstitutionAdmin,
+    user_institution,
+)
 
 from . import staff
-from .models import InstitutionStaff
-from .serializers import InstitutionSerializer, StaffCreateSerializer, StaffSerializer, StaffUpdateSerializer
+from .models import InstitutionProfile, InstitutionStaff, InstitutionStatus
+from .serializers import (
+    InstitutionSerializer,
+    StaffCreateSerializer,
+    StaffSerializer,
+    StaffUpdateSerializer,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class InstitutionApplicationSerializer(serializers.ModelSerializer):
+    administrator_name = serializers.CharField(source="user.full_name", read_only=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
+    phone_number = serializers.CharField(source="user.phone_number", read_only=True)
+
+    class Meta:
+        model = InstitutionProfile
+        fields = [
+            "id",
+            "organisation_name",
+            "organisation_type",
+            "organisation_type_other",
+            "status",
+            "administrator_name",
+            "email",
+            "phone_number",
+            "created_at",
+        ]
+
+
+def notify_institution(profile, decision):
+    """Attempt to email the institution administrator about the decision."""
+    if not profile.user.email:
+        return
+
+    approved = decision == InstitutionStatus.APPROVED
+    subject = (
+        "Institution account approved"
+        if approved
+        else "Institution account application rejected"
+    )
+    message = (
+        f"Hello {profile.user.full_name},\n\n"
+        f"Your application for {profile.organisation_name} "
+        f"has been {'approved' if approved else 'rejected'}.\n"
+    )
+    try:
+        send_mail(
+            subject,
+            message,
+            getattr(settings, "DEFAULT_FROM_EMAIL", None),
+            [profile.user.email],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception(
+            "Could not send institution decision notification; institution_id=%s",
+            profile.pk,
+        )
+
+
+class PendingInstitutionListView(APIView):
+    permission_classes = [IsAdminRole]
+
+    @extend_schema(
+        tags=["Institutions"],
+        summary="List institution applications awaiting approval",
+        responses={200: InstitutionApplicationSerializer(many=True)},
+    )
+    def get(self, request):
+        applications = InstitutionProfile.objects.filter(
+            status=InstitutionStatus.PENDING
+        ).select_related("user")
+        return Response(InstitutionApplicationSerializer(applications, many=True).data)
+
+
+class InstitutionDecisionView(APIView):
+    permission_classes = [IsAdminRole]
+    decision = None
+    audit_event = None
+
+    def post(self, request, pk):
+        with transaction.atomic():
+            profile = get_object_or_404(
+                InstitutionProfile.objects.select_for_update().select_related("user"),
+                pk=pk,
+            )
+
+            if profile.status != InstitutionStatus.PENDING:
+                raise ValidationError(
+                    {
+                        "status": [
+                            "Only pending institution applications can be approved or rejected."
+                        ]
+                    }
+                )
+
+            profile.status = self.decision
+            profile.updated_at = timezone.now()
+            profile.save(update_fields=["status", "updated_at"])
+
+            audit.record(self.audit_event, request.user, request)
+
+            transaction.on_commit(lambda: notify_institution(profile, self.decision))
+
+        return Response(
+            InstitutionApplicationSerializer(profile).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class ApproveInstitutionView(InstitutionDecisionView):
+    decision = InstitutionStatus.APPROVED
+    audit_event = AuditLog.Event.INSTITUTION_APPROVED
+
+    @extend_schema(
+        tags=["Institutions"],
+        summary="Approve a pending institution application",
+        request=None,
+        responses={200: InstitutionApplicationSerializer},
+    )
+    def post(self, request, pk):
+        return super().post(request, pk)
+
+
+class RejectInstitutionView(InstitutionDecisionView):
+    decision = InstitutionStatus.REJECTED
+    audit_event = AuditLog.Event.INSTITUTION_REJECTED
+
+    @extend_schema(
+        tags=["Institutions"],
+        summary="Reject a pending institution application",
+        request=None,
+        responses={200: InstitutionApplicationSerializer},
+    )
+    def post(self, request, pk):
+        return super().post(request, pk)
+
+
+# --- V2-006: staff accounts (institution administrators only) & My Institution ---
 
 
 @extend_schema(
@@ -19,8 +171,10 @@ from .serializers import InstitutionSerializer, StaffCreateSerializer, StaffSeri
     summary="My institution",
     responses={
         200: InstitutionSerializer,
-        403: OpenApiResponse(description="Not an institution, or the institution is pending or rejected "
-                                         "(code: institution_pending / institution_rejected)."),
+        403: OpenApiResponse(
+            description="Not an institution, or the institution is pending or rejected "
+            "(code: institution_pending / institution_rejected)."
+        ),
     },
 )
 class MyInstitutionView(RetrieveAPIView):
@@ -33,13 +187,14 @@ class MyInstitutionView(RetrieveAPIView):
         return user_institution(self.request.user)
 
 
-# --- V2-006: staff accounts (institution administrators only) ----------------------------------------
-
-
 STAFF_ERRORS = {
-    403: OpenApiResponse(description="Not an administrator of an approved institution "
-                                     "(code: institution_admin_required / institution_pending / ...)."),
-    404: OpenApiResponse(description="No staff member with this id in your institution."),
+    403: OpenApiResponse(
+        description="Not an administrator of an approved institution "
+        "(code: institution_admin_required / institution_pending / ...)."
+    ),
+    404: OpenApiResponse(
+        description="No staff member with this id in your institution."
+    ),
 }
 
 
@@ -49,7 +204,9 @@ class InstitutionStaffMixin:
     permission_classes = [IsInstitutionAdmin]
 
     def staff_queryset(self):
-        return InstitutionStaff.objects.filter(institution=user_institution(self.request.user)).select_related("user")
+        return InstitutionStaff.objects.filter(
+            institution=user_institution(self.request.user)
+        ).select_related("user")
 
     def get_membership(self, pk):
         return get_object_or_404(self.staff_queryset(), pk=pk)
@@ -61,8 +218,14 @@ class StaffListCreateView(InstitutionStaffMixin, APIView):
     @extend_schema(
         tags=["Institution Staff"],
         summary="List my institution's staff",
-        parameters=[OpenApiParameter("status", OpenApiTypes.STR, enum=["ACTIVE", "REVOKED"],
-                                     description="Only active or only revoked staff.")],
+        parameters=[
+            OpenApiParameter(
+                "status",
+                OpenApiTypes.STR,
+                enum=["ACTIVE", "REVOKED"],
+                description="Only active or only revoked staff.",
+            )
+        ],
         responses={200: StaffSerializer(many=True), **STAFF_ERRORS},
     )
     def get(self, request):
@@ -82,32 +245,44 @@ class StaffListCreateView(InstitutionStaffMixin, APIView):
         request=StaffCreateSerializer,
         responses={
             201: StaffSerializer,
-            400: OpenApiResponse(description="Invalid or duplicate details (same rules as registration)."),
-            503: OpenApiResponse(description="The login-details email could not be sent; nothing was created."),
+            400: OpenApiResponse(
+                description="Invalid or duplicate details (same rules as registration)."
+            ),
+            503: OpenApiResponse(
+                description="The login-details email could not be sent; nothing was created."
+            ),
             **STAFF_ERRORS,
         },
     )
     def post(self, request):
         serializer = StaffCreateSerializer(
-            data=request.data, context={"request": request, "institution": user_institution(request.user)},
+            data=request.data,
+            context={"request": request, "institution": user_institution(request.user)},
         )
         serializer.is_valid(raise_exception=True)
         try:
             membership = staff.create_staff(serializer, request.user, request)
         except staff.StaffEmailError:
             return Response(
-                {"detail": "The login details could not be emailed, so the staff account was not created. "
-                           "Please try again later."},
+                {
+                    "detail": "The login details could not be emailed, so the staff account was not created. "
+                    "Please try again later."
+                },
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
-        return Response(StaffSerializer(membership).data, status=status.HTTP_201_CREATED)
+        return Response(
+            StaffSerializer(membership).data, status=status.HTTP_201_CREATED
+        )
 
 
 class StaffDetailView(InstitutionStaffMixin, APIView):
     """View or change one staff member: name, job title and role (ADMIN or STAFF)."""
 
-    @extend_schema(tags=["Institution Staff"], summary="Staff member details",
-                   responses={200: StaffSerializer, **STAFF_ERRORS})
+    @extend_schema(
+        tags=["Institution Staff"],
+        summary="Staff member details",
+        responses={200: StaffSerializer, **STAFF_ERRORS},
+    )
     def get(self, request, pk):
         return Response(StaffSerializer(self.get_membership(pk)).data)
 
@@ -115,9 +290,13 @@ class StaffDetailView(InstitutionStaffMixin, APIView):
         tags=["Institution Staff"],
         summary="Change a staff member's name, job title or role",
         request=StaffUpdateSerializer,
-        responses={200: StaffSerializer,
-                   400: OpenApiResponse(description="Invalid data, or it would leave no active administrator."),
-                   **STAFF_ERRORS},
+        responses={
+            200: StaffSerializer,
+            400: OpenApiResponse(
+                description="Invalid data, or it would leave no active administrator."
+            ),
+            **STAFF_ERRORS,
+        },
     )
     def patch(self, request, pk):
         membership = self.get_membership(pk)
@@ -135,9 +314,13 @@ class StaffRevokeView(InstitutionStaffMixin, APIView):
         tags=["Institution Staff"],
         summary="Revoke a staff member's access (takes effect immediately)",
         request=None,
-        responses={200: StaffSerializer,
-                   400: OpenApiResponse(description="Your own access, or the last active administrator."),
-                   **STAFF_ERRORS},
+        responses={
+            200: StaffSerializer,
+            400: OpenApiResponse(
+                description="Your own access, or the last active administrator."
+            ),
+            **STAFF_ERRORS,
+        },
     )
     def post(self, request, pk):
         membership = staff.revoke_staff(self.get_membership(pk), request.user, request)
@@ -147,8 +330,14 @@ class StaffRevokeView(InstitutionStaffMixin, APIView):
 class StaffReinstateView(InstitutionStaffMixin, APIView):
     """Give a revoked staff member access again (same password and role as before)."""
 
-    @extend_schema(tags=["Institution Staff"], summary="Reinstate a revoked staff member",
-                   request=None, responses={200: StaffSerializer, **STAFF_ERRORS})
+    @extend_schema(
+        tags=["Institution Staff"],
+        summary="Reinstate a revoked staff member",
+        request=None,
+        responses={200: StaffSerializer, **STAFF_ERRORS},
+    )
     def post(self, request, pk):
-        membership = staff.reinstate_staff(self.get_membership(pk), request.user, request)
+        membership = staff.reinstate_staff(
+            self.get_membership(pk), request.user, request
+        )
         return Response(StaffSerializer(membership).data)

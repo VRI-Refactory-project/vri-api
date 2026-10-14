@@ -15,7 +15,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.permissions import IsAdminRole
+from apps.core.permissions import IsAdminRole, IsInterpreter
 
 from . import verification
 from .availability import (
@@ -27,6 +27,7 @@ from .availability import (
 from .models import (
     CertificationDocument,
     DateException,
+    InterpreterAvailability,
     InterpreterProfile,
     VerificationDecision,
     VerificationStatus,
@@ -40,6 +41,7 @@ from .serializers import (
     DayUpdateSerializer,
     DecisionReasonOptionalSerializer,
     DecisionReasonRequiredSerializer,
+    InterpreterAvailabilitySerializer,
     InterpreterProfileSerializer,
     ManageInterpreterDetailSerializer,
     ManageInterpreterListSerializer,
@@ -71,19 +73,23 @@ class CertificationUploadView(generics.CreateAPIView):
         document_name = (
             uploaded_file.name if uploaded_file else "Certification Document"
         )
-        serializer.save(interpreter=profile, document_name=document_name)
+        serializer.save(
+            interpreter=profile,
+            document_name=document_name,
+        )
 
 
 @extend_schema(
     tags=["Interpreter Profile Management"],
     summary="Get or update current interpreter profile",
     description=(
-        "Retrieve or update profile details for the authenticated interpreter (V2-068).\n\n"
+        "Retrieve or update profile details for the authenticated interpreter "
+        "(V2-068).\n\n"
         "**Fields supported:**\n"
         "- `specialisation`: Dropdown choice (`GENERAL`, `MEDICAL`, `LEGAL`, `OTHER`).\n"
-        "- `specialisation_other`: Custom text required when `specialisation` is set to `OTHER`.\n"
-        "- `sign_languages`: List of sign language preferences (e.g. `['Ugandan Sign Language']`).\n"
-        "- `is_available`: Boolean status toggle (requires `APPROVED` verification status).\n"
+        "- `specialisation_other`: Custom text required when `specialisation` is `OTHER`.\n"
+        "- `sign_languages`: List of sign language preferences.\n"
+        "- `is_available`: Boolean status toggle requiring approved verification.\n"
         "- `working_hours_schedule`: JSON schedule definition."
     ),
 )
@@ -96,18 +102,60 @@ class InterpreterProfileDetailView(generics.RetrieveUpdateAPIView):
         return profile
 
 
+@extend_schema(summary="List or create interpreter availability periods")
+class InterpreterAvailabilityListCreateView(generics.ListCreateAPIView):
+    permission_classes = (permissions.IsAuthenticated, IsInterpreter)
+    serializer_class = InterpreterAvailabilitySerializer
+
+    def get_profile(self):
+        profile, _ = InterpreterProfile.objects.get_or_create(user=self.request.user)
+        return profile
+
+    def get_queryset(self):
+        return InterpreterAvailability.objects.filter(interpreter=self.get_profile())
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["availability_profile"] = self.get_profile()
+        return context
+
+    def perform_create(self, serializer):
+        serializer.save(interpreter=self.get_profile())
+
+
+@extend_schema(summary="Retrieve, update or delete an availability period")
+class InterpreterAvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = (permissions.IsAuthenticated, IsInterpreter)
+    serializer_class = InterpreterAvailabilitySerializer
+
+    def get_queryset(self):
+        return InterpreterAvailability.objects.filter(
+            interpreter__user=self.request.user
+        )
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        profile, _ = InterpreterProfile.objects.get_or_create(user=self.request.user)
+        context["availability_profile"] = profile
+        return context
+
+
 # --- V2-045: admin verification (/api/v1/manage/interpreters/) -------------------------------
 
 
 def manageable_interpreters():
     """Interpreter accounts only: other roles that happen to have a profile never show up for review."""
-    return InterpreterProfile.objects.filter(user__role=User.Role.INTERPRETER).select_related("user")
+    return InterpreterProfile.objects.filter(
+        user__role=User.Role.INTERPRETER
+    ).select_related("user")
 
 
 def review_queryset():
     """Everything the review page shows, fetched in a few queries."""
-    return manageable_interpreters().annotate(certification_count=Count("certifications")).prefetch_related(
-        "certifications", "decisions__admin"
+    return (
+        manageable_interpreters()
+        .annotate(certification_count=Count("certifications"))
+        .prefetch_related("certifications", "decisions__admin")
     )
 
 
@@ -116,7 +164,10 @@ def review_queryset():
     summary="Interpreter verification queue",
     parameters=[
         OpenApiParameter(
-            "status", OpenApiTypes.STR, OpenApiParameter.QUERY, enum=VerificationStatus.values,
+            "status",
+            OpenApiTypes.STR,
+            OpenApiParameter.QUERY,
+            enum=VerificationStatus.values,
             description="Only interpreters with this status, e.g. INACTIVE for the pending-review queue.",
         )
     ],
@@ -128,16 +179,27 @@ class ManageInterpreterListView(generics.ListAPIView):
     serializer_class = ManageInterpreterListSerializer
 
     def get_queryset(self):
-        queryset = manageable_interpreters().annotate(certification_count=Count("certifications"))
+        queryset = manageable_interpreters().annotate(
+            certification_count=Count("certifications")
+        )
         status = self.request.query_params.get("status")
         if status:
             if status not in VerificationStatus.values:
-                raise ValidationError({"status": [f"Choose one of: {', '.join(VerificationStatus.values)}."]})
+                raise ValidationError(
+                    {
+                        "status": [
+                            f"Choose one of: {', '.join(VerificationStatus.values)}."
+                        ]
+                    }
+                )
             queryset = queryset.filter(verification_status=status)
         return queryset.order_by("created_at", "id")
 
 
-@extend_schema(tags=["Manage"], summary="Interpreter review details (certificates and decision history)")
+@extend_schema(
+    tags=["Manage"],
+    summary="Interpreter review details (certificates and decision history)",
+)
 class ManageInterpreterDetailView(generics.RetrieveAPIView):
     permission_classes = [IsAdminRole]
     serializer_class = ManageInterpreterDetailSerializer
@@ -156,12 +218,17 @@ class CertificationFileView(APIView):
         summary="Download a certification document",
         responses={
             (200, "application/octet-stream"): OpenApiTypes.BINARY,
-            404: OpenApiResponse(description="No such certificate for this interpreter, or the file is missing."),
+            404: OpenApiResponse(
+                description="No such certificate for this interpreter, or the file is missing."
+            ),
         },
     )
     def get(self, request, pk, cert_id):
         cert = get_object_or_404(
-            CertificationDocument.objects.filter(interpreter__in=manageable_interpreters()), pk=cert_id,
+            CertificationDocument.objects.filter(
+                interpreter__in=manageable_interpreters()
+            ),
+            pk=cert_id,
             interpreter_id=pk,
         )
         try:
@@ -185,13 +252,21 @@ class ManageInterpreterDecisionView(APIView):
         profile = get_object_or_404(manageable_interpreters(), pk=pk)
         body = self.serializer_class(data=request.data)
         body.is_valid(raise_exception=True)
-        verification.decide(profile.pk, self.action, request.user, body.validated_data["reason"])
+        verification.decide(
+            profile.pk, self.action, request.user, body.validated_data["reason"]
+        )
         updated = review_queryset().get(pk=profile.pk)
-        return Response(ManageInterpreterDetailSerializer(updated, context={"request": request}).data)
+        return Response(
+            ManageInterpreterDetailSerializer(
+                updated, context={"request": request}
+            ).data
+        )
 
 
 DECISION_ERRORS = {
-    400: OpenApiResponse(description="Not allowed from the interpreter's current status, or a field is missing."),
+    400: OpenApiResponse(
+        description="Not allowed from the interpreter's current status, or a field is missing."
+    ),
     404: OpenApiResponse(description="No interpreter with this id."),
 }
 

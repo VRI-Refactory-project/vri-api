@@ -6,6 +6,7 @@ from apps.accounts.serializers import BaseRegistrationSerializer
 
 from .models import (
     CertificationDocument,
+    InterpreterAvailability,
     InterpreterProfile,
     Specialisation,
     VerificationDecision,
@@ -95,6 +96,54 @@ class InterpreterProfileSerializer(serializers.ModelSerializer):
                     )
                 }
             )
+        return attrs
+
+
+class InterpreterAvailabilitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InterpreterAvailability
+        fields = (
+            "id",
+            "start_at",
+            "end_at",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "created_at", "updated_at")
+
+    def validate(self, attrs):
+        start_at = attrs.get(
+            "start_at",
+            self.instance.start_at if self.instance else None,
+        )
+        end_at = attrs.get(
+            "end_at",
+            self.instance.end_at if self.instance else None,
+        )
+
+        if start_at and end_at and end_at <= start_at:
+            raise serializers.ValidationError({
+                "end_at": "End time must be later than start time."
+            })
+
+        if start_at and end_at:
+            profile = self.context["availability_profile"]
+            overlapping = InterpreterAvailability.objects.filter(
+                interpreter=profile,
+                start_at__lt=end_at,
+                end_at__gt=start_at,
+            )
+
+            if self.instance:
+                overlapping = overlapping.exclude(pk=self.instance.pk)
+
+            if overlapping.exists():
+                raise serializers.ValidationError({
+                    "non_field_errors": [
+                        "This period overlaps an existing availability period."
+                    ]
+                })
+
         return attrs
 
 

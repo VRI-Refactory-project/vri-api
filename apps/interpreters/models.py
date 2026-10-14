@@ -62,14 +62,46 @@ class InterpreterProfile(models.Model):
     class Meta:
         constraints = [
             models.CheckConstraint(
-                check=models.Q(is_available=False)
-                | models.Q(verification_status=VerificationStatus.APPROVED),
+                check=(
+                    models.Q(is_available=False)
+                    | models.Q(verification_status=VerificationStatus.APPROVED)
+                ),
                 name="available_only_if_approved",
             ),
         ]
 
     def __str__(self):
         return f"{self.user.full_name} ({self.get_verification_status_display()})"
+
+
+class InterpreterAvailability(models.Model):
+    interpreter = models.ForeignKey(
+        InterpreterProfile,
+        on_delete=models.CASCADE,
+        related_name="availability_periods",
+    )
+    start_at = models.DateTimeField()
+    end_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["start_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(end_at__gt=models.F("start_at")),
+                name="availability_end_after_start",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["interpreter", "start_at", "end_at"],
+                name="interp_avail_period_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.interpreter.user.full_name}: {self.start_at} - {self.end_at}"
 
 
 class WeeklyAvailability(models.Model):
@@ -146,7 +178,9 @@ class CertificationDocument(models.Model):
         ordering = ["-uploaded_at"]
 
     def __str__(self):
-        return f"Certification: {self.document_name} - {self.interpreter.user.full_name}"
+        return (
+            f"Certification: {self.document_name} - {self.interpreter.user.full_name}"
+        )
 
 
 class VerificationDecision(models.Model):
@@ -174,7 +208,9 @@ class VerificationDecision(models.Model):
     )
     action = models.CharField(max_length=20, choices=Action.choices)
     reason = models.TextField(blank=True, default="")
-    previous_status = models.CharField(max_length=20, choices=VerificationStatus.choices)
+    previous_status = models.CharField(
+        max_length=20, choices=VerificationStatus.choices
+    )
     new_status = models.CharField(max_length=20, choices=VerificationStatus.choices)
     created_at = models.DateTimeField(auto_now_add=True)
 
