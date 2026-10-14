@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.urls import reverse
 from rest_framework import serializers
 
 from apps.accounts.serializers import BaseRegistrationSerializer
@@ -7,6 +8,7 @@ from .models import (
     CertificationDocument,
     InterpreterProfile,
     Specialisation,
+    VerificationDecision,
     VerificationStatus,
 )
 
@@ -117,6 +119,112 @@ class InterpreterRegistrationSerializer(BaseRegistrationSerializer):
             user=user,
             specialisation=validated_data["specialisation"],
         )
+
+
+# --- V2-045: admin verification (read side) ---
+
+
+class VerificationDecisionSerializer(serializers.ModelSerializer):
+    admin_name = serializers.CharField(source="admin.full_name", read_only=True)
+
+    class Meta:
+        model = VerificationDecision
+        fields = (
+            "id",
+            "action",
+            "reason",
+            "previous_status",
+            "new_status",
+            "admin",
+            "admin_name",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
+class ManageCertificationSerializer(serializers.ModelSerializer):
+    """A certificate as an admin sees it. `file_url` is the protected download endpoint, never a public file path."""
+
+    file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CertificationDocument
+        fields = (
+            "id",
+            "document_name",
+            "certificate_type",
+            "issuing_organisation",
+            "uploaded_at",
+            "rejection_reason",
+            "file_url",
+        )
+        read_only_fields = fields
+
+    def get_file_url(self, obj) -> str:
+        url = reverse(
+            "manage-interpreters:certification-file",
+            args=[obj.interpreter_id, obj.pk],
+        )
+        request = self.context.get("request")
+        return request.build_absolute_uri(url) if request else url
+
+
+class ManageInterpreterListSerializer(serializers.ModelSerializer):
+    """One row of the verification queue."""
+
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
+    full_name = serializers.CharField(source="user.full_name", read_only=True)
+    phone_number = serializers.CharField(
+        source="user.phone_number",
+        read_only=True,
+    )
+    email = serializers.EmailField(source="user.email", read_only=True)
+    certification_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = InterpreterProfile
+        fields = (
+            "id",
+            "user_id",
+            "full_name",
+            "phone_number",
+            "email",
+            "verification_status",
+            "specialisation",
+            "certification_count",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
+class ManageInterpreterDetailSerializer(ManageInterpreterListSerializer):
+    """The review page: the interpreter, their certificates and every decision made so far."""
+
+    certifications = ManageCertificationSerializer(many=True, read_only=True)
+    decisions = VerificationDecisionSerializer(many=True, read_only=True)
+
+    class Meta(ManageInterpreterListSerializer.Meta):
+        fields = (
+            *ManageInterpreterListSerializer.Meta.fields,
+            "is_available",
+            "certifications",
+            "decisions",
+        )
+        read_only_fields = fields
+
+
+# --- V2-045: admin verification (decisions) ---------------------------------------------------
+
+
+class DecisionReasonOptionalSerializer(serializers.Serializer):
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=2000, default="")
+
+
+class DecisionReasonRequiredSerializer(serializers.Serializer):
+    reason = serializers.CharField(
+        max_length=2000,
+        help_text="Shown to the interpreter (for a rejection) and kept in the audit log.",
+    )
 
 
 # ---- V2-021 availability schedule (new) ----
