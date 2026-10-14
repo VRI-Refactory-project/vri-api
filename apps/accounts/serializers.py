@@ -7,6 +7,8 @@ from phonenumber_field.serializerfields import PhoneNumberField
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from apps.core.permissions import user_institution
+
 from . import recovery
 from .models import RecoveryCode
 from .utils import find_user_by_identifier
@@ -24,11 +26,19 @@ class UserSerializer(serializers.ModelSerializer):
     """Public view of a user. Reuse this inside role-specific profile responses."""
 
     phone_number = serializers.CharField(read_only=True)
+    institution_status = serializers.SerializerMethodField(
+        help_text="Institution accounts only: PENDING, APPROVED or REJECTED. Null for every other role."
+    )
 
     class Meta:
         model = User
-        fields = ["id", "full_name", "phone_number", "email", "role", "must_change_password", "date_joined"]
+        fields = ["id", "full_name", "phone_number", "email", "role", "must_change_password", "date_joined",
+                  "institution_status"]
         read_only_fields = fields
+
+    def get_institution_status(self, user) -> str | None:
+        institution = user_institution(user) if user.role == User.Role.INSTITUTION else None
+        return institution.status if institution else None
 
 
 class BaseRegistrationSerializer(serializers.Serializer):
