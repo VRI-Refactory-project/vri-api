@@ -424,3 +424,186 @@ class StatusApiTests(APITestCase):
         self.switch(False)  # busy, no new requests
 
         self.assertNotIn(self.interpreter, offered())  # very next routing call
+
+
+EXCEPTIONS_URL = f"{URL}exceptions/"
+
+
+def exception_url(day):
+    return f"{EXCEPTIONS_URL}{day.isoformat()}/"
+
+
+class ExceptionsApiTests(APITestCase):
+    """The Exceptions calendar: list a month's one-off dates, remove one."""
+
+    def setUp(self):
+        self.interpreter = make_interpreter()
+        self.client.force_authenticate(self.interpreter.user)
+        self.monday = next_monday()
+
+    # List: the dots on the calendar
+    def test_lists_only_the_requested_month(self):
+        DateException.objects.create(
+            interpreter=self.interpreter, date=date(2026, 10, 12), is_available=False
+        )
+        DateException.objects.create(
+            interpreter=self.interpreter,
+            date=date(2026, 10, 25),
+            is_available=True,
+            start_time=time(10, 0),
+            end_time=time(12, 0),
+        )
+        DateException.objects.create(
+            interpreter=self.interpreter, date=date(2026, 11, 2), is_available=False
+        )
+
+        response = self.client.get(EXCEPTIONS_URL, {"month": "2026-10"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["month"], "2026-10")
+        rows = response.data["exceptions"]
+        self.assertEqual([row["date"] for row in rows], ["2026-10-12", "2026-10-25"])
+        self.assertEqual(rows[0]["kind"], "unavailable")
+        self.assertEqual(rows[1]["kind"], "modified_hours")
+        self.assertEqual(rows[1]["start_time"], "10:00:00")
+        self.assertEqual(rows[1]["end_time"], "12:00:00")
+
+    def test_defaults_to_the_current_month(self):
+        today = timezone.localdate()
+        DateException.objects.create(
+            interpreter=self.interpreter, date=today, is_available=False
+        )
+
+        response = self.client.get(EXCEPTIONS_URL)
+
+        self.assertEqual(response.data["month"], today.strftime("%Y-%m"))
+        self.assertEqual(
+            [row["date"] for row in response.data["exceptions"]], [today.isoformat()]
+        )
+
+    def test_empty_month_gives_an_empty_list(self):
+        response = self.client.get(EXCEPTIONS_URL, {"month": "2030-01"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["exceptions"], [])
+
+    def test_bad_month_is_rejected(self):
+        for bad_month in ("2026-13", "2026-1", "nope"):
+            with self.subTest(month=bad_month):
+                response = self.client.get(EXCEPTIONS_URL, {"month": bad_month})
+
+                self.assertEqual(response.status_code, 400)
+
+    def test_does_not_show_another_interpreters_dates(self):
+        other = make_interpreter(phone_number="+256700000005")
+        DateException.objects.create(
+            interpreter=other, date=date(2026, 10, 12), is_available=False
+        )
+
+        response = self.client.get(EXCEPTIONS_URL, {"month": "2026-10"})
+
+        self.assertEqual(response.data["exceptions"], [])
+
+    def test_a_date_saved_with_save_day_appears_in_the_list(self):
+        self.client.patch(day_url(self.monday), {"is_available": False}, format="json")
+
+        month = f"{self.monday.year}-{self.monday.month:02d}"
+        response = self.client.get(EXCEPTIONS_URL, {"month": month})
+
+        rows = response.data["exceptions"]
+        self.assertIn(self.monday.isoformat(), [row["date"] for row in rows])
+        self.assertEqual(rows[0]["kind"], "unavailable")
+
+    # Remove: the "Remove" link
+    def test_remove_deletes_the_change_and_keeps_the_default_week(self):
+        DateException.objects.create(
+            interpreter=self.interpreter, date=self.monday, is_available=False
+        )
+
+        response = self.client.delete(exception_url(self.monday))
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(DateException.objects.exists())
+        self.assertTrue(
+            WeeklyAvailability.objects.filter(
+                interpreter=self.interpreter, weekday=0
+            ).exists()
+        )
+        week = self.client.get(URL, {"week_start": self.monday.isoformat()})
+        self.assertTrue(week.data["days"][0]["is_available"])
+        self.assertEqual(week.data["days"][0]["source"], "default")
+
+    def test_remove_with_nothing_saved_is_404(self):
+        response = self.client.delete(exception_url(self.monday))
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_remove_a_past_date_is_rejected(self):
+        yesterday = timezone.localdate() - timedelta(days=1)
+        DateException.objects.create(
+            interpreter=self.interpreter, date=yesterday, is_available=False
+        )
+
+        response = self.client.delete(exception_url(yesterday))
+
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(DateException.objects.filter(date=yesterday).exists())
+
+    def test_remove_with_a_bad_date_is_rejected(self):
+        response = self.client.delete(f"{EXCEPTIONS_URL}not-a-date/")
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_cannot_remove_another_interpreters_change(self):
+        other = make_interpreter(phone_number="+256700000005")
+        DateException.objects.create(
+            interpreter=other, date=self.monday, is_available=False
+        )
+
+        response = self.client.delete(exception_url(self.monday))
+
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(DateException.objects.filter(interpreter=other).exists())
+
+    # Who can call it
+    def test_login_required(self):
+        self.client.force_authenticate(None)
+
+        listing = self.client.get(EXCEPTIONS_URL)
+        removing = self.client.delete(exception_url(self.monday))
+
+        self.assertIn(listing.status_code, (401, 403))
+        self.assertIn(removing.status_code, (401, 403))
+
+    def test_only_interpreters_allowed(self):
+        deaf_user = get_user_model().objects.create_user(
+            phone_number="+256700000006",
+            password="Pass1234!",
+            full_name="Deaf User",
+            role="deaf_hoh",
+        )
+        self.client.force_authenticate(deaf_user)
+
+        listing = self.client.get(EXCEPTIONS_URL)
+        removing = self.client.delete(exception_url(self.monday))
+
+        self.assertEqual(listing.status_code, 403)
+        self.assertEqual(removing.status_code, 403)
+
+    # Removing a change puts her back in routing right away
+    def test_removing_the_change_puts_her_back_in_routing(self):
+        monday_10am = datetime.combine(self.monday, time(10, 0), tzinfo=EAT)
+        DateException.objects.create(
+            interpreter=self.interpreter, date=self.monday, is_available=False
+        )
+
+        def offered():
+            return get_eligible_interpreters(
+                specialisation_required=Specialisation.MEDICAL, now=monday_10am
+            )
+
+        self.assertNotIn(self.interpreter, offered())
+
+        self.client.delete(exception_url(self.monday))
+
+        self.assertIn(self.interpreter, offered())  # very next routing call

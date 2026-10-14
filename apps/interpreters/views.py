@@ -5,12 +5,17 @@ from django.db import transaction
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, permissions
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .availability import monday_of, unavailable_reason, week_schedule
+from .availability import (
+    monday_of,
+    month_exceptions,
+    unavailable_reason,
+    week_schedule,
+)
 from .models import DateException, InterpreterProfile, WeeklyAvailability
 from .serializers import (
     AvailabilityStatusSerializer,
@@ -19,6 +24,8 @@ from .serializers import (
     DayScheduleSerializer,
     DayUpdateSerializer,
     InterpreterProfileSerializer,
+    MonthExceptionsSerializer,
+    MonthQuerySerializer,
     WeekQuerySerializer,
     WeekScheduleSerializer,
 )
@@ -79,6 +86,19 @@ def get_interpreter_profile(user):
     return profile
 
 
+def parse_editable_date(value):
+    """A YYYY-MM-DD date from the URL. Past dates cannot be changed."""
+    try:
+        the_date = date.fromisoformat(value)
+    except ValueError:
+        raise ValidationError({"date": "Use the format YYYY-MM-DD."}) from None
+    if the_date < timezone.localdate():
+        raise ValidationError(
+            {"date": "You cannot change availability for a past date."}
+        )
+    return the_date
+
+
 @extend_schema(
     tags=["Interpreter Availability"],
     summary="Get the availability schedule for one week",
@@ -130,14 +150,7 @@ class DayAvailabilityView(APIView):
     def patch(self, request, day):
         profile = get_interpreter_profile(request.user)
 
-        try:
-            the_date = date.fromisoformat(day)
-        except ValueError:
-            raise ValidationError({"date": "Use the format YYYY-MM-DD."}) from None
-        if the_date < timezone.localdate():
-            raise ValidationError(
-                {"date": "You cannot change availability for a past date."}
-            )
+        the_date = parse_editable_date(day)
 
         serializer = DayUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -227,3 +240,62 @@ class AvailabilityStatusView(APIView):
         profile.is_available = serializer.validated_data["is_available"]
         profile.save(update_fields=["is_available", "updated_at"])
         return Response(status_payload(profile))
+
+
+@extend_schema(
+    tags=["Interpreter Availability"],
+    summary="List the one-off date changes for a month",
+    description=(
+        "The dots on the Exceptions calendar. month is YYYY-MM (default: this month). "
+        "kind is 'unavailable' (unavailable all day) or 'modified_hours'. "
+        "To add or edit a date, use PATCH .../days/<date>/ with repeat_weekly false."
+    ),
+    parameters=[MonthQuerySerializer],
+    responses=MonthExceptionsSerializer,
+)
+class ExceptionListView(APIView):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get(self, request):
+        profile = get_interpreter_profile(request.user)
+
+        query = MonthQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+
+        month = query.validated_data.get("month")
+        if month:
+            year, number = (int(part) for part in month.split("-"))
+            first_day = date(year, number, 1)
+        else:
+            first_day = timezone.localdate().replace(day=1)
+
+        data = {
+            "month": first_day.strftime("%Y-%m"),
+            "exceptions": month_exceptions(profile, first_day),
+        }
+        return Response(MonthExceptionsSerializer(data).data)
+
+
+@extend_schema(
+    tags=["Interpreter Availability"],
+    summary="Remove the change for one date",
+    description=(
+        "The Remove link on the Exceptions card. That date goes back to the default "
+        "week. Past dates cannot be changed. Returns 404 if no change is saved for "
+        "that date."
+    ),
+    responses={204: None},
+)
+class ExceptionDetailView(APIView):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def delete(self, request, day):
+        profile = get_interpreter_profile(request.user)
+        the_date = parse_editable_date(day)
+
+        deleted, _ = DateException.objects.filter(
+            interpreter=profile, date=the_date
+        ).delete()
+        if not deleted:
+            raise NotFound("No change is saved for this date.")
+        return Response(status=204)
