@@ -1,4 +1,5 @@
 from datetime import date, datetime, time, timedelta
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
@@ -6,13 +7,22 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from .availability import monday_of
-from .models import DateException, Specialisation, WeeklyAvailability
+from .models import (
+    DateException,
+    Specialisation,
+    VerificationStatus,
+    WeeklyAvailability,
+)
 from .services import get_eligible_interpreters
 from .test_availability import make_interpreter
 
 URL = "/api/v1/interpreters/me/availability/"
 MONDAY = date(2026, 10, 12)  # 12 Oct 2026 is a Monday
 EAT = ZoneInfo("Africa/Kampala")
+STATUS_URL = f"{URL}status/"
+MONDAY_10AM = datetime(2026, 10, 12, 10, 0, tzinfo=EAT)
+MONDAY_8PM = datetime(2026, 10, 12, 20, 0, tzinfo=EAT)
+SATURDAY_10AM = datetime(2026, 10, 17, 10, 0, tzinfo=EAT)
 
 
 def day_url(day):
@@ -282,5 +292,135 @@ class SaveDayApiTests(APITestCase):
         self.assertIn(self.interpreter, offered())
 
         self.save(self.monday, is_available=False)  # an emergency on that Monday
+
+        self.assertNotIn(self.interpreter, offered())  # very next routing call
+
+
+class StatusApiTests(APITestCase):
+    """The dashboard control: GET the status, PATCH the switch."""
+
+    def setUp(self):
+        self.interpreter = make_interpreter()  # default week: Mon-Fri 08:00-17:00
+        self.client.force_authenticate(self.interpreter.user)
+
+    def get_status(self, now):
+        """GET the status while pretending it is `now`."""
+        with patch("django.utils.timezone.localtime", return_value=now):
+            return self.client.get(STATUS_URL)
+
+    def switch(self, is_available):
+        return self.client.patch(
+            STATUS_URL, {"is_available": is_available}, format="json"
+        )
+
+    # GET: what the dashboard shows
+    def test_available_now_inside_hours(self):
+        response = self.get_status(MONDAY_10AM)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            dict(response.data),
+            {"is_available": True, "available_now": True, "reason": None},
+        )
+
+    def test_outside_hours(self):
+        response = self.get_status(MONDAY_8PM)
+
+        self.assertTrue(response.data["is_available"])
+        self.assertFalse(response.data["available_now"])
+        self.assertEqual(response.data["reason"], "outside_hours")
+
+    def test_day_off(self):
+        response = self.get_status(SATURDAY_10AM)
+
+        self.assertFalse(response.data["available_now"])
+        self.assertEqual(response.data["reason"], "day_off")
+
+    def test_switched_off(self):
+        self.interpreter.is_available = False
+        self.interpreter.save()
+
+        response = self.get_status(MONDAY_10AM)
+
+        self.assertFalse(response.data["is_available"])
+        self.assertFalse(response.data["available_now"])
+        self.assertEqual(response.data["reason"], "switched_off")
+
+    def test_not_approved(self):
+        self.interpreter.is_available = False
+        self.interpreter.verification_status = VerificationStatus.INACTIVE
+        self.interpreter.save()
+
+        response = self.get_status(MONDAY_10AM)
+
+        self.assertEqual(response.data["reason"], "not_approved")
+
+    # PATCH: the switch
+    def test_switch_off(self):
+        response = self.switch(False)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["is_available"])
+        self.assertEqual(response.data["reason"], "switched_off")
+        self.interpreter.refresh_from_db()
+        self.assertFalse(self.interpreter.is_available)
+
+    def test_switch_back_on(self):
+        self.switch(False)
+
+        response = self.switch(True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["is_available"])
+        self.interpreter.refresh_from_db()
+        self.assertTrue(self.interpreter.is_available)
+
+    def test_cannot_switch_on_when_not_approved(self):
+        self.interpreter.is_available = False
+        self.interpreter.verification_status = VerificationStatus.INACTIVE
+        self.interpreter.save()
+
+        response = self.switch(True)
+
+        self.assertEqual(response.status_code, 400)
+        self.interpreter.refresh_from_db()
+        self.assertFalse(self.interpreter.is_available)
+
+    def test_is_available_is_required(self):
+        response = self.client.patch(STATUS_URL, {}, format="json")
+
+        self.assertEqual(response.status_code, 400)
+
+    # Who can call it
+    def test_login_required(self):
+        self.client.force_authenticate(None)
+
+        response = self.client.get(STATUS_URL)
+
+        self.assertIn(response.status_code, (401, 403))
+
+    def test_only_interpreters_allowed(self):
+        deaf_user = get_user_model().objects.create_user(
+            phone_number="+256700000004",
+            password="Pass1234!",
+            full_name="Deaf User",
+            role="deaf_hoh",
+        )
+        self.client.force_authenticate(deaf_user)
+
+        response = self.client.get(STATUS_URL)
+
+        self.assertEqual(response.status_code, 403)
+
+    # Acceptance criterion 3, end to end: the switch reaches routing right away
+    def test_switching_off_stops_routing_immediately(self):
+        def offered():
+            return get_eligible_interpreters(
+                specialisation_required=Specialisation.MEDICAL, now=MONDAY_10AM
+            )
+
+        self.assertIn(self.interpreter, offered())
+
+        self.switch(False)  # busy, no new requests
 
         self.assertNotIn(self.interpreter, offered())  # very next routing call

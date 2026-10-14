@@ -11,6 +11,7 @@ from .models import (
     VerificationStatus,
     WeeklyAvailability,
 )
+from .availability import unavailable_reason
 from .services import get_eligible_interpreters
 
 EAT = ZoneInfo("Africa/Kampala")
@@ -107,3 +108,38 @@ class AvailabilityRoutingTests(TestCase):
         WeeklyAvailability.objects.all().delete()
         self.assertIn(self.interpreter, self.offered(now=MONDAY_10AM))
         self.assertNotIn(self.interpreter, self.offered(now=SATURDAY_10AM))
+
+
+class UnavailableReasonTests(TestCase):
+    """The reason the dashboard shows. None means she can be offered a request."""
+
+    def setUp(self):
+        self.interpreter = make_interpreter()
+
+    def test_available_in_hours_has_no_reason(self):
+        self.assertIsNone(unavailable_reason(self.interpreter, MONDAY_10AM))
+
+    def test_outside_hours(self):
+        self.assertEqual(
+            unavailable_reason(self.interpreter, MONDAY_8PM), "outside_hours"
+        )
+
+    def test_day_off(self):
+        self.assertEqual(unavailable_reason(self.interpreter, SATURDAY_10AM), "day_off")
+
+    def test_switched_off(self):
+        self.interpreter.is_available = False
+        self.interpreter.save()
+
+        self.assertEqual(
+            unavailable_reason(self.interpreter, MONDAY_10AM), "switched_off"
+        )
+
+    def test_not_approved(self):
+        self.interpreter.is_available = False
+        self.interpreter.verification_status = VerificationStatus.INACTIVE
+        self.interpreter.save()
+
+        self.assertEqual(
+            unavailable_reason(self.interpreter, MONDAY_10AM), "not_approved"
+        )

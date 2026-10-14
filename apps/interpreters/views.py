@@ -10,9 +10,11 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .availability import monday_of, week_schedule
+from .availability import monday_of, unavailable_reason, week_schedule
 from .models import DateException, InterpreterProfile, WeeklyAvailability
 from .serializers import (
+    AvailabilityStatusSerializer,
+    AvailabilityStatusUpdateSerializer,
     CertificationDocumentSerializer,
     DayScheduleSerializer,
     DayUpdateSerializer,
@@ -170,3 +172,58 @@ class DayAvailabilityView(APIView):
 
         updated_day = week_schedule(profile, monday_of(the_date))[the_date.weekday()]
         return Response(DayScheduleSerializer(updated_day).data)
+
+
+def status_payload(profile):
+    """The dashboard status for this interpreter, using the same rule as routing."""
+    reason = unavailable_reason(profile)
+    return AvailabilityStatusSerializer(
+        {
+            "is_available": profile.is_available,
+            "available_now": reason is None,
+            "reason": reason,
+        }
+    ).data
+
+
+class AvailabilityStatusView(APIView):
+    """The dashboard control (MOB-01 to MOB-04): read the status, flip the switch."""
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    @extend_schema(
+        tags=["Interpreter Availability"],
+        summary="Get the real-time availability status",
+        description=(
+            "is_available is the dashboard switch. available_now says whether she can "
+            "be offered a request at this very moment (switch AND schedule), and reason "
+            "says why not: not_approved, switched_off, day_off or outside_hours. "
+            "Poll this to keep the dashboard indicator correct."
+        ),
+        responses=AvailabilityStatusSerializer,
+    )
+    def get(self, request):
+        profile = get_interpreter_profile(request.user)
+        return Response(status_payload(profile))
+
+    @extend_schema(
+        tags=["Interpreter Availability"],
+        summary="Switch availability on or off",
+        description=(
+            "Sets the dashboard switch. Turning it on needs an APPROVED profile. "
+            "The change applies to the very next routing decision."
+        ),
+        request=AvailabilityStatusUpdateSerializer,
+        responses=AvailabilityStatusSerializer,
+    )
+    def patch(self, request):
+        profile = get_interpreter_profile(request.user)
+
+        serializer = AvailabilityStatusUpdateSerializer(
+            data=request.data, context={"profile": profile}
+        )
+        serializer.is_valid(raise_exception=True)
+
+        profile.is_available = serializer.validated_data["is_available"]
+        profile.save(update_fields=["is_available", "updated_at"])
+        return Response(status_payload(profile))
