@@ -35,7 +35,7 @@ class CertificationDocumentSerializer(serializers.ModelSerializer):
         )
 
     def create(self, validated_data):
-        # fill document_name from the uploaded file's name
+        # Fill document_name from the uploaded file's name
         if "document" in validated_data:
             validated_data["document_name"] = validated_data["document"].name
         return super().create(validated_data)
@@ -55,6 +55,8 @@ class InterpreterProfileSerializer(serializers.ModelSerializer):
             "verification_status",
             "is_available",
             "specialisation",
+            "specialisation_other",
+            "sign_languages",
             "working_hours_schedule",
             "certifications",
             "created_at",
@@ -72,21 +74,46 @@ class InterpreterProfileSerializer(serializers.ModelSerializer):
             )
         return value
 
+    def validate(self, attrs):
+        specialisation = attrs.get(
+            "specialisation",
+            getattr(self.instance, "specialisation", Specialisation.GENERAL),
+        )
+        specialisation_other = attrs.get(
+            "specialisation_other",
+            getattr(self.instance, "specialisation_other", ""),
+        )
+
+        # Enforce free-text entry if 'OTHER' is selected
+        if specialisation == Specialisation.OTHER and not specialisation_other.strip():
+            raise serializers.ValidationError(
+                {
+                    "specialisation_other": (
+                        "Please specify your specialisation when 'OTHER' is selected."
+                    )
+                }
+            )
+        return attrs
+
 
 class InterpreterRegistrationSerializer(BaseRegistrationSerializer):
-    """V2-003 step 1: account details. An email is required (certification results are sent to it).
+    """V2-003 step 1: account details.
 
-    The account starts INACTIVE / pending review: the profile is created with the default
-    verification status, so the interpreter cannot receive requests until an admin approves them.
+    An email is required (certification results are sent to it). The account starts
+    INACTIVE / pending review: the profile is created with the default verification status,
+    so the interpreter cannot receive requests until an admin approves them.
     """
 
     role = get_user_model().Role.INTERPRETER
     email_required = True
     specialisation = serializers.ChoiceField(
-        choices=Specialisation.choices, required=False, default=Specialisation.GENERAL
+        choices=Specialisation.choices,
+        required=False,
+        default=Specialisation.GENERAL,
     )
 
     def create_profile(self, user, validated_data):
         InterpreterProfile.objects.create(
-            user=user, specialisation=validated_data["specialisation"]
+            user=user,
+            specialisation=validated_data["specialisation"],
         )
