@@ -27,6 +27,8 @@ urlpatterns = [
     path("api/v1/", include("apps.accounts.urls")),
     path("api/v1/interpreters/", include("apps.interpreters.urls")),
     path("api/v1/dashboard/", include("apps.dashboards.urls")),
+    path("api/v1/institutions/", include("apps.institutions.urls")),  # V2-005, the institution's own data
+    path("api/v1/manage/institutions/", include("apps.institutions.manage_urls")),  # V2-005, admins only
     path("api/v1/auth/", include("apps.users.urls")),  # Web Registration endpoint
     # OpenAPI Schema & Documentation
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
