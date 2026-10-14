@@ -4,6 +4,8 @@ from .views import (
     AvailabilityStatusView,
     CertificationUploadView,
     DayAvailabilityView,
+    ExceptionDetailView,
+    ExceptionListView,
     InterpreterAvailabilityDetailView,
     InterpreterAvailabilityListCreateView,
     InterpreterProfileDetailView,
@@ -32,6 +34,16 @@ urlpatterns = [
         "me/availability/days/<str:day>/",
         DayAvailabilityView.as_view(),
         name="availability-day",
+    ),
+    path(
+        "me/availability/exceptions/",
+        ExceptionListView.as_view(),
+        name="availability-exceptions",
+    ),
+    path(
+        "me/availability/exceptions/<str:day>/",
+        ExceptionDetailView.as_view(),
+        name="availability-exception-detail",
     ),
     path(
         "certifications/upload/",
