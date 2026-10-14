@@ -166,3 +166,90 @@ class InterpreterRegistrationSerializer(BaseRegistrationSerializer):
             user=user,
             specialisation=validated_data["specialisation"],
         )
+
+
+# ---- V2-021 availability schedule (new) ----
+
+
+class WeekQuerySerializer(serializers.Serializer):
+    """The ?week_start= value. Any date inside the week works (YYYY-MM-DD)."""
+
+    week_start = serializers.DateField(required=False)
+
+
+class DayScheduleSerializer(serializers.Serializer):
+    """One day on the schedule screen (weekday: 0 = Monday ... 6 = Sunday)."""
+
+    date = serializers.DateField()
+    weekday = serializers.IntegerField()
+    is_available = serializers.BooleanField()
+    start_time = serializers.TimeField(allow_null=True)
+    end_time = serializers.TimeField(allow_null=True)
+    source = serializers.ChoiceField(choices=["default", "exception"])
+
+
+class WeekScheduleSerializer(serializers.Serializer):
+    week_start = serializers.DateField()
+    week_end = serializers.DateField()
+    days = DayScheduleSerializer(many=True)
+
+
+class DayUpdateSerializer(serializers.Serializer):
+    """What the pencil card sends when the interpreter saves one day.
+
+    repeat_weekly False (the default): change only that date.
+    repeat_weekly True: change that weekday in the default week.
+    """
+
+    is_available = serializers.BooleanField()
+    start_time = serializers.TimeField(required=False, allow_null=True)
+    end_time = serializers.TimeField(required=False, allow_null=True)
+    repeat_weekly = serializers.BooleanField(default=False)
+
+    def validate(self, attrs):
+        if attrs["is_available"]:
+            start = attrs.get("start_time")
+            end = attrs.get("end_time")
+            if start is None or end is None:
+                raise serializers.ValidationError(
+                    "start_time and end_time are required when you are available."
+                )
+            if end <= start:
+                raise serializers.ValidationError(
+                    {"end_time": "End time must be after start time."}
+                )
+        else:
+            # Unavailable all day: no hours to store.
+            attrs["start_time"] = None
+            attrs["end_time"] = None
+        return attrs
+
+
+class AvailabilityStatusSerializer(serializers.Serializer):
+    """What the dashboard shows.
+
+    is_available: the dashboard switch.
+    available_now: can she be offered a request at this very moment?
+    reason: why not (null when available_now is true).
+    """
+
+    is_available = serializers.BooleanField()
+    available_now = serializers.BooleanField()
+    reason = serializers.ChoiceField(
+        choices=["not_approved", "switched_off", "day_off", "outside_hours"],
+        allow_null=True,
+    )
+
+
+class AvailabilityStatusUpdateSerializer(serializers.Serializer):
+    """What the dashboard sends to flip the switch."""
+
+    is_available = serializers.BooleanField()
+
+    def validate_is_available(self, value):
+        profile = self.context["profile"]
+        if value and profile.verification_status != VerificationStatus.APPROVED:
+            raise serializers.ValidationError(
+                "You can only set yourself available after your profile is approved."
+            )
+        return value
