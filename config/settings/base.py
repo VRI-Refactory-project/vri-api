@@ -170,6 +170,8 @@ REST_FRAMEWORK = {
         "register": "20/hour",
         "recovery_request": "5/hour",
         "recovery_confirm": "10/minute",
+        "email_verify_resend": "5/hour",
+        "email_verify_confirm": "10/minute",
     },
 }
 

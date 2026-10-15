@@ -33,6 +33,7 @@ from apps.interpreters.serializers import InterpreterRegistrationSerializer
 from .serializers import (
     AdminResetConfirmSerializer,
     DeafRegistrationSerializer,
+    EmailVerifyConfirmSerializer,
     LoginSerializer,
     PasswordChangeSerializer,
     RecoveryConfirmSerializer,
@@ -50,6 +51,12 @@ ADMIN_CODE_ERRORS = {
     "limited": "Too many codes requested. Try again later.",
     "locked": "Too many wrong codes. Admin resets are locked for 24 hours.",
     "failed": "The email could not be sent. Check the email settings and try again.",
+}
+EMAIL_CODE_ERRORS = {
+    "cooldown": "A code was sent less than a minute ago. Check your email or wait before trying again.",
+    "limited": "Too many codes requested. Try again later.",
+    "locked": "Too many wrong codes. Try again in 24 hours.",
+    "failed": "We could not send the email. Please try again later.",
 }
 RECOVERY_REQUEST_MESSAGE = (
     "If an account matches, we have sent a recovery code to its registered email. "
@@ -202,6 +209,9 @@ class BaseRegisterView(APIView):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        if user.email:
+            # Best effort: if the mail fails the account still exists and the user can ask for a new code.
+            recovery.issue_code(user, RecoveryCode.Purpose.EMAIL_VERIFY, ip=client_ip(request))
         return Response(TokenPairSerializer.for_user(user), status=status.HTTP_201_CREATED)
 
 
@@ -280,6 +290,53 @@ class RecoveryConfirmView(APIView):
         recovery.set_new_password(user, serializer.validated_data["new_password"])
         recovery.logger.info("recovery_succeeded user=%s ip=%s", user.pk, client_ip(request))
         return Response(TokenPairSerializer.for_user(user))
+
+
+# --- Email verification: prove the registered email address is really the user's ---------------
+
+
+class EmailVerifyResendView(APIView):
+    """Send a new verification code to the signed-in user's email."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "email_verify_resend"
+
+    @extend_schema(tags=["Auth"], summary="Email verification: send me a new code",
+                   request=None, responses={200: DetailSerializer})
+    def post(self, request):
+        user = request.user
+        if not user.email:
+            raise ValidationError({"detail": "Your account has no email address to verify."})
+        if user.email_verified:
+            raise ValidationError({"detail": "Your email is already verified."})
+        result = recovery.issue_code(user, RecoveryCode.Purpose.EMAIL_VERIFY, ip=client_ip(request))
+        if result != "sent":
+            raise ValidationError({"detail": EMAIL_CODE_ERRORS[result]})
+        return Response({"detail": f"We sent a code to {recovery.mask_email(user.email)}."})
+
+
+class EmailVerifyConfirmView(APIView):
+    """Enter the 6-digit code from the email. On success the email is marked verified."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "email_verify_confirm"
+
+    @extend_schema(tags=["Auth"], summary="Email verification: confirm the code",
+                   request=EmailVerifyConfirmSerializer, responses={200: UserSerializer})
+    def post(self, request):
+        serializer = EmailVerifyConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        if not user.email:
+            raise ValidationError({"detail": "Your account has no email address to verify."})
+        if user.email_verified:
+            return Response(UserSerializer(user).data)
+        rc = recovery.check_code(user, serializer.validated_data["code"], RecoveryCode.Purpose.EMAIL_VERIFY)
+        if rc is None or not recovery.mark_used(rc):
+            raise ValidationError({"code": ["Invalid or expired code. Request a new one."]})
+        recovery.mark_email_verified(user)
+        recovery.logger.info("email_verified user=%s ip=%s", user.pk, client_ip(request))
+        return Response(UserSerializer(user).data)
 
 
 class PasswordChangeView(APIView):

@@ -81,6 +81,12 @@ class User(AbstractBaseUser, PermissionsMixin):
         help_text="When the user accepted the Terms and Privacy Policy at sign-up. Empty if they never did.",
     )
 
+    email_verified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the user proved they own this email by entering the code we sent. Empty = not verified.",
+    )
+
     objects = UserManager()
 
     USERNAME_FIELD = "phone_number"
@@ -92,6 +98,10 @@ class User(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return f"{self.full_name} ({self.phone_number})"
 
+    @property
+    def email_verified(self):
+        return bool(self.email and self.email_verified_at)
+
     def save(self, *args, **kwargs):
         if self.email:
             self.email = self.email.strip().lower()
@@ -101,7 +111,9 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 
 class RecoveryCode(models.Model):
-    """A short-lived 6-digit code sent by email (V2-008 account recovery).
+    """A short-lived 6-digit code sent by email (V2-008 account recovery, and email verification).
+
+    - email_verify: sent to the address a user registered with, to prove they own it.
 
     - self_recovery: sent to a user who forgot their password/PIN.
     - admin_reset: sent to an ADMIN to confirm they want to reset another user's password/PIN
@@ -116,6 +128,7 @@ class RecoveryCode(models.Model):
     class Purpose(models.TextChoices):
         SELF_RECOVERY = "self_recovery", "Self recovery"
         ADMIN_RESET = "admin_reset", "Admin-assisted reset"
+        EMAIL_VERIFY = "email_verify", "Email verification"
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="recovery_codes")
     target_user = models.ForeignKey(

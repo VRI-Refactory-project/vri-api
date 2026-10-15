@@ -27,6 +27,7 @@ class UserSerializer(serializers.ModelSerializer):
     """Public view of a user. Reuse this inside role-specific profile responses."""
 
     phone_number = serializers.CharField(read_only=True)
+    email_verified = serializers.BooleanField(read_only=True)
     institution_status = serializers.SerializerMethodField(
         help_text="Institution accounts only: PENDING, APPROVED or REJECTED. Null for every other role."
     )
@@ -36,8 +37,10 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "full_name", "phone_number", "email", "role", "must_change_password", "date_joined",
-                  "institution_status", "institution_role"]
+        fields = [
+            "id", "full_name", "phone_number", "email", "email_verified", "role",
+            "must_change_password", "date_joined", "institution_status", "institution_role",
+        ]
         read_only_fields = fields
 
     def _membership(self, user):
@@ -260,6 +263,10 @@ class RecoveryConfirmSerializer(serializers.Serializer):
         attrs["user"], attrs["recovery_code"] = user, rc
 
         return attrs
+
+
+class EmailVerifyConfirmSerializer(serializers.Serializer):
+    code = CodeField
 
 
 class AdminResetConfirmSerializer(serializers.Serializer):
