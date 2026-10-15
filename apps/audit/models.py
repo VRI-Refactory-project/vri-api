@@ -1,4 +1,3 @@
-
 from django.conf import settings
 from django.db import models
 
@@ -6,12 +5,20 @@ from django.db import models
 class AuditLog(models.Model):
     """A record of something an administrator did that the platform must be able to account for.
 
-    For now this is administrator sign-ins (V2-064). Add an `Event` when another action needs recording.
-    Entries are written by `apps.audit.services.record` and are read-only in the admin site.
+    Administrator sign-ins (V2-064), institution lifecycle changes, and institution staff changes (V2-006).
+    Add an `Event` when another action needs recording. Entries are written by `apps.audit.services.record`
+    and are read-only in the admin site.
     """
 
     class Event(models.TextChoices):
         ADMIN_SIGN_IN = "admin_sign_in", "Administrator signed in"
+        INSTITUTION_APPROVED = "institution_approved", "Institution approved"
+        INSTITUTION_REJECTED = "institution_rejected", "Institution rejected"
+        INSTITUTION_DEACTIVATED = "institution_deactivated", "Institution deactivated"
+        STAFF_CREATED = "staff_created", "Institution staff account created"
+        STAFF_UPDATED = "staff_updated", "Institution staff account changed"
+        STAFF_REVOKED = "staff_revoked", "Institution staff access revoked"
+        STAFF_REINSTATED = "staff_reinstated", "Institution staff access reinstated"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
