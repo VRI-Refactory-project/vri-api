@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "apps.institutions",
     "apps.users",
     "apps.audit",
+    "apps.administration",
 ]
 
 MIDDLEWARE = [
@@ -119,6 +120,10 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+# Uploaded files (e.g. interpreter certificates) are saved here (git-ignored). There is deliberately no public
+# MEDIA_URL route: certificates are personal documents and admins download them through a protected endpoint.
+MEDIA_ROOT = BASE_DIR / "media"
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # --- Cache (rate limits). Local memory is fine for development; production needs a shared cache,
@@ -187,6 +192,11 @@ SPECTACULAR_SETTINGS = {
     "SCHEMA_PATH_PREFIX": r"/api/v[0-9]+",
     "COMPONENT_SPLIT_REQUEST": True,
     "SWAGGER_UI_SETTINGS": {"persistAuthorization": True},
+    # One name for a choice list that several fields share (otherwise Swagger warns about it).
+    "ENUM_NAME_OVERRIDES": {
+        "VerificationStatusEnum": "apps.interpreters.models.VerificationStatus",
+        "StaffRoleEnum": "apps.institutions.models.StaffRole",  # V2-006, so it is not confused with user roles
+    },
     # Serve the docs UI from our own static files. Some networks (e.g. campus Wi-Fi) block
     # cdn.jsdelivr.net, which leaves /api/docs/ as a blank page.
     "SWAGGER_UI_DIST": "SIDECAR",

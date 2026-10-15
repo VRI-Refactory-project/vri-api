@@ -7,9 +7,12 @@ from phonenumber_field.serializerfields import PhoneNumberField
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from apps.core.permissions import user_staff_membership
+
 from . import recovery
 from .models import RecoveryCode
 from .utils import find_user_by_identifier
+
 
 User = get_user_model()
 
@@ -25,14 +28,36 @@ class UserSerializer(serializers.ModelSerializer):
 
     phone_number = serializers.CharField(read_only=True)
     email_verified = serializers.BooleanField(read_only=True)
+    institution_status = serializers.SerializerMethodField(
+        help_text="Institution accounts only: PENDING, APPROVED or REJECTED. Null for every other role."
+    )
+    institution_role = serializers.SerializerMethodField(
+        help_text="Institution accounts only: ADMIN (may manage staff) or STAFF. Null for every other role."
+    )
 
     class Meta:
         model = User
         fields = [
             "id", "full_name", "phone_number", "email", "email_verified", "role",
-            "must_change_password", "date_joined",
+            "must_change_password", "date_joined", "institution_status", "institution_role",
         ]
         read_only_fields = fields
+
+    def _membership(self, user):
+        if user.role != User.Role.INSTITUTION:
+            return None
+        cache = self.context.setdefault("_staff_membership", {})  # one query per user, not per field
+        if user.pk not in cache:
+            cache[user.pk] = user_staff_membership(user)
+        return cache[user.pk]
+
+    def get_institution_status(self, user) -> str | None:
+        membership = self._membership(user)
+        return membership.institution.status if membership else None
+
+    def get_institution_role(self, user) -> str | None:
+        membership = self._membership(user)
+        return membership.role if membership else None
 
 
 class BaseRegistrationSerializer(serializers.Serializer):
@@ -80,7 +105,6 @@ class BaseRegistrationSerializer(serializers.Serializer):
             return None
 
         value = value.strip().lower()
-
         local_part = value.split("@", 1)[0]
 
         if local_part.isdigit():
@@ -95,7 +119,10 @@ class BaseRegistrationSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        candidate = User(full_name=attrs.get("full_name", ""), email=attrs.get("email"))
+        candidate = User(
+            full_name=attrs.get("full_name", ""),
+            email=attrs.get("email"),
+        )
         check_new_password(attrs["password"], candidate, field="password")
         return attrs
 
@@ -108,7 +135,8 @@ class BaseRegistrationSerializer(serializers.Serializer):
         if self.role not in User.SELF_REGISTRATION_ROLES:
             # Public registration must never create admins (or any role users cannot pick themselves).
             raise ImproperlyConfigured(
-                f"Registration serializers can only create these roles: {', '.join(User.SELF_REGISTRATION_ROLES)}."
+                f"Registration serializers can only create these roles: "
+                f"{', '.join(User.SELF_REGISTRATION_ROLES)}."
             )
         user_data = {k: validated_data.pop(k) for k in self.USER_FIELDS if k in validated_data}
         if validated_data.pop("terms_accepted", False):
@@ -116,6 +144,7 @@ class BaseRegistrationSerializer(serializers.Serializer):
         with transaction.atomic():
             user = User.objects.create_user(role=self.role, **user_data)
             self.create_profile(user, validated_data)
+
         return user
 
     def to_representation(self, instance):
@@ -145,13 +174,17 @@ class LoginSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         user = find_user_by_identifier(attrs["identifier"])
+
         if user is None:
             User().set_password(attrs["password"])  # equalise timing for unknown accounts
             self.fail("invalid_credentials")
+
         if not user.check_password(attrs["password"]):
             self.fail("invalid_credentials")
+
         if not user.is_active:
             self.fail("inactive")
+
         attrs["user"] = user
         return attrs
 
@@ -167,7 +200,12 @@ class TokenPairSerializer(serializers.Serializer):
     def for_user(user):
         refresh = RefreshToken.for_user(user)
         refresh["role"] = user.role
-        return {"access": str(refresh.access_token), "refresh": str(refresh), "user": UserSerializer(user).data}
+
+        return {
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "user": UserSerializer(user).data,
+        }
 
 
 def check_new_password(password, user, field="new_password"):
@@ -178,31 +216,52 @@ def check_new_password(password, user, field="new_password"):
 
 
 CodeField = serializers.RegexField(
-    r"^\d{6}$", max_length=6, min_length=6, error_messages={"invalid": "Enter the 6-digit code from the email."}
+    r"^\d{6}$",
+    max_length=6,
+    min_length=6,
+    error_messages={"invalid": "Enter the 6-digit code from the email."},
 )
 
 
 class RecoveryRequestSerializer(serializers.Serializer):
-    identifier = serializers.CharField(help_text="Phone number or email the account was registered with.")
+    identifier = serializers.CharField(
+        help_text="Phone number or email the account was registered with."
+    )
 
 
 class RecoveryConfirmSerializer(serializers.Serializer):
     identifier = serializers.CharField()
     code = CodeField
-    new_password = serializers.CharField(write_only=True, style={"input_type": "password"})
+    new_password = serializers.CharField(
+        write_only=True,
+        style={"input_type": "password"},
+    )
 
-    default_error_messages = {"invalid_code": "Invalid or expired code. Request a new one."}
+    default_error_messages = {
+        "invalid_code": "Invalid or expired code. Request a new one."
+    }
 
     def validate(self, attrs):
         user = find_user_by_identifier(attrs["identifier"])
+
         if user is not None and not user.is_active:
             user = None  # recovery never reactivates a deactivated account
-        rc = recovery.check_code(user, attrs["code"], RecoveryCode.Purpose.SELF_RECOVERY)
+
+        rc = recovery.check_code(
+            user,
+            attrs["code"],
+            RecoveryCode.Purpose.SELF_RECOVERY,
+        )
+
         if rc is None:
-            raise serializers.ValidationError({"code": [self.error_messages["invalid_code"]]})
+            raise serializers.ValidationError(
+                {"code": [self.error_messages["invalid_code"]]}
+            )
+
         # Only now (code proven) do we reveal password-rule errors.
         check_new_password(attrs["new_password"], user)
         attrs["user"], attrs["recovery_code"] = user, rc
+
         return attrs
 
 
@@ -213,20 +272,42 @@ class EmailVerifyConfirmSerializer(serializers.Serializer):
 class AdminResetConfirmSerializer(serializers.Serializer):
     code = CodeField
     temporary_password = serializers.CharField(
-        write_only=True, style={"input_type": "password"},
-        help_text="Temporary password/PIN to give the user in person. They must change it at next sign-in.",
+        write_only=True,
+        style={"input_type": "password"},
+        help_text=(
+            "Temporary password/PIN to give the user in person. "
+            "They must change it at next sign-in."
+        ),
     )
 
 
 class PasswordChangeSerializer(serializers.Serializer):
-    current_password = serializers.CharField(write_only=True, style={"input_type": "password"})
-    new_password = serializers.CharField(write_only=True, style={"input_type": "password"})
+    current_password = serializers.CharField(
+        write_only=True,
+        style={"input_type": "password"},
+    )
+    new_password = serializers.CharField(
+        write_only=True,
+        style={"input_type": "password"},
+    )
 
     def validate(self, attrs):
         user = self.context["request"].user
+
         if not user.check_password(attrs["current_password"]):
-            raise serializers.ValidationError({"current_password": ["Incorrect password."]})
+            raise serializers.ValidationError(
+                {"current_password": ["Incorrect password."]}
+            )
+
         if attrs["current_password"] == attrs["new_password"]:
-            raise serializers.ValidationError({"new_password": ["Choose a different password from your current one."]})
+            raise serializers.ValidationError(
+                {
+                    "new_password": [
+                        "Choose a different password from your current one."
+                    ]
+                }
+            )
+
         check_new_password(attrs["new_password"], user)
+
         return attrs
