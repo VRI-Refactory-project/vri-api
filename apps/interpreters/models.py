@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 
@@ -49,6 +50,13 @@ class InterpreterProfile(models.Model):
                 name="available_only_if_approved",
             ),
         ]
+
+    def clean(self):
+        super().clean()
+        if self.verification_status == VerificationStatus.APPROVED and not self.user.email_verified:
+            raise ValidationError(
+                {"verification_status": "Cannot approve: this interpreter has not verified their email address."}
+            )
 
     def __str__(self):
         return f"{self.user.full_name} ({self.get_verification_status_display()})"

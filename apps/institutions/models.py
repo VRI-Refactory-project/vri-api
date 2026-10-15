@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -37,6 +38,13 @@ class InstitutionProfile(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def clean(self):
+        super().clean()
+        if self.status == InstitutionStatus.APPROVED and not self.user.email_verified:
+            raise ValidationError(
+                {"status": "Cannot approve: the registrant has not verified their email address."}
+            )
 
     def __str__(self):
         return f"{self.organisation_name} ({self.get_status_display()})"

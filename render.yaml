@@ -6,7 +6,7 @@ services:
     plan: free
     region: virginia # same region as the Neon database (AWS us-east-1)
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /api/health/
+    healthCheckPath: /api/docs/
     dockerCommand: sh ./start.sh
     envVars:
       - key: DJANGO_SETTINGS_MODULE
@@ -20,6 +20,12 @@ services:
       - key: CORS_ALLOWED_ORIGINS
         sync: false
       - key: CSRF_TRUSTED_ORIGINS
+        sync: false
+      # Real email delivery (verification and recovery codes). Without EMAIL_URL, emails only print in the logs.
+      # Example: smtp+tls://user:app-password@smtp.example.com:587
+      - key: EMAIL_URL
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
         sync: false
       - key: NUM_PROXIES
         value: "1"

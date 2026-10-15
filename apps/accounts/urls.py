@@ -16,6 +16,9 @@ urlpatterns = [
          name="auth-register-interpreter"),
     path("auth/register/institution/", views.InstitutionRegisterView.as_view(),
          name="auth-register-institution"),
+    # Email verification (signed-in user)
+    path("auth/email/verify/", views.EmailVerifyConfirmView.as_view(), name="auth-email-verify"),
+    path("auth/email/resend/", views.EmailVerifyResendView.as_view(), name="auth-email-resend"),
     # V2-008 account recovery
     path("auth/recovery/request/", views.RecoveryRequestView.as_view(), name="auth-recovery-request"),
     path("auth/recovery/confirm/", views.RecoveryConfirmView.as_view(), name="auth-recovery-confirm"),

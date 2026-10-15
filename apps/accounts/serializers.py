@@ -24,10 +24,14 @@ class UserSerializer(serializers.ModelSerializer):
     """Public view of a user. Reuse this inside role-specific profile responses."""
 
     phone_number = serializers.CharField(read_only=True)
+    email_verified = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = User
-        fields = ["id", "full_name", "phone_number", "email", "role", "must_change_password", "date_joined"]
+        fields = [
+            "id", "full_name", "phone_number", "email", "email_verified", "role",
+            "must_change_password", "date_joined",
+        ]
         read_only_fields = fields
 
 
@@ -200,6 +204,10 @@ class RecoveryConfirmSerializer(serializers.Serializer):
         check_new_password(attrs["new_password"], user)
         attrs["user"], attrs["recovery_code"] = user, rc
         return attrs
+
+
+class EmailVerifyConfirmSerializer(serializers.Serializer):
+    code = CodeField
 
 
 class AdminResetConfirmSerializer(serializers.Serializer):

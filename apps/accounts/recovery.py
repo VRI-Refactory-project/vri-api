@@ -122,6 +122,12 @@ def set_new_password(user, new_password, *, must_change=False):
     sign_out_everywhere(user)
 
 
+def mark_email_verified(user):
+    """Record that the user proved they own their email."""
+    user.email_verified_at = timezone.now()
+    user.save(update_fields=["email_verified_at"])
+
+
 def mask_email(email):
     name, _, domain = email.partition("@")
     return f"{name[:2]}{'*' * max(len(name) - 2, 1)}@{domain}"
@@ -129,7 +135,15 @@ def mask_email(email):
 
 def _send_code_email(user, code, purpose, target_user=None):
     minutes = int(RecoveryCode.LIFETIME.total_seconds() // 60)
-    if purpose == RecoveryCode.Purpose.SELF_RECOVERY:
+    if purpose == RecoveryCode.Purpose.EMAIL_VERIFY:
+        subject = "Verify your SignConnect email"
+        body = (
+            f"Hello {user.full_name},\n\n"
+            f"Your SignConnect email verification code is: {code}\n\n"
+            f"It expires in {minutes} minutes and can be used once.\n"
+            "If you did not create a SignConnect account, ignore this email.\n"
+        )
+    elif purpose == RecoveryCode.Purpose.SELF_RECOVERY:
         subject = "Your SignConnect recovery code"
         body = (
             f"Hello {user.full_name},\n\n"
