@@ -2,12 +2,15 @@
 from django.conf import settings
 from django.core.validators import FileExtensionValidator, MaxValueValidator
 from django.db import models
+from django.core.exceptions import ValidationError
 
 
 class VerificationStatus(models.TextChoices):
     INACTIVE = "INACTIVE", "Inactive / Pending Review"
     APPROVED = "APPROVED", "Approved"
     REJECTED = "REJECTED", "Rejected"
+    # Switched off by an admin after approval (V2-045), e.g. a lapsed certificate. Not routed to.
+    DEACTIVATED = "DEACTIVATED", "Deactivated"
 
 
 class Specialisation(models.TextChoices):
@@ -181,3 +184,39 @@ class CertificationDocument(models.Model):
 
     def __str__(self):
         return f"Certification: {self.document_name} - {self.interpreter.user.full_name}"
+
+
+class VerificationDecision(models.Model):
+    """One admin decision on an interpreter's verification: the V2-045 audit log.
+
+    Rows are never edited or deleted. Both foreign keys use PROTECT so the history survives;
+    deactivate a user instead of deleting them.
+    """
+
+    class Action(models.TextChoices):
+        APPROVE = "approve", "Approved"
+        REJECT = "reject", "Rejected"
+        DEACTIVATE = "deactivate", "Deactivated"
+        REACTIVATE = "reactivate", "Reactivated"
+
+    interpreter = models.ForeignKey(
+        InterpreterProfile,
+        on_delete=models.PROTECT,
+        related_name="decisions",
+    )
+    admin = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="+",
+    )
+    action = models.CharField(max_length=20, choices=Action.choices)
+    reason = models.TextField(blank=True, default="")
+    previous_status = models.CharField(max_length=20, choices=VerificationStatus.choices)
+    new_status = models.CharField(max_length=20, choices=VerificationStatus.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]  # noqa: RUF012
+
+    def __str__(self):
+        return f"{self.get_action_display()}: {self.interpreter.user.full_name} by {self.admin.full_name}"

@@ -40,3 +40,40 @@ class InstitutionProfile(models.Model):
 
     def __str__(self):
         return f"{self.organisation_name} ({self.get_status_display()})"
+
+
+class InstitutionStaff(models.Model):
+    """A staff member belonging to an institution."""
+
+    institution = models.ForeignKey(
+        InstitutionProfile,
+        on_delete=models.CASCADE,
+        related_name="staff_members",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="institution_staff_memberships",
+    )
+    is_active = models.BooleanField(
+        default=True,
+        db_index=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["institution", "user"],
+                name="unique_institution_staff_membership",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["institution", "is_active"]),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.user} - {self.institution.organisation_name}"
+        )

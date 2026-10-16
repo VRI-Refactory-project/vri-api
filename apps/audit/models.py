@@ -8,9 +8,22 @@ class AuditLog(models.Model):
 
     class Event(models.TextChoices):
         ADMIN_SIGN_IN = "admin_sign_in", "Administrator signed in"
-        INSTITUTION_APPROVED = "institution_approved", "Institution approved"
-        INSTITUTION_REJECTED = "institution_rejected", "Institution rejected"
-        INSTITUTION_DEACTIVATED = "institution_deactivated", "Institution deactivated"
+        INSTITUTION_CREATED = (
+            "institution_created",
+            "Administrator created an institution",
+        )
+        INSTITUTION_APPROVED = (
+            "institution_approved",
+            "Institution approved",
+        )
+        INSTITUTION_REJECTED = (
+            "institution_rejected",
+            "Institution rejected",
+        )
+        INSTITUTION_DEACTIVATED = (
+            "institution_deactivated",
+            "Institution deactivated",
+        )
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -18,7 +31,11 @@ class AuditLog(models.Model):
         on_delete=models.SET_NULL,
         related_name="audit_logs",
     )
-    event = models.CharField(max_length=40, choices=Event.choices, db_index=True)
+    event = models.CharField(
+        max_length=40,
+        choices=Event.choices,
+        db_index=True,
+    )
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
@@ -26,4 +43,7 @@ class AuditLog(models.Model):
         ordering = ["-created_at", "-id"]
 
     def __str__(self):
-        return f"{self.get_event_display()} - {self.user} - {self.created_at:%Y-%m-%d %H:%M}"
+        return (
+            f"{self.get_event_display()} - {self.user} - "
+            f"{self.created_at:%Y-%m-%d %H:%M}"
+        )

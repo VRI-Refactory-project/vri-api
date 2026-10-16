@@ -1,9 +1,12 @@
+
 from django.urls import path
 
 from .views import (
     AvailabilityStatusView,
     CertificationUploadView,
     DayAvailabilityView,
+    ExceptionDetailView,
+    ExceptionListView,
     InterpreterAvailabilityDetailView,
     InterpreterAvailabilityListCreateView,
     InterpreterProfileDetailView,
@@ -34,6 +37,16 @@ urlpatterns = [
         name="availability-day",
     ),
     path(
+        "me/availability/exceptions/",
+        ExceptionListView.as_view(),
+        name="availability-exceptions",
+    ),
+    path(
+        "me/availability/exceptions/<str:day>/",
+        ExceptionDetailView.as_view(),
+        name="availability-exception-detail",
+    ),
+    path(
         "certifications/upload/",
         CertificationUploadView.as_view(),
         name="certification-upload",
@@ -49,3 +62,4 @@ urlpatterns = [
         name="availability-detail",
     ),
 ]
+

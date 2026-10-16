@@ -1,4 +1,5 @@
 
+
 import logging
 
 from django.conf import settings
@@ -6,17 +7,23 @@ from django.core.mail import send_mail
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from rest_framework.generics import RetrieveAPIView
 from rest_framework import serializers, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
 from drf_spectacular.utils import extend_schema
-
 from apps.audit import services as audit
 from apps.audit.models import AuditLog
 from apps.core.permissions import IsAdminRole
+from apps.core.permissions import IsApprovedInstitution, user_institution
+from apps.core.permissions import HasInstitutionalRole
+from .serializers import InstitutionSerializer,InstitutionProfileUpdateSerializer
 
-from .models import InstitutionProfile, InstitutionStatus
+
+from .models import InstitutionProfile, InstitutionStatus, InstitutionStaff
 
 logger = logging.getLogger(__name__)
 
@@ -153,3 +160,56 @@ class RejectInstitutionView(InstitutionDecisionView):
     )
     def post(self, request, pk):
         return super().post(request, pk)
+
+    
+class MyInstitutionView(RetrieveAPIView):
+    """The signed-in user's own institution. There is no way to ask for another institution by id."""
+
+    permission_classes = [IsApprovedInstitution]
+    serializer_class = InstitutionSerializer
+
+    def get_object(self):
+        return user_institution(self.request.user)
+
+class InstitutionalAccountUpdateAPIView(APIView):
+    """
+    Endpoint for institutional managers to update their organization's account details.
+    """
+    permission_classes = [IsAuthenticated, HasInstitutionalRole]
+    
+
+    def get_object(self, request):
+        return get_object_or_404(
+            InstitutionProfile.objects.filter(
+                user=request.user,
+                status=InstitutionStatus.APPROVED,
+            )
+        )
+    def get(self, request, *args, **kwargs):
+        """Retrieve the current account settings profile configuration."""
+        institution = self.get_object(request)
+        serializer = InstitutionProfileUpdateSerializer(institution)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def patch(self, request, *args, **kwargs):
+        """Partially update account configuration properties dynamically."""
+        institution = self.get_object(request)
+        
+        # Pass partial=True so the frontend can send only the fields that changed
+        serializer = InstitutionProfileUpdateSerializer(institution, data=request.data, partial=True)
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                "message": "Institutional settings updated successfully.",
+                "updated_data": serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class InstitutionalDashboardView(APIView):
+    permission_classes = [IsAuthenticated, HasInstitutionalRole]
+
+    def get(self, request):
+        return Response({"message": "Institutional access granted."})
+

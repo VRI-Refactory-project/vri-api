@@ -128,3 +128,24 @@ def week_schedule(interpreter, week_start):
             }
         )
     return result
+
+
+def month_exceptions(interpreter, first_day):
+    """The one-off dates in the month that starts on first_day (the calendar dots).
+
+    kind: "unavailable" = unavailable all day, "modified_hours" = different hours.
+    """
+    next_month = (first_day + timedelta(days=32)).replace(day=1)
+    rows = DateException.objects.filter(
+        interpreter=interpreter, date__gte=first_day, date__lt=next_month
+    )
+    return [
+        {
+            "date": row.date,
+            "is_available": row.is_available,
+            "start_time": row.start_time,
+            "end_time": row.end_time,
+            "kind": "modified_hours" if row.is_available else "unavailable",
+        }
+        for row in rows
+    ]
