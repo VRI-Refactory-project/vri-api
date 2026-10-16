@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
+from .models import InstitutionProfile
 
 from apps.accounts.serializers import BaseRegistrationSerializer
 
@@ -54,6 +55,17 @@ class InstitutionSerializer(serializers.ModelSerializer):
                   "created_at"]
         read_only_fields = fields
 
+
+
+
+class InstitutionProfileUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InstitutionProfile
+        fields = ['name', 'contact_email', 'contact_phone', 'billing_address', 'timezone']
+        extra_kwargs = {
+            'name': {'required': False},
+            'contact_email': {'required': False},
+        }
 
 # --- V2-006: staff accounts -------------------------------------------------------------------------
 

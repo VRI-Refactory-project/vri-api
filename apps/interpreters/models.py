@@ -2,6 +2,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, MaxValueValidator
 from django.db import models
+from django.core.exceptions import ValidationError
 
 
 class VerificationStatus(models.TextChoices):
@@ -186,9 +187,13 @@ class CertificationDocument(models.Model):
         ordering = ["-uploaded_at"]
 
     def __str__(self):
+<<<<<<< HEAD
+        return f"Certification: {self.document_name} - {self.interpreter.user.full_name}"
+=======
         return (
             f"Certification: {self.document_name} - {self.interpreter.user.full_name}"
         )
+>>>>>>> origin/dev
 
 
 class VerificationDecision(models.Model):

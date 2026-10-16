@@ -43,6 +43,11 @@ class IsInterpreter(HasRole):
 class IsInstitution(HasRole):
     allowed_roles = (User.Role.INSTITUTION,)
 
+class HasInstitutionalRole(HasRole):
+    """Allows authenticated users with the institutional role."""
+
+    allowed_roles = (User.Role.INSTITUTION,)
+
 
 class IsAdminRole(HasRole):
     allowed_roles = (User.Role.ADMIN,)
