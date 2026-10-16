@@ -1,12 +1,10 @@
 from django.contrib.auth import get_user_model
-from django.db import transaction
 from rest_framework import serializers
 from .models import InstitutionProfile
 
 from apps.accounts.serializers import BaseRegistrationSerializer
 
-from . import credentials
-from .models import InstitutionProfile, InstitutionStatus, OrganisationType
+from .models import InstitutionProfile, InstitutionStaff, OrganisationType, StaffRole
 
 User = get_user_model()
 
@@ -26,9 +24,6 @@ class InstitutionRegistrationSerializer(BaseRegistrationSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        return self.clean_organisation_type(attrs)
-
-    def clean_organisation_type(self, attrs):
         other = (attrs.get("organisation_type_other") or "").strip()
         if attrs["organisation_type"] == OrganisationType.OTHER:
             if not other:
@@ -40,45 +35,15 @@ class InstitutionRegistrationSerializer(BaseRegistrationSerializer):
             attrs["organisation_type_other"] = ""  # only kept for "Other"
         return attrs
 
-    def create_profile(self, user, validated_data, status=InstitutionStatus.PENDING):
-        InstitutionProfile.objects.create(
+    def create_profile(self, user, validated_data):
+        institution = InstitutionProfile.objects.create(
             user=user,
             organisation_name=validated_data["organisation_name"].strip(),
             organisation_type=validated_data["organisation_type"],
             organisation_type_other=validated_data["organisation_type_other"],
-            status=status,
         )
-
-
-class AdminInstitutionCreateSerializer(InstitutionRegistrationSerializer):
-    """V2-005: a platform administrator creates an institution that is APPROVED straight away.
-
-    Same fields and checks as self-registration, minus the password (a temporary one is emailed to the
-    institution, see credentials.py) and the Terms box (only the institution can accept them).
-    After save(), `temporary_password` holds the password to email.
-    """
-
-    def get_fields(self):
-        fields = super().get_fields()
-        del fields["password"], fields["terms_accepted"]
-        return fields
-
-    def validate(self, attrs):
-        # Skip the password rules: there is no password yet.
-        return self.clean_organisation_type(serializers.Serializer.validate(self, attrs))
-
-    def create_profile(self, user, validated_data, status=InstitutionStatus.APPROVED):
-        super().create_profile(user, validated_data, status=status)
-
-    def create(self, validated_data):
-        validated_data["password"] = None  # unusable until the temporary password is set below
-        with transaction.atomic():
-            user = super().create(validated_data)
-            self.temporary_password = credentials.generate_temporary_password(user)
-            user.set_password(self.temporary_password)
-            user.must_change_password = True
-            user.save(update_fields=["password", "must_change_password"])
-        return user
+        # The registrant is the institution's first administrator (V2-006).
+        InstitutionStaff.objects.create(institution=institution, user=user, role=StaffRole.ADMIN, created_by=user)
 
 
 class InstitutionSerializer(serializers.ModelSerializer):
@@ -92,6 +57,7 @@ class InstitutionSerializer(serializers.ModelSerializer):
 
 
 
+
 class InstitutionProfileUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = InstitutionProfile
@@ -100,3 +66,81 @@ class InstitutionProfileUpdateSerializer(serializers.ModelSerializer):
             'name': {'required': False},
             'contact_email': {'required': False},
         }
+
+# --- V2-006: staff accounts -------------------------------------------------------------------------
+
+
+class StaffSerializer(serializers.ModelSerializer):
+    """One staff member as their institution's administrators see them."""
+
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
+    full_name = serializers.CharField(source="user.full_name", read_only=True)
+    phone_number = serializers.CharField(source="user.phone_number", read_only=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
+    status = serializers.SerializerMethodField(help_text="ACTIVE or REVOKED.")
+    last_login = serializers.DateTimeField(source="user.last_login", read_only=True)
+
+    class Meta:
+        model = InstitutionStaff
+        fields = ["id", "user_id", "full_name", "phone_number", "email", "role", "job_title", "status",
+                  "last_login", "created_at", "revoked_at"]
+        read_only_fields = fields
+
+    def get_status(self, membership) -> str:
+        return "REVOKED" if membership.is_revoked else "ACTIVE"
+
+
+class StaffCreateSerializer(BaseRegistrationSerializer):
+    """An institution administrator adds a staff member (V2-006).
+
+    Same checks as registration for name, phone and email (email is required: the login details are sent
+    there). No password: a temporary one is emailed. Needs `institution` and `request` in the context.
+    `save()` returns the new InstitutionStaff.
+    """
+
+    role = User.Role.INSTITUTION  # the account's platform role; the institution role is the "role" field below
+    email_required = True
+    job_title = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+
+    def get_fields(self):
+        fields = super().get_fields()
+        del fields["password"], fields["terms_accepted"]
+        fields["role"] = serializers.ChoiceField(choices=StaffRole.choices, default=StaffRole.STAFF)
+        return fields
+
+    def validate(self, attrs):
+        # Skip the parent's password rules: there is no password yet.
+        return serializers.Serializer.validate(self, attrs)
+
+    def create(self, validated_data):
+        validated_data["password"] = None  # unusable until staff.create_staff sets a temporary one
+        self.staff_role = validated_data.pop("role")
+        user = super().create(validated_data)
+        return user.institution_staff
+
+    def create_profile(self, user, validated_data):
+        InstitutionStaff.objects.create(
+            institution=self.context["institution"],
+            user=user,
+            role=self.staff_role,
+            job_title=validated_data.get("job_title", "").strip(),
+            created_by=self.context["request"].user,
+        )
+
+    def to_representation(self, instance):
+        return StaffSerializer(instance).data
+
+
+class StaffUpdateSerializer(serializers.Serializer):
+    """What an institution administrator may change. Phone and email are the person's sign-in details,
+    so only the person themselves changes those."""
+
+    full_name = serializers.CharField(max_length=150, required=False)
+    job_title = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    role = serializers.ChoiceField(choices=StaffRole.choices, required=False)
+
+    def validate_full_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Enter the person's full name.")
+        return value

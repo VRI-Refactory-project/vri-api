@@ -1,5 +1,6 @@
 import shutil
 import tempfile
+from datetime import datetime
 from unittest import mock
 
 from django.contrib.auth import get_user_model
@@ -8,6 +9,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from django.urls import reverse
 from rest_framework.test import APITestCase
 
@@ -15,6 +17,9 @@ from .models import CertificationDocument, InterpreterProfile, VerificationDecis
 
 User = get_user_model()
 PASSWORD = "Sign-Connect-2026"
+# A Wednesday at 10:00. Routing also depends on working hours (default Mon-Fri 08:00-17:00),
+# so these tests must not depend on the time of day they happen to run.
+WORKING_HOURS = timezone.make_aware(datetime(2026, 10, 14, 10, 0))
 
 
 def make_interpreter(phone="0772123456", status=VerificationStatus.INACTIVE, **profile_fields):
@@ -205,10 +210,10 @@ class ApproveRejectApiTests(DecisionApiMixin, APITestCase):
 
         self.act("approve", self.profile)
         self.profile.refresh_from_db()
-        self.assertNotIn(self.profile, get_eligible_interpreters())  # approved but not yet available
+        self.assertNotIn(self.profile, get_eligible_interpreters(now=WORKING_HOURS))  # approved but not yet available
         self.profile.is_available = True
         self.profile.save()
-        self.assertIn(self.profile, get_eligible_interpreters())
+        self.assertIn(self.profile, get_eligible_interpreters(now=WORKING_HOURS))
 
     def test_approve_needs_a_certificate(self):
         no_cert = make_interpreter("0772000012")
@@ -270,12 +275,12 @@ class DeactivateReactivateApiTests(DecisionApiMixin, APITestCase):
     def test_deactivation_stops_new_requests_immediately(self):
         from .services import get_eligible_interpreters
 
-        self.assertIn(self.profile, get_eligible_interpreters())
+        self.assertIn(self.profile, get_eligible_interpreters(now=WORKING_HOURS))
         response = self.act("deactivate", self.profile, "Certificate lapsed in September.")
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["verification_status"], "DEACTIVATED")
         self.assertFalse(response.data["is_available"])
-        self.assertNotIn(self.profile, get_eligible_interpreters())
+        self.assertNotIn(self.profile, get_eligible_interpreters(now=WORKING_HOURS))
 
     def test_deactivation_needs_a_reason_and_is_audited(self):
         self.assertEqual(self.act("deactivate", self.profile).status_code, 400)

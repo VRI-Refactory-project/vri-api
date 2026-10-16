@@ -53,14 +53,24 @@ class IsAdminRole(HasRole):
     allowed_roles = (User.Role.ADMIN,)
 
 
+def user_staff_membership(user):
+    """The signed-in user's active membership of an institution (V2-006), or None.
+
+    Every institution user has one: the person who registered the institution is its first ADMIN.
+    """
+    if not (user and user.is_authenticated and user.role == User.Role.INSTITUTION):
+        return None
+    from apps.institutions.models import InstitutionStaff  # avoids an app-loading cycle
+
+    return (InstitutionStaff.objects.select_related("institution")
+            .filter(user=user, revoked_at__isnull=True).first())
+
+
 def user_institution(user):
     """The institution the signed-in user belongs to, or None. Institution endpoints must only ever read
     and change data through this, never by an id from the request, so each institution stays isolated."""
-    if not (user and user.is_authenticated and user.role == User.Role.INSTITUTION):
-        return None
-    from apps.institutions.models import InstitutionProfile  # avoids an app-loading cycle
-
-    return InstitutionProfile.objects.filter(user=user).first()
+    membership = user_staff_membership(user)
+    return membership.institution if membership else None
 
 
 class IsApprovedInstitution(BasePermission):
@@ -89,6 +99,25 @@ class IsApprovedInstitution(BasePermission):
                 "code": "institution_rejected",
             })
         return institution.status == InstitutionStatus.APPROVED
+
+
+class IsInstitutionAdmin(IsApprovedInstitution):
+    """Administrators of an approved institution: they manage its staff (V2-006, SRS FR-INS-006).
+
+    Institutional users (STAFF) get a 403 with code institution_admin_required.
+    """
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        from apps.institutions.models import StaffRole
+
+        if user_staff_membership(request.user).role != StaffRole.ADMIN:
+            raise PermissionDenied({
+                "detail": "Only your institution's administrators can manage staff accounts.",
+                "code": "institution_admin_required",
+            })
+        return True
 
 
 # The permission class for each role, for code that picks the check at runtime.

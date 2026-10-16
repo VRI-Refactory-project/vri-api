@@ -6,7 +6,7 @@ from rest_framework.test import APITestCase
 from apps.accounts.models import User
 from apps.accounts.serializers import TokenPairSerializer
 
-from .models import InstitutionProfile, InstitutionStatus
+from .models import InstitutionProfile, InstitutionStaff, InstitutionStatus, StaffRole
 
 PASSWORD = "Sign-Connect-2026"
 
@@ -14,7 +14,10 @@ PASSWORD = "Sign-Connect-2026"
 def make_institution(phone, name, status):
     user = User.objects.create_user(phone, PASSWORD, full_name=f"{name} admin", role=User.Role.INSTITUTION,
                                     email=f"{phone}@example.com")
-    InstitutionProfile.objects.create(user=user, organisation_name=name, organisation_type="HOSPITAL", status=status)
+    institution = InstitutionProfile.objects.create(user=user, organisation_name=name, organisation_type="HOSPITAL",
+                                                    status=status)
+    # As registration does: the registrant is the institution's first administrator (V2-006).
+    InstitutionStaff.objects.create(institution=institution, user=user, role=StaffRole.ADMIN)
     return user
 
 

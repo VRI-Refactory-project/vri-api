@@ -7,7 +7,10 @@ from django.db.models import Count
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+<<<<<<< HEAD
 from drf_spectacular.utils import extend_schema
+=======
+>>>>>>> origin/dev
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import generics, permissions
@@ -16,6 +19,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+<<<<<<< HEAD
 
 from apps.core.permissions import IsInterpreter
 
@@ -26,6 +30,9 @@ from .models import (
     InterpreterProfile,
 )
 from apps.core.permissions import IsAdminRole
+=======
+from apps.core.permissions import IsAdminRole, IsInterpreter
+>>>>>>> origin/dev
 
 from . import verification
 from .availability import (
@@ -37,6 +44,7 @@ from .availability import (
 from .models import (
     CertificationDocument,
     DateException,
+    InterpreterAvailability,
     InterpreterProfile,
     VerificationDecision,
     VerificationStatus,
@@ -48,10 +56,16 @@ from .serializers import (
     CertificationDocumentSerializer,
     DayScheduleSerializer,
     DayUpdateSerializer,
+<<<<<<< HEAD
     InterpreterAvailabilitySerializer,
     DecisionReasonOptionalSerializer,
     DecisionReasonRequiredSerializer,
 
+=======
+    DecisionReasonOptionalSerializer,
+    DecisionReasonRequiredSerializer,
+    InterpreterAvailabilitySerializer,
+>>>>>>> origin/dev
     InterpreterProfileSerializer,
     ManageInterpreterDetailSerializer,
     ManageInterpreterListSerializer,
@@ -63,6 +77,10 @@ from .serializers import (
 
 User = get_user_model()
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/dev
 @extend_schema(
     tags=["Interpreter Profile Management"],
     summary="Upload interpreter certification document",
@@ -77,9 +95,7 @@ class CertificationUploadView(generics.CreateAPIView):
     serializer_class = CertificationDocumentSerializer
 
     def perform_create(self, serializer):
-        profile, _ = InterpreterProfile.objects.get_or_create(
-            user=self.request.user
-        )
+        profile, _ = InterpreterProfile.objects.get_or_create(user=self.request.user)
         uploaded_file = self.request.FILES.get("document")
         document_name = (
             uploaded_file.name if uploaded_file else "Certification Document"
@@ -109,28 +125,21 @@ class InterpreterProfileDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = InterpreterProfileSerializer
 
     def get_object(self):
-        profile, _ = InterpreterProfile.objects.get_or_create(
-            user=self.request.user
-        )
+        profile, _ = InterpreterProfile.objects.get_or_create(user=self.request.user)
         return profile
 
-@extend_schema(
-    summary="List or create interpreter availability periods"
-)
+
+@extend_schema(summary="List or create interpreter availability periods")
 class InterpreterAvailabilityListCreateView(generics.ListCreateAPIView):
     permission_classes = (permissions.IsAuthenticated, IsInterpreter)
     serializer_class = InterpreterAvailabilitySerializer
 
     def get_profile(self):
-        profile, _ = InterpreterProfile.objects.get_or_create(
-            user=self.request.user
-        )
+        profile, _ = InterpreterProfile.objects.get_or_create(user=self.request.user)
         return profile
 
     def get_queryset(self):
-        return InterpreterAvailability.objects.filter(
-            interpreter=self.get_profile()
-        )
+        return InterpreterAvailability.objects.filter(interpreter=self.get_profile())
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -141,12 +150,8 @@ class InterpreterAvailabilityListCreateView(generics.ListCreateAPIView):
         serializer.save(interpreter=self.get_profile())
 
 
-@extend_schema(
-    summary="Retrieve, update or delete an availability period"
-)
-class InterpreterAvailabilityDetailView(
-    generics.RetrieveUpdateDestroyAPIView
-):
+@extend_schema(summary="Retrieve, update or delete an availability period")
+class InterpreterAvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = (permissions.IsAuthenticated, IsInterpreter)
     serializer_class = InterpreterAvailabilitySerializer
 
@@ -157,24 +162,27 @@ class InterpreterAvailabilityDetailView(
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
-        profile, _ = InterpreterProfile.objects.get_or_create(
-            user=self.request.user
-        )
+        profile, _ = InterpreterProfile.objects.get_or_create(user=self.request.user)
         context["availability_profile"] = profile
         return context
+
 
 # --- V2-045: admin verification (/api/v1/manage/interpreters/) -------------------------------
 
 
 def manageable_interpreters():
     """Interpreter accounts only: other roles that happen to have a profile never show up for review."""
-    return InterpreterProfile.objects.filter(user__role=User.Role.INTERPRETER).select_related("user")
+    return InterpreterProfile.objects.filter(
+        user__role=User.Role.INTERPRETER
+    ).select_related("user")
 
 
 def review_queryset():
     """Everything the review page shows, fetched in a few queries."""
-    return manageable_interpreters().annotate(certification_count=Count("certifications")).prefetch_related(
-        "certifications", "decisions__admin"
+    return (
+        manageable_interpreters()
+        .annotate(certification_count=Count("certifications"))
+        .prefetch_related("certifications", "decisions__admin")
     )
 
 
@@ -183,7 +191,10 @@ def review_queryset():
     summary="Interpreter verification queue",
     parameters=[
         OpenApiParameter(
-            "status", OpenApiTypes.STR, OpenApiParameter.QUERY, enum=VerificationStatus.values,
+            "status",
+            OpenApiTypes.STR,
+            OpenApiParameter.QUERY,
+            enum=VerificationStatus.values,
             description="Only interpreters with this status, e.g. INACTIVE for the pending-review queue.",
         )
     ],
@@ -195,16 +206,27 @@ class ManageInterpreterListView(generics.ListAPIView):
     serializer_class = ManageInterpreterListSerializer
 
     def get_queryset(self):
-        queryset = manageable_interpreters().annotate(certification_count=Count("certifications"))
+        queryset = manageable_interpreters().annotate(
+            certification_count=Count("certifications")
+        )
         status = self.request.query_params.get("status")
         if status:
             if status not in VerificationStatus.values:
-                raise ValidationError({"status": [f"Choose one of: {', '.join(VerificationStatus.values)}."]})
+                raise ValidationError(
+                    {
+                        "status": [
+                            f"Choose one of: {', '.join(VerificationStatus.values)}."
+                        ]
+                    }
+                )
             queryset = queryset.filter(verification_status=status)
         return queryset.order_by("created_at", "id")
 
 
-@extend_schema(tags=["Manage"], summary="Interpreter review details (certificates and decision history)")
+@extend_schema(
+    tags=["Manage"],
+    summary="Interpreter review details (certificates and decision history)",
+)
 class ManageInterpreterDetailView(generics.RetrieveAPIView):
     permission_classes = [IsAdminRole]
     serializer_class = ManageInterpreterDetailSerializer
@@ -223,12 +245,17 @@ class CertificationFileView(APIView):
         summary="Download a certification document",
         responses={
             (200, "application/octet-stream"): OpenApiTypes.BINARY,
-            404: OpenApiResponse(description="No such certificate for this interpreter, or the file is missing."),
+            404: OpenApiResponse(
+                description="No such certificate for this interpreter, or the file is missing."
+            ),
         },
     )
     def get(self, request, pk, cert_id):
         cert = get_object_or_404(
-            CertificationDocument.objects.filter(interpreter__in=manageable_interpreters()), pk=cert_id,
+            CertificationDocument.objects.filter(
+                interpreter__in=manageable_interpreters()
+            ),
+            pk=cert_id,
             interpreter_id=pk,
         )
         try:
@@ -252,13 +279,21 @@ class ManageInterpreterDecisionView(APIView):
         profile = get_object_or_404(manageable_interpreters(), pk=pk)
         body = self.serializer_class(data=request.data)
         body.is_valid(raise_exception=True)
-        verification.decide(profile.pk, self.action, request.user, body.validated_data["reason"])
+        verification.decide(
+            profile.pk, self.action, request.user, body.validated_data["reason"]
+        )
         updated = review_queryset().get(pk=profile.pk)
-        return Response(ManageInterpreterDetailSerializer(updated, context={"request": request}).data)
+        return Response(
+            ManageInterpreterDetailSerializer(
+                updated, context={"request": request}
+            ).data
+        )
 
 
 DECISION_ERRORS = {
-    400: OpenApiResponse(description="Not allowed from the interpreter's current status, or a field is missing."),
+    400: OpenApiResponse(
+        description="Not allowed from the interpreter's current status, or a field is missing."
+    ),
     404: OpenApiResponse(description="No interpreter with this id."),
 }
 

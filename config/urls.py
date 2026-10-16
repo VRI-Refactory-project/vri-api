@@ -29,8 +29,8 @@ urlpatterns = [
     path("api/v1/manage/interpreters/", include("apps.interpreters.manage_urls")),  # V2-045, admins only
     path("api/v1/dashboard/", include("apps.dashboards.urls")),
     path("api/v1/institutions/", include("apps.institutions.urls")),  # V2-005, the institution's own data
-    path("api/v1/manage/institutions/", include("apps.institutions.manage_urls")),  # V2-005, admins only
     path("api/v1/auth/", include("apps.users.urls")),  # Web Registration endpoint
+    path("api/v1/administration/", include("apps.administration.urls")),
     # OpenAPI Schema & Documentation
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path(
@@ -39,5 +39,4 @@ urlpatterns = [
         name="swagger-ui",
     ),
     path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
-    path("api/v1/institutions/", include("apps.institutions.urls")),
 ]

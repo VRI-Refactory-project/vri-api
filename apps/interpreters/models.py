@@ -1,5 +1,5 @@
-
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, MaxValueValidator
 from django.db import models
 from django.core.exceptions import ValidationError
@@ -72,6 +72,13 @@ class InterpreterProfile(models.Model):
             ),
         ]
 
+    def clean(self):
+        super().clean()
+        if self.verification_status == VerificationStatus.APPROVED and not self.user.email_verified:
+            raise ValidationError(
+                {"verification_status": "Cannot approve: this interpreter has not verified their email address."}
+            )
+
     def __str__(self):
         return f"{self.user.full_name} ({self.get_verification_status_display()})"
 
@@ -103,10 +110,7 @@ class InterpreterAvailability(models.Model):
         ]
 
     def __str__(self):
-        return (
-            f"{self.interpreter.user.full_name}: "
-            f"{self.start_at} - {self.end_at}"
-        )
+        return f"{self.interpreter.user.full_name}: {self.start_at} - {self.end_at}"
 
 
 class WeeklyAvailability(models.Model):
@@ -183,7 +187,13 @@ class CertificationDocument(models.Model):
         ordering = ["-uploaded_at"]
 
     def __str__(self):
+<<<<<<< HEAD
         return f"Certification: {self.document_name} - {self.interpreter.user.full_name}"
+=======
+        return (
+            f"Certification: {self.document_name} - {self.interpreter.user.full_name}"
+        )
+>>>>>>> origin/dev
 
 
 class VerificationDecision(models.Model):
@@ -211,7 +221,9 @@ class VerificationDecision(models.Model):
     )
     action = models.CharField(max_length=20, choices=Action.choices)
     reason = models.TextField(blank=True, default="")
-    previous_status = models.CharField(max_length=20, choices=VerificationStatus.choices)
+    previous_status = models.CharField(
+        max_length=20, choices=VerificationStatus.choices
+    )
     new_status = models.CharField(max_length=20, choices=VerificationStatus.choices)
     created_at = models.DateTimeField(auto_now_add=True)
 

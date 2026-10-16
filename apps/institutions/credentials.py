@@ -1,78 +1,45 @@
-"""Institutions created by a platform administrator (V2-005): temporary password and login-details email.
-
-Used by the admin API (manage_views.py) and the Django admin site, so both behave the same way: the
-institution is APPROVED at once, its administrator gets a temporary password by email and must choose
-their own at first sign-in. If the email cannot be sent, nothing is created.
-"""
-
-import logging
-import secrets
-
 from django.conf import settings
-from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ValidationError
-from django.core.mail import send_mail
-from django.db import transaction
-
-logger = logging.getLogger("apps.institutions")
-
-# No look-alike characters (0/O, 1/I/L), so it can be copied from the email without mistakes.
-_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
-_DIGITS = "23456789"
+from django.db import models
 
 
-class CredentialsEmailError(Exception):
-    """The login-details email could not be sent. The institution was not created."""
+class AuditLog(models.Model):
+    """A record of something an administrator did that the platform must be able to account for.
 
-
-def generate_temporary_password(user):
-    """Like K7PM-4Q9X. Meets the password rules (length, a number, a special character)."""
-    while True:
-        chars = [secrets.choice(_ALPHABET) for _ in range(8)]
-        if not any(ch in _DIGITS for ch in chars):
-            continue
-        password = f"{''.join(chars[:4])}-{''.join(chars[4:])}"
-        try:
-            validate_password(password, user=user)
-        except ValidationError:
-            continue
-        return password
-
-
-def create_approved_institution(data, admin, request=None):
-    """Create an APPROVED institution and email its login details. Returns the institution's user.
-
-    `data` is the request body (validated by AdminInstitutionCreateSerializer). Raises the serializer's
-    ValidationError for bad data, or CredentialsEmailError (and rolls everything back) if sending fails.
+    Administrator sign-ins (V2-064), institution lifecycle changes, and institution staff changes (V2-006).
+    Add an `Event` when another action needs recording. Entries are written by `apps.audit.services.record`
+    and are read-only in the admin site.
     """
-    from apps.audit import services as audit
-    from apps.audit.models import AuditLog
 
-    from .serializers import AdminInstitutionCreateSerializer
+    class Event(models.TextChoices):
+        ADMIN_SIGN_IN = "admin_sign_in", "Administrator signed in"
+        INSTITUTION_APPROVED = "institution_approved", "Institution approved"
+        INSTITUTION_REJECTED = "institution_rejected", "Institution rejected"
+        INSTITUTION_DEACTIVATED = "institution_deactivated", "Institution deactivated"
+        STAFF_CREATED = "staff_created", "Institution staff account created"
+        STAFF_UPDATED = "staff_updated", "Institution staff account changed"
+        STAFF_REVOKED = "staff_revoked", "Institution staff access revoked"
+        STAFF_REINSTATED = "staff_reinstated", "Institution staff access reinstated"
 
-    serializer = AdminInstitutionCreateSerializer(data=data)
-    serializer.is_valid(raise_exception=True)
-    with transaction.atomic():
-        user = serializer.save()
-        try:
-            _send_login_details(user, serializer.temporary_password)
-        except Exception as exc:  # noqa: BLE001 - any mail failure: undo the account and say so
-            logger.exception("institution_credentials_email_failed admin=%s", admin.pk)
-            raise CredentialsEmailError from exc
-        audit.record(AuditLog.Event.INSTITUTION_CREATED, admin, request)
-    logger.info("institution_created_by_admin admin=%s institution=%s", admin.pk, user.institution_profile.pk)
-    return user
-
-
-def _send_login_details(user, temporary_password):
-    institution = user.institution_profile
-    body = (
-        f"Hello {user.full_name},\n\n"
-        f"A SignConnect administrator has created an account for {institution.organisation_name}, "
-        "and you are its administrator.\n\n"
-        f"Sign in with your email ({user.email}) or phone number ({user.phone_number}) and this temporary "
-        f"password:\n\n    {temporary_password}\n\n"
-        "You will be asked to choose your own password when you first sign in.\n"
-        "If you were not expecting this email, contact the SignConnect team.\n"
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="audit_logs",
     )
-    send_mail("Your SignConnect institution account", body, settings.DEFAULT_FROM_EMAIL, [user.email])
+    # The account the action was done to, when that is not `user` (e.g. the staff member who was revoked).
+    target_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    event = models.CharField(max_length=40, choices=Event.choices, db_index=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.get_event_display()} - {self.user} - {self.created_at:%Y-%m-%d %H:%M}"

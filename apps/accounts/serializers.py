@@ -7,7 +7,7 @@ from phonenumber_field.serializerfields import PhoneNumberField
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.core.permissions import user_institution
+from apps.core.permissions import user_staff_membership
 
 from . import recovery
 from .models import RecoveryCode
@@ -27,19 +27,37 @@ class UserSerializer(serializers.ModelSerializer):
     """Public view of a user. Reuse this inside role-specific profile responses."""
 
     phone_number = serializers.CharField(read_only=True)
+    email_verified = serializers.BooleanField(read_only=True)
     institution_status = serializers.SerializerMethodField(
         help_text="Institution accounts only: PENDING, APPROVED or REJECTED. Null for every other role."
+    )
+    institution_role = serializers.SerializerMethodField(
+        help_text="Institution accounts only: ADMIN (may manage staff) or STAFF. Null for every other role."
     )
 
     class Meta:
         model = User
-        fields = ["id", "full_name", "phone_number", "email", "role", "must_change_password", "date_joined",
-                  "institution_status"]
+        fields = [
+            "id", "full_name", "phone_number", "email", "email_verified", "role",
+            "must_change_password", "date_joined", "institution_status", "institution_role",
+        ]
         read_only_fields = fields
 
+    def _membership(self, user):
+        if user.role != User.Role.INSTITUTION:
+            return None
+        cache = self.context.setdefault("_staff_membership", {})  # one query per user, not per field
+        if user.pk not in cache:
+            cache[user.pk] = user_staff_membership(user)
+        return cache[user.pk]
+
     def get_institution_status(self, user) -> str | None:
-        institution = user_institution(user) if user.role == User.Role.INSTITUTION else None
-        return institution.status if institution else None
+        membership = self._membership(user)
+        return membership.institution.status if membership else None
+
+    def get_institution_role(self, user) -> str | None:
+        membership = self._membership(user)
+        return membership.role if membership else None
 
 
 class BaseRegistrationSerializer(serializers.Serializer):
@@ -245,6 +263,10 @@ class RecoveryConfirmSerializer(serializers.Serializer):
         attrs["user"], attrs["recovery_code"] = user, rc
 
         return attrs
+
+
+class EmailVerifyConfirmSerializer(serializers.Serializer):
+    code = CodeField
 
 
 class AdminResetConfirmSerializer(serializers.Serializer):

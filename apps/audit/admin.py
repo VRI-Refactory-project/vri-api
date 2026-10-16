@@ -7,9 +7,10 @@ from .models import AuditLog
 class AuditLogAdmin(admin.ModelAdmin):
     """Read-only: an audit log that can be edited or deleted from the admin site is not a log."""
 
-    list_display = ("created_at", "event", "user", "ip_address")
+    list_display = ("created_at", "event", "user", "target_user", "ip_address")
     list_filter = ("event",)
-    search_fields = ("user__full_name", "user__phone_number", "ip_address")
+    search_fields = ("user__full_name", "user__phone_number", "target_user__full_name",
+                     "target_user__phone_number", "ip_address")
     date_hierarchy = "created_at"
 
     def has_add_permission(self, request):
