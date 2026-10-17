@@ -1,6 +1,8 @@
-from django.urls import path
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
 
 from .views import (
+    AvailabilityPeriodViewSet,
     AvailabilityStatusView,
     CertificationUploadView,
     DayAvailabilityView,
@@ -13,6 +15,9 @@ from .views import (
 )
 
 app_name = "interpreters"
+
+router = DefaultRouter()
+router.register(r'availability', AvailabilityPeriodViewSet, basename='availability')
 
 urlpatterns = [
     path(
@@ -60,4 +65,5 @@ urlpatterns = [
         InterpreterAvailabilityDetailView.as_view(),
         name="availability-detail",
     ),
+    path('', include(router.urls)),
 ]

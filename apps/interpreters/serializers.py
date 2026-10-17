@@ -1,10 +1,12 @@
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import serializers
 
 from apps.accounts.serializers import BaseRegistrationSerializer
 
 from .models import (
+    AvailabilityPeriod,
     CertificationDocument,
     InterpreterAvailability,
     InterpreterProfile,
@@ -389,3 +391,34 @@ class ExceptionSerializer(serializers.Serializer):
 class MonthExceptionsSerializer(serializers.Serializer):
     month = serializers.CharField()
     exceptions = ExceptionSerializer(many=True)
+
+
+
+class AvailabilityPeriodSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AvailabilityPeriod
+        fields = ['id', 'interpreter', 'start_time', 'end_time']
+        read_only_fields = ['interpreter'] # Automatically set via the view
+
+    def validate_start_time(self, value):
+        if value < timezone.now():
+            raise serializers.ValidationError("Start time cannot be in the past.")
+        return value
+
+    def validate(self, data):
+        # Ensure end_time is after start_time
+        if data['start_time'] >= data['end_time']:
+            raise serializers.ValidationError({"end_time": "End time must be after start_time."})
+        
+        # Trigger the model clean method to check for overlaps
+        instance = AvailabilityPeriod(
+            interpreter=self.context['request'].user,
+            start_time=data['start_time'],
+            end_time=data['end_time']
+        )
+        try:
+            instance.clean()
+        except Exception as e:
+            raise serializers.ValidationError(e.message_dict if hasattr(e, 'message_dict') else str(e))
+            
+        return data
