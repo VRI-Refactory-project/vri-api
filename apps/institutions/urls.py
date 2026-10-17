@@ -4,8 +4,9 @@ from django.urls import path
 from . import views
 from .views import (
     ApproveInstitutionView,
+    InstitutionalAccountUpdateAPIView,
     PendingInstitutionListView,
-    RejectInstitutionView,InstitutionalAccountUpdateAPIView
+    RejectInstitutionView,
 )
 
 urlpatterns = [

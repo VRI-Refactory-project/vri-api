@@ -3,6 +3,7 @@ from django.contrib.auth.models import update_last_login
 from django.db import connection
 from django.db.utils import OperationalError
 from django.shortcuts import get_object_or_404
+from apps.core import permissions
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -11,7 +12,7 @@ from drf_spectacular.utils import (
     extend_schema,
     inline_serializer,
 )
-from rest_framework import serializers, status
+from rest_framework import serializers, status,viewsets
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.generics import RetrieveAPIView
@@ -43,6 +44,8 @@ from .serializers import (
     check_new_password,
 )
 from .utils import find_user_by_identifier
+from .models import BaseAvailability, AvailabilityOverride
+from .serializers import BaseAvailabilitySerializer, AvailabilityOverrideSerializer
 
 User = get_user_model()
 DetailSerializer = inline_serializer("Detail", {"detail": serializers.CharField()})
@@ -413,3 +416,26 @@ class AdminResetConfirmView(AdminResetBase):
                                 request.user.pk, target.pk, client_ip(request))
         return Response({"detail": "Temporary password set. Give it to the user in person; "
                                    "they must choose a new one at their next sign-in."})
+    
+
+class BaseAvailabilityViewSet(viewsets.ModelViewSet):
+    serializer_class = BaseAvailabilitySerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        # Users should only manage their own core schedule
+        return BaseAvailability.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class AvailabilityOverrideViewSet(viewsets.ModelViewSet):
+    serializer_class = AvailabilityOverrideSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return AvailabilityOverride.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)

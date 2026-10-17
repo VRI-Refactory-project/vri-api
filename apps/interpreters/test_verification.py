@@ -9,11 +9,16 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 from django.test import TestCase, override_settings
-from django.utils import timezone
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from .models import CertificationDocument, InterpreterProfile, VerificationDecision, VerificationStatus
+from .models import (
+    CertificationDocument,
+    InterpreterProfile,
+    VerificationDecision,
+    VerificationStatus,
+)
 
 User = get_user_model()
 PASSWORD = "Sign-Connect-2026"

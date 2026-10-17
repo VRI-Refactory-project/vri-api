@@ -6,7 +6,13 @@ from rest_framework.views import APIView
 
 from apps.accounts.serializers import TokenPairSerializer
 
-from .permissions import ROLE_PERMISSIONS, IsAdminRole, IsDeafUser, IsInstitution, IsInterpreter
+from .permissions import (
+    ROLE_PERMISSIONS,
+    IsAdminRole,
+    IsDeafUser,
+    IsInstitution,
+    IsInterpreter,
+)
 
 User = get_user_model()
 PASSWORD = "Sign-Connect-2026"

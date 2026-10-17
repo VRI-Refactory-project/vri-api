@@ -62,7 +62,7 @@ def create_staff(serializer, admin, request=None):
         user.save(update_fields=["password", "must_change_password"])
         try:
             _send_login_details(membership, admin, password)
-        except Exception as exc:  # noqa: BLE001 - any mail failure: undo the account and say so
+        except Exception as exc:
             logger.exception("staff_credentials_email_failed admin=%s", admin.pk)
             raise StaffEmailError from exc
         audit.record(AuditLog.Event.STAFF_CREATED, admin, request, target_user=user)

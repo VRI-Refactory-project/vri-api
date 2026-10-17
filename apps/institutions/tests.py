@@ -1,13 +1,11 @@
-from django.core.cache import cache
-
 from django.core import mail
+from django.core.cache import cache
 from django.test import override_settings
-
-from apps.audit.models import AuditLog
 from django.urls import reverse
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import User
+from apps.audit.models import AuditLog
 
 from .models import InstitutionProfile, InstitutionStatus
 

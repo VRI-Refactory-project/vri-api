@@ -5,7 +5,7 @@ the Swagger docs public, because reviewers use them. Use prod.py for the real pi
 """
 from django.core.exceptions import ImproperlyConfigured
 
-from .base import *  # noqa: F401,F403
+from .base import *
 from .base import ALLOWED_HOSTS, MIDDLEWARE, SECRET_KEY, env
 
 if len(SECRET_KEY) < 32 or SECRET_KEY.startswith(("change-me", "django-insecure")):

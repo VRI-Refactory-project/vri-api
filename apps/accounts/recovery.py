@@ -13,7 +13,10 @@ from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import F, Sum
 from django.utils import timezone
-from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+from rest_framework_simplejwt.token_blacklist.models import (
+    BlacklistedToken,
+    OutstandingToken,
+)
 
 from .models import RecoveryCode
 
@@ -70,7 +73,7 @@ def issue_code(user, purpose, target_user=None, ip=None):
         )
     try:
         _send_code_email(user, code, purpose, target_user)
-    except Exception:  # noqa: BLE001 - any mail failure: keep the response neutral, never leak it
+    except Exception:
         rc.delete()
         logger.exception("recovery_email_failed user=%s purpose=%s", user.pk, purpose)
         return "failed"

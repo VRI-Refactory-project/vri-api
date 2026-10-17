@@ -7,6 +7,10 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework import serializers
 from rest_framework.test import APITestCase
+from datetime import date, time
+from rest_framework.exceptions import ValidationError as DRFValidationError
+from apps.accounts.models import DayOfWeek, BaseAvailability, AvailabilityOverride
+from apps.accounts.serializers import BaseAvailabilitySerializer, AvailabilityOverrideSerializer
 
 from .serializers import BaseRegistrationSerializer, TokenPairSerializer
 
@@ -265,3 +269,77 @@ class BaseRegistrationSerializerTests(TestCase):
         with self.assertRaises(RuntimeError):
             s.save()
         self.assertFalse(User.objects.filter(phone_number="+256772123456").exists())
+
+
+
+
+User = get_user_model()
+
+class BaseAvailabilityModelAndSerializerTests(TestCase):
+    """Tests validation constraints for recurring weekly base schedules."""
+
+    def setUp(self):
+        # Using simple fields since user model configurations vary by team
+        self.user = User.objects.create_user(
+            username="testprovider",
+            email="provider@example.com",
+            password="securepassword123",
+        )
+
+    def test_clean_method_raises_error_when_start_after_end(self):
+        """Model validation should block slots where start_time is greater than or equal to end_time."""
+        invalid_availability = BaseAvailability(
+            user=self.user,
+            day_of_week=DayOfWeek.MONDAY,
+            start_time=time(17, 0),
+            end_time=time(9, 0),
+        )
+        with self.assertRaises(Exception):
+            invalid_availability.clean()
+
+    def test_serializer_validation_blocks_invalid_time_range(self):
+        """The DRF Serializer must block invalid time boundaries during creation requests."""
+        payload = {
+            "day_of_week": DayOfWeek.MONDAY,
+            "start_time": "15:00:00",
+            "end_time": "13:00:00",
+        }
+        serializer = BaseAvailabilitySerializer(data=payload)
+        with self.assertRaises(DRFValidationError):
+            serializer.is_valid(raise_exception=True)
+
+
+class AvailabilityOverrideModelAndSerializerTests(TestCase):
+    """Tests validation constraints for specific calendar override dates."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="testprovider2",
+            email="provider2@example.com",
+            password="securepassword123",
+        )
+        self.target_date = date(2026, 11, 25)
+
+    def test_clean_method_raises_error_when_start_after_end(self):
+        """Override validation should fail if start_time is after end_time."""
+        invalid_override = AvailabilityOverride(
+            user=self.user,
+            specific_date=self.target_date,
+            is_available=True,
+            start_time=time(14, 0),
+            end_time=time(11, 0),
+        )
+        with self.assertRaises(Exception):
+            invalid_override.clean()
+
+    def test_serializer_requires_times_if_marked_available(self):
+        """If an override marks a user as available, specific start/end times must be provided."""
+        invalid_payload = {
+            "specific_date": "2026-11-25",
+            "is_available": True,
+            "start_time": None,
+            "end_time": None,
+        }
+        serializer = AvailabilityOverrideSerializer(data=invalid_payload)
+        with self.assertRaises(DRFValidationError):
+            serializer.is_valid(raise_exception=True)

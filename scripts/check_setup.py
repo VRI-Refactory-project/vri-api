@@ -157,7 +157,7 @@ if local_django:
             record("OK" if pending == 0 else "FAIL", "Migrations applied",
                    "all applied" if pending == 0 else f"{pending} pending - run: python manage.py migrate")
         else:
-            host = re.search(r"^DATABASE_HOST=(.*)$", env_file.read_text(), re.M) if env_file.exists() else None
+            host = re.search(r"^DATABASE_HOST=(.*)$", env_file.read_text(), re.MULTILINE) if env_file.exists() else None
             hint = (" - set DATABASE_HOST=localhost in .env when not using Docker"
                     if host and host.group(1).strip() == "db" else " - is PostgreSQL running?")
             record("FAIL", "Database connection", out.splitlines()[-1][:200] + hint)

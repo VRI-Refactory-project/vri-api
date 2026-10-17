@@ -1,5 +1,5 @@
 
-from datetime import datetime, timezone as dt_timezone
+from datetime import UTC, datetime
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -11,7 +11,6 @@ from .models import (
     VerificationStatus,
 )
 from .services import get_eligible_interpreters
-
 
 User = get_user_model()
 
@@ -33,16 +32,16 @@ class EligibleInterpreterRoutingTests(TestCase):
         )
 
         self.requested_at = datetime(
-            2027, 1, 10, 9, 30, tzinfo=dt_timezone.utc
+            2027, 1, 10, 9, 30, tzinfo=UTC
         )
 
         InterpreterAvailability.objects.create(
             interpreter=self.profile,
             start_at=datetime(
-                2027, 1, 10, 9, 0, tzinfo=dt_timezone.utc
+                2027, 1, 10, 9, 0, tzinfo=UTC
             ),
             end_at=datetime(
-                2027, 1, 10, 10, 0, tzinfo=dt_timezone.utc
+                2027, 1, 10, 10, 0, tzinfo=UTC
             ),
         )
 
@@ -55,7 +54,7 @@ class EligibleInterpreterRoutingTests(TestCase):
 
     def test_excludes_interpreter_outside_saved_period(self):
         outside_period = datetime(
-            2027, 1, 10, 10, 30, tzinfo=dt_timezone.utc
+            2027, 1, 10, 10, 30, tzinfo=UTC
         )
 
         eligible = get_eligible_interpreters(
@@ -66,7 +65,7 @@ class EligibleInterpreterRoutingTests(TestCase):
 
     def test_excludes_interpreter_at_period_end(self):
         period_end = datetime(
-            2027, 1, 10, 10, 0, tzinfo=dt_timezone.utc
+            2027, 1, 10, 10, 0, tzinfo=UTC
         )
 
         eligible = get_eligible_interpreters(
@@ -121,10 +120,10 @@ class EligibleInterpreterRoutingTests(TestCase):
         InterpreterAvailability.objects.create(
             interpreter=general_profile,
             start_at=datetime(
-                2027, 1, 10, 9, 0, tzinfo=dt_timezone.utc
+                2027, 1, 10, 9, 0, tzinfo=UTC
             ),
             end_at=datetime(
-                2027, 1, 10, 10, 0, tzinfo=dt_timezone.utc
+                2027, 1, 10, 10, 0, tzinfo=UTC
             ),
         )
 

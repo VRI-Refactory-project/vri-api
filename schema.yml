@@ -1,0 +1,3578 @@
+openapi: 3.0.3
+info:
+  title: SignConnect VRI API
+  version: 0.1.0
+  description: Backend API for the SignConnect Video Remote Interpreting platform.
+paths:
+  /api/v1/administration/change-password/:
+    post:
+      operationId: administration_change_password_create
+      description: Update admin password and record the password_last_changed timestamp
+        (V2-052).
+      summary: Change administrator password
+      tags:
+      - Administration Settings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminChangePasswordRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AdminChangePasswordRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AdminChangePasswordRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/administration/settings/:
+    get:
+      operationId: administration_settings_retrieve
+      description: View and update admin details, notification preferences, and contact
+        info (V2-052).
+      summary: Retrieve or update administrator profile and settings
+      tags:
+      - Administration Settings
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProfile'
+          description: ''
+    put:
+      operationId: administration_settings_update
+      description: View and update admin details, notification preferences, and contact
+        info (V2-052).
+      summary: Retrieve or update administrator profile and settings
+      tags:
+      - Administration Settings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminProfileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AdminProfileRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AdminProfileRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProfile'
+          description: ''
+    patch:
+      operationId: administration_settings_partial_update
+      description: View and update admin details, notification preferences, and contact
+        info (V2-052).
+      summary: Retrieve or update administrator profile and settings
+      tags:
+      - Administration Settings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedAdminProfileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedAdminProfileRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedAdminProfileRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProfile'
+          description: ''
+  /api/v1/api/availability/base/:
+    get:
+      operationId: api_availability_base_list
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BaseAvailability'
+          description: ''
+    post:
+      operationId: api_availability_base_create
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BaseAvailabilityRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BaseAvailabilityRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BaseAvailabilityRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseAvailability'
+          description: ''
+  /api/v1/api/availability/base/{id}/:
+    get:
+      operationId: api_availability_base_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseAvailability'
+          description: ''
+    put:
+      operationId: api_availability_base_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BaseAvailabilityRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BaseAvailabilityRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BaseAvailabilityRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseAvailability'
+          description: ''
+    patch:
+      operationId: api_availability_base_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedBaseAvailabilityRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedBaseAvailabilityRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedBaseAvailabilityRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseAvailability'
+          description: ''
+    delete:
+      operationId: api_availability_base_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/api/availability/overrides/:
+    get:
+      operationId: api_availability_overrides_list
+      description: Retrieve all calendar overrides/exceptions (vacations, specific
+        shifts) for the user.
+      summary: List availability overrides
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AvailabilityOverride'
+          description: ''
+    post:
+      operationId: api_availability_overrides_create
+      description: Block out a specific date or open a specific time exception.
+      summary: Create an availability override
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvailabilityOverrideRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AvailabilityOverrideRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AvailabilityOverrideRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityOverride'
+          description: ''
+  /api/v1/api/availability/overrides/{id}/:
+    get:
+      operationId: api_availability_overrides_retrieve
+      summary: Get details of an override slot
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityOverride'
+          description: ''
+    put:
+      operationId: api_availability_overrides_update
+      summary: Update an override slot
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvailabilityOverrideRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AvailabilityOverrideRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AvailabilityOverrideRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityOverride'
+          description: ''
+    patch:
+      operationId: api_availability_overrides_partial_update
+      summary: Partially update an override slot
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedAvailabilityOverrideRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedAvailabilityOverrideRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedAvailabilityOverrideRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityOverride'
+          description: ''
+    delete:
+      operationId: api_availability_overrides_destroy
+      summary: Delete an override slot
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/auth/deaf-user/me/:
+    get:
+      operationId: auth_deaf_user_me_retrieve
+      description: Retrieve or update details for the authenticated Deaf user, including
+        emergency contact information, sign language preferences, and sensory accessibility
+        settings.
+      summary: Deaf User Profile Management
+      tags:
+      - User Management
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+          description: ''
+    put:
+      operationId: auth_deaf_user_me_update
+      description: Retrieve or update details for the authenticated Deaf user, including
+        emergency contact information, sign language preferences, and sensory accessibility
+        settings.
+      summary: Deaf User Profile Management
+      tags:
+      - User Management
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserProfileRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserProfileRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+          description: ''
+    patch:
+      operationId: auth_deaf_user_me_partial_update
+      description: Retrieve or update details for the authenticated Deaf user, including
+        emergency contact information, sign language preferences, and sensory accessibility
+        settings.
+      summary: Deaf User Profile Management
+      tags:
+      - User Management
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUserProfileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedUserProfileRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedUserProfileRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+          description: ''
+  /api/v1/auth/email/resend/:
+    post:
+      operationId: auth_email_resend_create
+      description: Send a new verification code to the signed-in user's email.
+      summary: 'Email verification: send me a new code'
+      tags:
+      - Auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Detail'
+          description: ''
+  /api/v1/auth/email/verify/:
+    post:
+      operationId: auth_email_verify_create
+      description: Enter the 6-digit code from the email. On success the email is
+        marked verified.
+      summary: 'Email verification: confirm the code'
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailVerifyConfirmRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EmailVerifyConfirmRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EmailVerifyConfirmRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+  /api/v1/auth/login/:
+    post:
+      operationId: auth_login_create
+      description: |-
+        Sign in with phone number or email plus password/PIN. Returns JWT tokens.
+
+        Send the access token on later requests as: `Authorization: Bearer <access>`.
+      summary: Sign in (phone or email)
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              WithPhone:
+                value:
+                  identifier: '0772123456'
+                  password: your-password
+                summary: With phone
+              WithEmail:
+                value:
+                  identifier: sarah@example.com
+                  password: your-password
+                summary: With email
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: ''
+  /api/v1/auth/me/:
+    get:
+      operationId: auth_me_retrieve
+      summary: Current signed-in user
+      tags:
+      - Auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+  /api/v1/auth/me/access/{role}/:
+    get:
+      operationId: auth_me_access_retrieve
+      description: |-
+        Checks whether the signed-in user may use endpoints limited to `role`.
+
+        It runs the same permission class that protects those endpoints (apps/core/permissions.py), so
+        clients can confirm access before routing, and the 401/403 rules can be tried in Swagger.
+      summary: Check access to a role's endpoints
+      parameters:
+      - in: path
+        name: role
+        schema:
+          type: string
+          enum:
+          - admin
+          - deaf_hoh
+          - institution
+          - interpreter
+        required: true
+      tags:
+      - Auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleAccess'
+          description: ''
+        '401':
+          description: Not signed in.
+        '403':
+          description: Signed in with a different role.
+        '404':
+          description: Unknown role.
+  /api/v1/auth/password/change/:
+    post:
+      operationId: auth_password_change_create
+      description: Change your own password/PIN. Clears `must_change_password` and
+        signs out other devices.
+      summary: Change my password/PIN
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: ''
+  /api/v1/auth/recovery/confirm/:
+    post:
+      operationId: auth_recovery_confirm_create
+      description: 'Step 2: send the code and a new password/PIN. On success the user
+        is signed in.'
+      summary: 'Account recovery: confirm code and set new password'
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecoveryConfirmRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RecoveryConfirmRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RecoveryConfirmRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: ''
+  /api/v1/auth/recovery/request/:
+    post:
+      operationId: auth_recovery_request_create
+      description: |-
+        Step 1: ask for a recovery code by email.
+
+        Always returns the same 200 response, whether or not the account exists, so this endpoint
+        cannot be used to find out who is registered.
+      summary: 'Account recovery: request a code by email'
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecoveryRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RecoveryRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RecoveryRequestRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Detail'
+          description: ''
+  /api/v1/auth/register/:
+    post:
+      operationId: auth_register_create
+      description: Registers a new web user account using email, password, and optional
+        contact number.
+      summary: User Registration
+      tags:
+      - User Management
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegistrationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserRegistrationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserRegistrationRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRegistration'
+          description: ''
+  /api/v1/auth/register/deaf/:
+    post:
+      operationId: auth_register_deaf_create
+      description: Creates an account for one role and signs the user in (returns
+        the same payload as login).
+      summary: Register a Deaf / Hard of Hearing user
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeafRegistrationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeafRegistrationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeafRegistrationRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: ''
+  /api/v1/auth/register/institution/:
+    post:
+      operationId: auth_register_institution_create
+      description: Creates an account for one role and signs the user in (returns
+        the same payload as login).
+      summary: Register an institution (the registrant becomes its administrator;
+        pending approval)
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstitutionRegistrationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InstitutionRegistrationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InstitutionRegistrationRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: ''
+  /api/v1/auth/register/interpreter/:
+    post:
+      operationId: auth_register_interpreter_create
+      description: Creates an account for one role and signs the user in (returns
+        the same payload as login).
+      summary: Register an interpreter (account starts pending review)
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InterpreterRegistrationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InterpreterRegistrationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InterpreterRegistrationRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: ''
+  /api/v1/auth/roles/:
+    get:
+      operationId: auth_roles_list
+      description: |-
+        The account types shown on the role selection screen. The chosen `value` decides which
+        registration form the user is sent to. Admin accounts are created by staff only, so they are not listed.
+      summary: Roles a new user can choose
+      tags:
+      - Auth
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoleOption'
+          description: ''
+  /api/v1/auth/token/refresh/:
+    post:
+      operationId: auth_token_refresh_create
+      description: |-
+        Takes a refresh type JSON web token and returns an access type JSON web
+        token if the refresh token is valid.
+      summary: Get a new access token from a refresh token
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefresh'
+          description: ''
+  /api/v1/dashboard/admin/:
+    get:
+      operationId: dashboard_admin_retrieve
+      description: Summary numbers and latest administrator sign-ins.
+      summary: Administrator dashboard
+      tags:
+      - Dashboards
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDashboard'
+          description: ''
+  /api/v1/dashboard/deaf/:
+    get:
+      operationId: dashboard_deaf_retrieve
+      description: Everything the Deaf user's home screen needs in one request.
+      summary: Deaf user dashboard
+      tags:
+      - Dashboards
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeafDashboard'
+          description: ''
+  /api/v1/dashboard/interpreter/:
+    get:
+      operationId: dashboard_interpreter_retrieve
+      description: Dashboard data for active, approved interpreters.
+      summary: Interpreter dashboard
+      tags:
+      - Dashboards
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterpreterDashboard'
+          description: ''
+  /api/v1/health/:
+    get:
+      operationId: health_retrieve
+      description: Confirms the API is up and can reach the database.
+      summary: Health check
+      tags:
+      - Health
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+          description: ''
+  /api/v1/institutions/{id}/approve/:
+    post:
+      operationId: institutions_approve_create
+      summary: Approve a pending institution application
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Institutions
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstitutionApplication'
+          description: ''
+  /api/v1/institutions/{id}/reject/:
+    post:
+      operationId: institutions_reject_create
+      summary: Reject a pending institution application
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Institutions
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstitutionApplication'
+          description: ''
+  /api/v1/institutions/api/institution/account/:
+    get:
+      operationId: institutions_api_institution_account_retrieve
+      description: Retrieve the current account settings profile configuration.
+      tags:
+      - institutions
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: institutions_api_institution_account_partial_update
+      description: Partially update account configuration properties dynamically.
+      tags:
+      - institutions
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/institutions/me/:
+    get:
+      operationId: institutions_me_retrieve
+      description: The signed-in user's own institution. There is no way to ask for
+        another institution by id.
+      summary: My institution
+      tags:
+      - Institutions
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Institution'
+          description: ''
+        '403':
+          description: 'Not an institution, or the institution is pending or rejected
+            (code: institution_pending / institution_rejected).'
+  /api/v1/institutions/me/staff/:
+    get:
+      operationId: institutions_me_staff_list
+      description: List your institution's staff, or add a staff member (their login
+        details are emailed to them).
+      summary: List my institution's staff
+      parameters:
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - ACTIVE
+          - REVOKED
+        description: Only active or only revoked staff.
+      tags:
+      - Institution Staff
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Staff'
+          description: ''
+        '403':
+          description: 'Not an administrator of an approved institution (code: institution_admin_required
+            / institution_pending / ...).'
+        '404':
+          description: No staff member with this id in your institution.
+    post:
+      operationId: institutions_me_staff_create
+      description: List your institution's staff, or add a staff member (their login
+        details are emailed to them).
+      summary: Add a staff member (login details are emailed to them)
+      tags:
+      - Institution Staff
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StaffCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StaffCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Staff'
+          description: ''
+        '400':
+          description: Invalid or duplicate details (same rules as registration).
+        '503':
+          description: The login-details email could not be sent; nothing was created.
+        '403':
+          description: 'Not an administrator of an approved institution (code: institution_admin_required
+            / institution_pending / ...).'
+        '404':
+          description: No staff member with this id in your institution.
+  /api/v1/institutions/me/staff/{id}/:
+    get:
+      operationId: institutions_me_staff_retrieve
+      description: 'View or change one staff member: name, job title and role (ADMIN
+        or STAFF).'
+      summary: Staff member details
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Institution Staff
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Staff'
+          description: ''
+        '403':
+          description: 'Not an administrator of an approved institution (code: institution_admin_required
+            / institution_pending / ...).'
+        '404':
+          description: No staff member with this id in your institution.
+    patch:
+      operationId: institutions_me_staff_partial_update
+      description: 'View or change one staff member: name, job title and role (ADMIN
+        or STAFF).'
+      summary: Change a staff member's name, job title or role
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Institution Staff
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Staff'
+          description: ''
+        '400':
+          description: Invalid data, or it would leave no active administrator.
+        '403':
+          description: 'Not an administrator of an approved institution (code: institution_admin_required
+            / institution_pending / ...).'
+        '404':
+          description: No staff member with this id in your institution.
+  /api/v1/institutions/me/staff/{id}/reinstate/:
+    post:
+      operationId: institutions_me_staff_reinstate_create
+      description: Give a revoked staff member access again (same password and role
+        as before).
+      summary: Reinstate a revoked staff member
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Institution Staff
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Staff'
+          description: ''
+        '403':
+          description: 'Not an administrator of an approved institution (code: institution_admin_required
+            / institution_pending / ...).'
+        '404':
+          description: No staff member with this id in your institution.
+  /api/v1/institutions/me/staff/{id}/revoke/:
+    post:
+      operationId: institutions_me_staff_revoke_create
+      description: |-
+        Remove a staff member's access at once. Their account and history are kept; they cannot sign in, and
+        sessions already open stop working. Revoking someone already revoked changes nothing.
+      summary: Revoke a staff member's access (takes effect immediately)
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Institution Staff
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Staff'
+          description: ''
+        '400':
+          description: Your own access, or the last active administrator.
+        '403':
+          description: 'Not an administrator of an approved institution (code: institution_admin_required
+            / institution_pending / ...).'
+        '404':
+          description: No staff member with this id in your institution.
+  /api/v1/institutions/pending/:
+    get:
+      operationId: institutions_pending_list
+      summary: List institution applications awaiting approval
+      tags:
+      - Institutions
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InstitutionApplication'
+          description: ''
+  /api/v1/interpreters/availability/:
+    get:
+      operationId: interpreters_availability_list
+      summary: List or create interpreter availability periods
+      tags:
+      - interpreters
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InterpreterAvailability'
+          description: ''
+    post:
+      operationId: interpreters_availability_create
+      summary: List or create interpreter availability periods
+      tags:
+      - interpreters
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InterpreterAvailabilityRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InterpreterAvailabilityRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InterpreterAvailabilityRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterpreterAvailability'
+          description: ''
+  /api/v1/interpreters/availability/{id}/:
+    get:
+      operationId: interpreters_availability_retrieve
+      summary: Retrieve, update or delete an availability period
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - interpreters
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterpreterAvailability'
+          description: ''
+    put:
+      operationId: interpreters_availability_update
+      summary: Retrieve, update or delete an availability period
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - interpreters
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InterpreterAvailabilityRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InterpreterAvailabilityRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InterpreterAvailabilityRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterpreterAvailability'
+          description: ''
+    patch:
+      operationId: interpreters_availability_partial_update
+      summary: Retrieve, update or delete an availability period
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - interpreters
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedInterpreterAvailabilityRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedInterpreterAvailabilityRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedInterpreterAvailabilityRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterpreterAvailability'
+          description: ''
+    delete:
+      operationId: interpreters_availability_destroy
+      summary: Retrieve, update or delete an availability period
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - interpreters
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/interpreters/certifications/upload/:
+    post:
+      operationId: interpreters_certifications_upload_create
+      description: Upload a PDF or image certification document for administrative
+        verification and onboarding (V2-003).
+      summary: Upload interpreter certification document
+      tags:
+      - Interpreter Profile Management
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CertificationDocumentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CertificationDocumentRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificationDocument'
+          description: ''
+  /api/v1/interpreters/me/:
+    get:
+      operationId: interpreters_me_retrieve
+      description: |-
+        Retrieve or update profile details for the authenticated interpreter (V2-068).
+
+        **Fields supported:**
+        - `specialisation`: Dropdown choice (`GENERAL`, `MEDICAL`, `LEGAL`, `OTHER`).
+        - `specialisation_other`: Custom text required when `specialisation` is `OTHER`.
+        - `sign_languages`: List of sign language preferences.
+        - `is_available`: Boolean status toggle requiring approved verification.
+        - `working_hours_schedule`: JSON schedule definition.
+      summary: Get or update current interpreter profile
+      tags:
+      - Interpreter Profile Management
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterpreterProfile'
+          description: ''
+    put:
+      operationId: interpreters_me_update
+      description: |-
+        Retrieve or update profile details for the authenticated interpreter (V2-068).
+
+        **Fields supported:**
+        - `specialisation`: Dropdown choice (`GENERAL`, `MEDICAL`, `LEGAL`, `OTHER`).
+        - `specialisation_other`: Custom text required when `specialisation` is `OTHER`.
+        - `sign_languages`: List of sign language preferences.
+        - `is_available`: Boolean status toggle requiring approved verification.
+        - `working_hours_schedule`: JSON schedule definition.
+      summary: Get or update current interpreter profile
+      tags:
+      - Interpreter Profile Management
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InterpreterProfileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InterpreterProfileRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InterpreterProfileRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterpreterProfile'
+          description: ''
+    patch:
+      operationId: interpreters_me_partial_update
+      description: |-
+        Retrieve or update profile details for the authenticated interpreter (V2-068).
+
+        **Fields supported:**
+        - `specialisation`: Dropdown choice (`GENERAL`, `MEDICAL`, `LEGAL`, `OTHER`).
+        - `specialisation_other`: Custom text required when `specialisation` is `OTHER`.
+        - `sign_languages`: List of sign language preferences.
+        - `is_available`: Boolean status toggle requiring approved verification.
+        - `working_hours_schedule`: JSON schedule definition.
+      summary: Get or update current interpreter profile
+      tags:
+      - Interpreter Profile Management
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedInterpreterProfileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedInterpreterProfileRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedInterpreterProfileRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterpreterProfile'
+          description: ''
+  /api/v1/interpreters/me/availability/:
+    get:
+      operationId: interpreters_me_availability_retrieve
+      description: Returns the 7 days (Monday to Sunday) of the week that contains
+        week_start. Defaults to the current week. Each day says whether its hours
+        come from the default week ('default') or from a change for that one date
+        ('exception').
+      summary: Get the availability schedule for one week
+      parameters:
+      - in: query
+        name: week_start
+        schema:
+          type: string
+          format: date
+      tags:
+      - Interpreter Availability
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeekSchedule'
+          description: ''
+  /api/v1/interpreters/me/availability/days/{day}/:
+    patch:
+      operationId: interpreters_me_availability_days_partial_update
+      description: |-
+        Saves one day from the schedule screen. The date is in the URL (YYYY-MM-DD).
+
+        - `repeat_weekly: false` (default): changes only that date.
+        - `repeat_weekly: true`: changes that weekday in the default week, so every future week uses it (a change saved earlier for this one date is removed).
+        - `is_available: false` means unavailable all day (times are ignored).
+
+        Past dates cannot be changed. The change applies to the very next routing decision.
+      summary: Save the availability for one day
+      parameters:
+      - in: path
+        name: day
+        schema:
+          type: string
+        required: true
+      tags:
+      - Interpreter Availability
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedDayUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedDayUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedDayUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DaySchedule'
+          description: ''
+  /api/v1/interpreters/me/availability/exceptions/:
+    get:
+      operationId: interpreters_me_availability_exceptions_retrieve
+      description: 'The dots on the Exceptions calendar. month is YYYY-MM (default:
+        this month). kind is ''unavailable'' (unavailable all day) or ''modified_hours''.
+        To add or edit a date, use PATCH .../days/<date>/ with repeat_weekly false.'
+      summary: List the one-off date changes for a month
+      parameters:
+      - in: query
+        name: month
+        schema:
+          type: string
+          minLength: 1
+          pattern: ^20\d{2}-(0[1-9]|1[0-2])$
+      tags:
+      - Interpreter Availability
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonthExceptions'
+          description: ''
+  /api/v1/interpreters/me/availability/exceptions/{day}/:
+    delete:
+      operationId: interpreters_me_availability_exceptions_destroy
+      description: The Remove link on the Exceptions card. That date goes back to
+        the default week. Past dates cannot be changed. Returns 404 if no change is
+        saved for that date.
+      summary: Remove the change for one date
+      parameters:
+      - in: path
+        name: day
+        schema:
+          type: string
+        required: true
+      tags:
+      - Interpreter Availability
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/interpreters/me/availability/status/:
+    get:
+      operationId: interpreters_me_availability_status_retrieve
+      description: 'is_available is the dashboard switch. available_now says whether
+        she can be offered a request at this very moment (switch AND schedule), and
+        reason says why not: not_approved, switched_off, day_off or outside_hours.
+        Poll this to keep the dashboard indicator correct.'
+      summary: Get the real-time availability status
+      tags:
+      - Interpreter Availability
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityStatus'
+          description: ''
+    patch:
+      operationId: interpreters_me_availability_status_partial_update
+      description: Sets the dashboard switch. Turning it on needs an APPROVED profile.
+        The change applies to the very next routing decision.
+      summary: Switch availability on or off
+      tags:
+      - Interpreter Availability
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedAvailabilityStatusUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedAvailabilityStatusUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedAvailabilityStatusUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityStatus'
+          description: ''
+  /api/v1/manage/interpreters/:
+    get:
+      operationId: manage_interpreters_list
+      description: Interpreters for admins to review, oldest first, so the longest-waiting
+        are reviewed first.
+      summary: Interpreter verification queue
+      parameters:
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - APPROVED
+          - DEACTIVATED
+          - INACTIVE
+          - REJECTED
+        description: Only interpreters with this status, e.g. INACTIVE for the pending-review
+          queue.
+      tags:
+      - Manage
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ManageInterpreterList'
+          description: ''
+  /api/v1/manage/interpreters/{id}/:
+    get:
+      operationId: manage_interpreters_retrieve
+      summary: Interpreter review details (certificates and decision history)
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Manage
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManageInterpreterDetail'
+          description: ''
+  /api/v1/manage/interpreters/{id}/approve/:
+    post:
+      operationId: manage_interpreters_approve_create
+      description: Pending or rejected -> APPROVED. Needs at least one uploaded certificate.
+      summary: Approve an interpreter (they can then receive requests)
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Manage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionReasonOptionalRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DecisionReasonOptionalRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DecisionReasonOptionalRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManageInterpreterDetail'
+          description: ''
+        '400':
+          description: Not allowed from the interpreter's current status, or a field
+            is missing.
+        '404':
+          description: No interpreter with this id.
+  /api/v1/manage/interpreters/{id}/certifications/{cert_id}/file/:
+    get:
+      operationId: manage_interpreters_certifications_file_retrieve
+      description: 'Download an interpreter''s certificate. Admins only: certificates
+        are never served from a public URL.'
+      summary: Download a certification document
+      parameters:
+      - in: path
+        name: cert_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Manage
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+          description: ''
+        '404':
+          description: No such certificate for this interpreter, or the file is missing.
+  /api/v1/manage/interpreters/{id}/deactivate/:
+    post:
+      operationId: manage_interpreters_deactivate_create
+      description: APPROVED -> DEACTIVATED, e.g. a lapsed certificate or a concern
+        raised. They can still sign in.
+      summary: Deactivate an interpreter (stops new requests immediately; reason required)
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Manage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionReasonRequiredRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DecisionReasonRequiredRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DecisionReasonRequiredRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManageInterpreterDetail'
+          description: ''
+        '400':
+          description: Not allowed from the interpreter's current status, or a field
+            is missing.
+        '404':
+          description: No interpreter with this id.
+  /api/v1/manage/interpreters/{id}/reactivate/:
+    post:
+      operationId: manage_interpreters_reactivate_create
+      description: DEACTIVATED -> APPROVED. The interpreter sets themselves available
+        again when ready.
+      summary: Reactivate a deactivated interpreter
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Manage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionReasonOptionalRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DecisionReasonOptionalRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DecisionReasonOptionalRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManageInterpreterDetail'
+          description: ''
+        '400':
+          description: Not allowed from the interpreter's current status, or a field
+            is missing.
+        '404':
+          description: No interpreter with this id.
+  /api/v1/manage/interpreters/{id}/reject/:
+    post:
+      operationId: manage_interpreters_reject_create
+      description: Pending -> REJECTED. The reason is shown to the interpreter on
+        their latest certificate.
+      summary: Reject an interpreter's verification (reason required)
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Manage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionReasonRequiredRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DecisionReasonRequiredRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DecisionReasonRequiredRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManageInterpreterDetail'
+          description: ''
+        '400':
+          description: Not allowed from the interpreter's current status, or a field
+            is missing.
+        '404':
+          description: No interpreter with this id.
+  /api/v1/manage/users/{id}/reset-password/confirm/:
+    post:
+      operationId: manage_users_reset_password_confirm_create
+      description: |-
+        Admin step 2: enter the code from your email and a temporary password/PIN for the user.
+
+        The user must change it at their next sign-in (`must_change_password` = true).
+      summary: 'Admin reset: confirm code and set a temporary password'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Manage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminResetConfirmRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AdminResetConfirmRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AdminResetConfirmRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Detail'
+          description: ''
+  /api/v1/manage/users/{id}/reset-password/request/:
+    post:
+      operationId: manage_users_reset_password_request_create
+      description: |-
+        Admin step 1: send a confirmation code to the ADMIN's own email.
+
+        Verify the user's identity offline first (see docs/design/V2-008-account-recovery.md).
+      summary: 'Admin reset: email me a confirmation code'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Manage
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Detail'
+          description: ''
+components:
+  schemas:
+    ActionEnum:
+      enum:
+      - approve
+      - reject
+      - deactivate
+      - reactivate
+      type: string
+      description: |-
+        * `approve` - Approved
+        * `reject` - Rejected
+        * `deactivate` - Deactivated
+        * `reactivate` - Reactivated
+    AdminChangePasswordRequest:
+      type: object
+      properties:
+        old_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+        new_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+        confirm_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - confirm_password
+      - new_password
+      - old_password
+    AdminDashboard:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        interpreters_pending_verification:
+          type: integer
+        institutions_pending_approval:
+          type: integer
+        users_by_role:
+          type: object
+          additionalProperties:
+            type: integer
+        recent_admin_sign_ins:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminSignIn'
+      required:
+      - institutions_pending_approval
+      - interpreters_pending_verification
+      - recent_admin_sign_ins
+      - user
+      - users_by_role
+    AdminProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        full_name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone_number:
+          type: string
+          default: ''
+        profile_photo:
+          type: string
+          format: uri
+          nullable: true
+        session_alerts:
+          type: boolean
+          description: Receive alerts for connection failures & sessions needing attention.
+        verification_alerts:
+          type: boolean
+          description: Receive alerts for new interpreter & institution applications.
+        password_last_changed:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Timestamp recording when the administrator last updated their
+            password.
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - password_last_changed
+      - updated_at
+    AdminProfileRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+        email:
+          type: string
+          format: email
+          minLength: 1
+        phone_number:
+          type: string
+          default: ''
+        profile_photo:
+          type: string
+          format: binary
+          nullable: true
+        session_alerts:
+          type: boolean
+          description: Receive alerts for connection failures & sessions needing attention.
+        verification_alerts:
+          type: boolean
+          description: Receive alerts for new interpreter & institution applications.
+    AdminResetConfirmRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          minLength: 6
+          maxLength: 6
+          pattern: ^\d{6}$
+        temporary_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+          description: Temporary password/PIN to give the user in person. They must
+            change it at next sign-in.
+      required:
+      - code
+      - temporary_password
+    AdminSignIn:
+      type: object
+      properties:
+        id:
+          type: integer
+        admin:
+          type: string
+        ip_address:
+          type: string
+          nullable: true
+        at:
+          type: string
+          format: date-time
+      required:
+      - admin
+      - at
+      - id
+      - ip_address
+    AvailabilityOverride:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        specific_date:
+          type: string
+          format: date
+        is_available:
+          type: boolean
+        start_time:
+          type: string
+          format: time
+          nullable: true
+        end_time:
+          type: string
+          format: time
+          nullable: true
+      required:
+      - id
+      - specific_date
+    AvailabilityOverrideRequest:
+      type: object
+      properties:
+        specific_date:
+          type: string
+          format: date
+        is_available:
+          type: boolean
+        start_time:
+          type: string
+          format: time
+          nullable: true
+        end_time:
+          type: string
+          format: time
+          nullable: true
+      required:
+      - specific_date
+    AvailabilityStatus:
+      type: object
+      description: |-
+        What the dashboard shows.
+
+        is_available: the dashboard switch.
+        available_now: can she be offered a request at this very moment?
+        reason: why not (null when available_now is true).
+      properties:
+        is_available:
+          type: boolean
+        available_now:
+          type: boolean
+        reason:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/ReasonEnum'
+          - $ref: '#/components/schemas/NullEnum'
+      required:
+      - available_now
+      - is_available
+      - reason
+    BaseAvailability:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        day_of_week:
+          allOf:
+          - $ref: '#/components/schemas/DayOfWeekEnum'
+          minimum: 0
+          maximum: 32767
+        start_time:
+          type: string
+          format: time
+        end_time:
+          type: string
+          format: time
+      required:
+      - day_of_week
+      - end_time
+      - id
+      - start_time
+    BaseAvailabilityRequest:
+      type: object
+      properties:
+        day_of_week:
+          allOf:
+          - $ref: '#/components/schemas/DayOfWeekEnum'
+          minimum: 0
+          maximum: 32767
+        start_time:
+          type: string
+          format: time
+        end_time:
+          type: string
+          format: time
+      required:
+      - day_of_week
+      - end_time
+      - start_time
+    CertificationDocument:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        document:
+          type: string
+          format: uri
+          pattern: (?:pdf|jpg|jpeg|png)$
+        document_name:
+          type: string
+          readOnly: true
+        certificate_type:
+          type: string
+          maxLength: 100
+        issuing_organisation:
+          type: string
+          maxLength: 255
+        uploaded_at:
+          type: string
+          format: date-time
+          readOnly: true
+        rejection_reason:
+          type: string
+          readOnly: true
+      required:
+      - certificate_type
+      - document
+      - document_name
+      - id
+      - issuing_organisation
+      - rejection_reason
+      - uploaded_at
+    CertificationDocumentRequest:
+      type: object
+      properties:
+        document:
+          type: string
+          format: binary
+          pattern: (?:pdf|jpg|jpeg|png)$
+        certificate_type:
+          type: string
+          minLength: 1
+          maxLength: 100
+        issuing_organisation:
+          type: string
+          minLength: 1
+          maxLength: 255
+      required:
+      - certificate_type
+      - document
+      - issuing_organisation
+    DayOfWeekEnum:
+      enum:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      type: integer
+      description: |-
+        * `0` - Monday
+        * `1` - Tuesday
+        * `2` - Wednesday
+        * `3` - Thursday
+        * `4` - Friday
+        * `5` - Saturday
+        * `6` - Sunday
+    DaySchedule:
+      type: object
+      description: 'One day on the schedule screen (weekday: 0 = Monday ... 6 = Sunday).'
+      properties:
+        date:
+          type: string
+          format: date
+        weekday:
+          type: integer
+        is_available:
+          type: boolean
+        start_time:
+          type: string
+          format: time
+          nullable: true
+        end_time:
+          type: string
+          format: time
+          nullable: true
+        source:
+          $ref: '#/components/schemas/SourceEnum'
+      required:
+      - date
+      - end_time
+      - is_available
+      - source
+      - start_time
+      - weekday
+    DeafDashboard:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        requests:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+        sessions:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+        chats:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+      required:
+      - chats
+      - requests
+      - sessions
+      - user
+    DeafRegistrationRequest:
+      type: object
+      description: |-
+        V2-001 first step: name, phone number and a password/PIN. Email is optional.
+
+        Communication method, location and emergency contact belong to the profile that is completed
+        after sign-up (a DeafUserProfile does not exist yet), so they are not collected here.
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        phone_number:
+          type: string
+          minLength: 1
+        email:
+          nullable: true
+          oneOf:
+          - type: string
+            format: email
+          - type: string
+            maxLength: 0
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+        terms_accepted:
+          type: boolean
+          writeOnly: true
+          default: false
+      required:
+      - full_name
+      - password
+      - phone_number
+    DecisionReasonOptionalRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          default: ''
+          maxLength: 2000
+    DecisionReasonRequiredRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          description: Shown to the interpreter (for a rejection) and kept in the
+            audit log.
+          maxLength: 2000
+      required:
+      - reason
+    Detail:
+      type: object
+      properties:
+        detail:
+          type: string
+      required:
+      - detail
+    EmailVerifyConfirmRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          minLength: 6
+          maxLength: 6
+          pattern: ^\d{6}$
+      required:
+      - code
+    Exception:
+      type: object
+      description: |-
+        One one-off date on the Exceptions calendar.
+
+        kind: "unavailable" (red dot) or "modified_hours" (teal dot).
+      properties:
+        date:
+          type: string
+          format: date
+        is_available:
+          type: boolean
+        start_time:
+          type: string
+          format: time
+          nullable: true
+        end_time:
+          type: string
+          format: time
+          nullable: true
+        kind:
+          $ref: '#/components/schemas/KindEnum'
+      required:
+      - date
+      - end_time
+      - is_available
+      - kind
+      - start_time
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+        database:
+          type: string
+      required:
+      - database
+      - status
+    Institution:
+      type: object
+      description: An institution as its own users and platform admins see it.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        organisation_name:
+          type: string
+          readOnly: true
+        organisation_type:
+          allOf:
+          - $ref: '#/components/schemas/OrganisationTypeEnum'
+          readOnly: true
+        organisation_type_other:
+          type: string
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusEnum'
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - organisation_name
+      - organisation_type
+      - organisation_type_other
+      - status
+    InstitutionApplication:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        organisation_name:
+          type: string
+          maxLength: 200
+        organisation_type:
+          $ref: '#/components/schemas/OrganisationTypeEnum'
+        organisation_type_other:
+          type: string
+          maxLength: 100
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        administrator_name:
+          type: string
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        phone_number:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - administrator_name
+      - created_at
+      - email
+      - id
+      - organisation_name
+      - organisation_type
+      - phone_number
+    InstitutionRegistrationRequest:
+      type: object
+      description: |-
+        V2-005: the person registering is the institution's administrator (role `institution`).
+
+        full_name, phone_number, email and password describe that administrator. An email is required.
+        The institution starts PENDING until a platform admin approves it.
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        phone_number:
+          type: string
+          minLength: 1
+        email:
+          type: string
+          format: email
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+        terms_accepted:
+          type: boolean
+          writeOnly: true
+          default: false
+        organisation_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        organisation_type:
+          $ref: '#/components/schemas/OrganisationTypeEnum'
+        organisation_type_other:
+          type: string
+          maxLength: 100
+      required:
+      - email
+      - full_name
+      - organisation_name
+      - organisation_type
+      - password
+      - phone_number
+    InterpreterAvailability:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        start_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - end_at
+      - id
+      - start_at
+      - updated_at
+    InterpreterAvailabilityRequest:
+      type: object
+      properties:
+        start_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+      required:
+      - end_at
+      - start_at
+    InterpreterDashboard:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        verification_status:
+          type: string
+        is_available:
+          type: boolean
+        specialisation:
+          type: string
+          nullable: true
+        working_hours_schedule:
+          type: object
+          additionalProperties: {}
+      required:
+      - is_available
+      - specialisation
+      - user
+      - verification_status
+      - working_hours_schedule
+    InterpreterProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        full_name:
+          type: string
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        verification_status:
+          allOf:
+          - $ref: '#/components/schemas/VerificationStatusEnum'
+          readOnly: true
+        is_available:
+          type: boolean
+        specialisation:
+          $ref: '#/components/schemas/SpecialisationEnum'
+        specialisation_other:
+          type: string
+          description: Custom specialisation text when 'OTHER' is selected.
+          maxLength: 100
+        sign_languages:
+          description: List of sign language preferences, e.g. ['Ugandan Sign Language']
+        working_hours_schedule:
+          description: General weekly schedule overview JSON.
+        certifications:
+          type: array
+          items:
+            $ref: '#/components/schemas/CertificationDocument'
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - certifications
+      - created_at
+      - email
+      - full_name
+      - id
+      - verification_status
+    InterpreterProfileRequest:
+      type: object
+      properties:
+        is_available:
+          type: boolean
+        specialisation:
+          $ref: '#/components/schemas/SpecialisationEnum'
+        specialisation_other:
+          type: string
+          description: Custom specialisation text when 'OTHER' is selected.
+          maxLength: 100
+        sign_languages:
+          description: List of sign language preferences, e.g. ['Ugandan Sign Language']
+        working_hours_schedule:
+          description: General weekly schedule overview JSON.
+    InterpreterRegistrationRequest:
+      type: object
+      description: |-
+        V2-003 step 1: account details.
+
+        An email is required (certification results are sent to it). The account starts
+        INACTIVE / pending review: the profile is created with the default verification status,
+        so the interpreter cannot receive requests until an admin approves them.
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        phone_number:
+          type: string
+          minLength: 1
+        email:
+          type: string
+          format: email
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+        terms_accepted:
+          type: boolean
+          writeOnly: true
+          default: false
+        specialisation:
+          allOf:
+          - $ref: '#/components/schemas/SpecialisationEnum'
+          default: GENERAL
+      required:
+      - email
+      - full_name
+      - password
+      - phone_number
+    KindEnum:
+      enum:
+      - unavailable
+      - modified_hours
+      type: string
+      description: |-
+        * `unavailable` - unavailable
+        * `modified_hours` - modified_hours
+    LoginRequest:
+      type: object
+      properties:
+        identifier:
+          type: string
+          minLength: 1
+          description: Phone number (e.g. 0772123456 or +256772123456) or email address.
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - identifier
+      - password
+    ManageCertification:
+      type: object
+      description: A certificate as an admin sees it. `file_url` is the protected
+        download endpoint, never a public file path.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        document_name:
+          type: string
+          readOnly: true
+        certificate_type:
+          type: string
+          readOnly: true
+        issuing_organisation:
+          type: string
+          readOnly: true
+        uploaded_at:
+          type: string
+          format: date-time
+          readOnly: true
+        rejection_reason:
+          type: string
+          readOnly: true
+        file_url:
+          type: string
+          readOnly: true
+      required:
+      - certificate_type
+      - document_name
+      - file_url
+      - id
+      - issuing_organisation
+      - rejection_reason
+      - uploaded_at
+    ManageInterpreterDetail:
+      type: object
+      description: 'The review page: the interpreter, their certificates and every
+        decision made so far.'
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        user_id:
+          type: integer
+          readOnly: true
+        full_name:
+          type: string
+          readOnly: true
+        phone_number:
+          type: string
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        verification_status:
+          allOf:
+          - $ref: '#/components/schemas/VerificationStatusEnum'
+          readOnly: true
+        specialisation:
+          allOf:
+          - $ref: '#/components/schemas/SpecialisationEnum'
+          readOnly: true
+        certification_count:
+          type: integer
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        is_available:
+          type: boolean
+          readOnly: true
+        certifications:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManageCertification'
+          readOnly: true
+        decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/VerificationDecision'
+          readOnly: true
+      required:
+      - certification_count
+      - certifications
+      - created_at
+      - decisions
+      - email
+      - full_name
+      - id
+      - is_available
+      - phone_number
+      - specialisation
+      - user_id
+      - verification_status
+    ManageInterpreterList:
+      type: object
+      description: One row of the verification queue.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        user_id:
+          type: integer
+          readOnly: true
+        full_name:
+          type: string
+          readOnly: true
+        phone_number:
+          type: string
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        verification_status:
+          allOf:
+          - $ref: '#/components/schemas/VerificationStatusEnum'
+          readOnly: true
+        specialisation:
+          allOf:
+          - $ref: '#/components/schemas/SpecialisationEnum'
+          readOnly: true
+        certification_count:
+          type: integer
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - certification_count
+      - created_at
+      - email
+      - full_name
+      - id
+      - phone_number
+      - specialisation
+      - user_id
+      - verification_status
+    MonthExceptions:
+      type: object
+      properties:
+        month:
+          type: string
+        exceptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Exception'
+      required:
+      - exceptions
+      - month
+    NullEnum:
+      enum:
+      - null
+    OrganisationTypeEnum:
+      enum:
+      - HOSPITAL
+      - COURT
+      - GOVERNMENT
+      - OTHER
+      type: string
+      description: |-
+        * `HOSPITAL` - Hospital / health facility
+        * `COURT` - Court / legal
+        * `GOVERNMENT` - Government office
+        * `OTHER` - Other
+    PasswordChangeRequest:
+      type: object
+      properties:
+        current_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+        new_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - current_password
+      - new_password
+    PatchedAdminProfileRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+        email:
+          type: string
+          format: email
+          minLength: 1
+        phone_number:
+          type: string
+          default: ''
+        profile_photo:
+          type: string
+          format: binary
+          nullable: true
+        session_alerts:
+          type: boolean
+          description: Receive alerts for connection failures & sessions needing attention.
+        verification_alerts:
+          type: boolean
+          description: Receive alerts for new interpreter & institution applications.
+    PatchedAvailabilityOverrideRequest:
+      type: object
+      properties:
+        specific_date:
+          type: string
+          format: date
+        is_available:
+          type: boolean
+        start_time:
+          type: string
+          format: time
+          nullable: true
+        end_time:
+          type: string
+          format: time
+          nullable: true
+    PatchedAvailabilityStatusUpdateRequest:
+      type: object
+      description: What the dashboard sends to flip the switch.
+      properties:
+        is_available:
+          type: boolean
+    PatchedBaseAvailabilityRequest:
+      type: object
+      properties:
+        day_of_week:
+          allOf:
+          - $ref: '#/components/schemas/DayOfWeekEnum'
+          minimum: 0
+          maximum: 32767
+        start_time:
+          type: string
+          format: time
+        end_time:
+          type: string
+          format: time
+    PatchedDayUpdateRequest:
+      type: object
+      description: |-
+        What the pencil card sends when the interpreter saves one day.
+
+        repeat_weekly False (the default): change only that date.
+        repeat_weekly True: change that weekday in the default week.
+      properties:
+        is_available:
+          type: boolean
+        start_time:
+          type: string
+          format: time
+          nullable: true
+        end_time:
+          type: string
+          format: time
+          nullable: true
+        repeat_weekly:
+          type: boolean
+          default: false
+    PatchedInterpreterAvailabilityRequest:
+      type: object
+      properties:
+        start_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+    PatchedInterpreterProfileRequest:
+      type: object
+      properties:
+        is_available:
+          type: boolean
+        specialisation:
+          $ref: '#/components/schemas/SpecialisationEnum'
+        specialisation_other:
+          type: string
+          description: Custom specialisation text when 'OTHER' is selected.
+          maxLength: 100
+        sign_languages:
+          description: List of sign language preferences, e.g. ['Ugandan Sign Language']
+        working_hours_schedule:
+          description: General weekly schedule overview JSON.
+    PatchedStaffUpdateRequest:
+      type: object
+      description: |-
+        What an institution administrator may change. Phone and email are the person's sign-in details,
+        so only the person themselves changes those.
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        job_title:
+          type: string
+          maxLength: 100
+        role:
+          $ref: '#/components/schemas/StaffRoleEnum'
+    PatchedUserProfileRequest:
+      type: object
+      properties:
+        preferred_name:
+          type: string
+          maxLength: 100
+        contact_number:
+          type: string
+          nullable: true
+          maxLength: 20
+        location:
+          type: string
+          description: e.g. Kampala
+          maxLength: 255
+        emergency_contact_name:
+          type: string
+          description: e.g. Sarah Kiggundu (Sister)
+          maxLength: 255
+        emergency_contact_phone:
+          type: string
+          description: e.g. +256 700 987 654
+          maxLength: 20
+        sign_language_preference:
+          type: string
+          minLength: 1
+          maxLength: 100
+        communication_methods:
+          description: e.g. ['Ugandan Sign Language', 'English (text)', 'International
+            Sign']
+        flash_alerts:
+          type: boolean
+          description: Flash alert for incoming calls
+        vibrate_on_call:
+          type: boolean
+          description: Vibrate on incoming call
+        live_captions:
+          type: boolean
+          description: Enable live automated/manual captions
+        large_text:
+          type: boolean
+          description: Increase UI font size
+        preferred_domains:
+          description: e.g. ['healthcare', 'legal', 'education']
+        preferred_contact_mode:
+          type: string
+          minLength: 1
+          maxLength: 50
+    ReasonEnum:
+      enum:
+      - not_approved
+      - switched_off
+      - day_off
+      - outside_hours
+      type: string
+      description: |-
+        * `not_approved` - not_approved
+        * `switched_off` - switched_off
+        * `day_off` - day_off
+        * `outside_hours` - outside_hours
+    RecoveryConfirmRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          minLength: 6
+          maxLength: 6
+          pattern: ^\d{6}$
+        identifier:
+          type: string
+          minLength: 1
+        new_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - code
+      - identifier
+      - new_password
+    RecoveryRequestRequest:
+      type: object
+      properties:
+        identifier:
+          type: string
+          minLength: 1
+          description: Phone number or email the account was registered with.
+      required:
+      - identifier
+    RoleAccess:
+      type: object
+      properties:
+        role:
+          type: string
+        detail:
+          type: string
+      required:
+      - detail
+      - role
+    RoleOption:
+      type: object
+      properties:
+        value:
+          type: string
+        label:
+          type: string
+      required:
+      - label
+      - value
+    SourceEnum:
+      enum:
+      - default
+      - exception
+      type: string
+      description: |-
+        * `default` - default
+        * `exception` - exception
+    SpecialisationEnum:
+      enum:
+      - GENERAL
+      - MEDICAL
+      - LEGAL
+      - OTHER
+      type: string
+      description: |-
+        * `GENERAL` - General
+        * `MEDICAL` - Medical
+        * `LEGAL` - Legal
+        * `OTHER` - Other
+    Staff:
+      type: object
+      description: One staff member as their institution's administrators see them.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        user_id:
+          type: integer
+          readOnly: true
+        full_name:
+          type: string
+          readOnly: true
+        phone_number:
+          type: string
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        role:
+          allOf:
+          - $ref: '#/components/schemas/StaffRoleEnum'
+          readOnly: true
+        job_title:
+          type: string
+          readOnly: true
+          description: e.g. Doctor, Police officer. Shown only; not a permission.
+        status:
+          type: string
+          readOnly: true
+          description: ACTIVE or REVOKED.
+        last_login:
+          type: string
+          format: date-time
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        revoked_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+          description: Empty while the person has access.
+      required:
+      - created_at
+      - email
+      - full_name
+      - id
+      - job_title
+      - last_login
+      - phone_number
+      - revoked_at
+      - role
+      - status
+      - user_id
+    StaffCreateRequest:
+      type: object
+      description: |-
+        An institution administrator adds a staff member (V2-006).
+
+        Same checks as registration for name, phone and email (email is required: the login details are sent
+        there). No password: a temporary one is emailed. Needs `institution` and `request` in the context.
+        `save()` returns the new InstitutionStaff.
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        phone_number:
+          type: string
+          minLength: 1
+        email:
+          type: string
+          format: email
+          minLength: 1
+        job_title:
+          type: string
+          default: ''
+          maxLength: 100
+        role:
+          allOf:
+          - $ref: '#/components/schemas/StaffRoleEnum'
+          default: STAFF
+      required:
+      - email
+      - full_name
+      - phone_number
+    StaffRoleEnum:
+      enum:
+      - ADMIN
+      - STAFF
+      type: string
+      description: |-
+        * `ADMIN` - Institution administrator
+        * `STAFF` - Institutional user
+    StatusEnum:
+      enum:
+      - PENDING
+      - APPROVED
+      - REJECTED
+      type: string
+      description: |-
+        * `PENDING` - Pending approval
+        * `APPROVED` - Approved
+        * `REJECTED` - Rejected
+    TokenPair:
+      type: object
+      description: Response shape for a successful login.
+      properties:
+        access:
+          type: string
+        refresh:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+      required:
+      - access
+      - refresh
+      - user
+    TokenRefresh:
+      type: object
+      properties:
+        access:
+          type: string
+          readOnly: true
+      required:
+      - access
+    TokenRefreshRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - refresh
+    User:
+      type: object
+      description: Public view of a user. Reuse this inside role-specific profile
+        responses.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        full_name:
+          type: string
+          readOnly: true
+        phone_number:
+          type: string
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+          nullable: true
+        email_verified:
+          type: boolean
+          readOnly: true
+        role:
+          allOf:
+          - $ref: '#/components/schemas/UserRoleEnum'
+          readOnly: true
+        must_change_password:
+          type: boolean
+          readOnly: true
+          description: Set after an admin reset. The app should ask the user to choose
+            a new password/PIN.
+        date_joined:
+          type: string
+          format: date-time
+          readOnly: true
+        institution_status:
+          type: string
+          nullable: true
+          readOnly: true
+          description: 'Institution accounts only: PENDING, APPROVED or REJECTED.
+            Null for every other role.'
+        institution_role:
+          type: string
+          nullable: true
+          readOnly: true
+          description: 'Institution accounts only: ADMIN (may manage staff) or STAFF.
+            Null for every other role.'
+      required:
+      - date_joined
+      - email
+      - email_verified
+      - full_name
+      - id
+      - institution_role
+      - institution_status
+      - must_change_password
+      - phone_number
+      - role
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        full_name:
+          type: string
+          readOnly: true
+        preferred_name:
+          type: string
+          maxLength: 100
+        contact_number:
+          type: string
+          nullable: true
+          maxLength: 20
+        location:
+          type: string
+          description: e.g. Kampala
+          maxLength: 255
+        emergency_contact_name:
+          type: string
+          description: e.g. Sarah Kiggundu (Sister)
+          maxLength: 255
+        emergency_contact_phone:
+          type: string
+          description: e.g. +256 700 987 654
+          maxLength: 20
+        sign_language_preference:
+          type: string
+          maxLength: 100
+        communication_methods:
+          description: e.g. ['Ugandan Sign Language', 'English (text)', 'International
+            Sign']
+        flash_alerts:
+          type: boolean
+          description: Flash alert for incoming calls
+        vibrate_on_call:
+          type: boolean
+          description: Vibrate on incoming call
+        live_captions:
+          type: boolean
+          description: Enable live automated/manual captions
+        large_text:
+          type: boolean
+          description: Increase UI font size
+        preferred_domains:
+          description: e.g. ['healthcare', 'legal', 'education']
+        preferred_contact_mode:
+          type: string
+          maxLength: 50
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - email
+      - full_name
+      - id
+      - updated_at
+    UserProfileRequest:
+      type: object
+      properties:
+        preferred_name:
+          type: string
+          maxLength: 100
+        contact_number:
+          type: string
+          nullable: true
+          maxLength: 20
+        location:
+          type: string
+          description: e.g. Kampala
+          maxLength: 255
+        emergency_contact_name:
+          type: string
+          description: e.g. Sarah Kiggundu (Sister)
+          maxLength: 255
+        emergency_contact_phone:
+          type: string
+          description: e.g. +256 700 987 654
+          maxLength: 20
+        sign_language_preference:
+          type: string
+          minLength: 1
+          maxLength: 100
+        communication_methods:
+          description: e.g. ['Ugandan Sign Language', 'English (text)', 'International
+            Sign']
+        flash_alerts:
+          type: boolean
+          description: Flash alert for incoming calls
+        vibrate_on_call:
+          type: boolean
+          description: Vibrate on incoming call
+        live_captions:
+          type: boolean
+          description: Enable live automated/manual captions
+        large_text:
+          type: boolean
+          description: Increase UI font size
+        preferred_domains:
+          description: e.g. ['healthcare', 'legal', 'education']
+        preferred_contact_mode:
+          type: string
+          minLength: 1
+          maxLength: 50
+    UserRegistration:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        contact_number:
+          type: string
+          nullable: true
+      required:
+      - email
+    UserRegistrationRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+        contact_number:
+          type: string
+          nullable: true
+      required:
+      - email
+      - password
+    UserRoleEnum:
+      enum:
+      - deaf_hoh
+      - interpreter
+      - institution
+      - admin
+      type: string
+      description: |-
+        * `deaf_hoh` - Deaf / Hard of Hearing
+        * `interpreter` - Interpreter
+        * `institution` - Institution
+        * `admin` - Administrator
+    VerificationDecision:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        action:
+          allOf:
+          - $ref: '#/components/schemas/ActionEnum'
+          readOnly: true
+        reason:
+          type: string
+          readOnly: true
+        previous_status:
+          allOf:
+          - $ref: '#/components/schemas/VerificationStatusEnum'
+          readOnly: true
+        new_status:
+          allOf:
+          - $ref: '#/components/schemas/VerificationStatusEnum'
+          readOnly: true
+        admin:
+          type: integer
+          readOnly: true
+        admin_name:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - action
+      - admin
+      - admin_name
+      - created_at
+      - id
+      - new_status
+      - previous_status
+      - reason
+    VerificationStatusEnum:
+      enum:
+      - INACTIVE
+      - APPROVED
+      - REJECTED
+      - DEACTIVATED
+      type: string
+      description: |-
+        * `INACTIVE` - Inactive / Pending Review
+        * `APPROVED` - Approved
+        * `REJECTED` - Rejected
+        * `DEACTIVATED` - Deactivated
+    WeekSchedule:
+      type: object
+      properties:
+        week_start:
+          type: string
+          format: date
+        week_end:
+          type: string
+          format: date
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/DaySchedule'
+      required:
+      - days
+      - week_end
+      - week_start
+  securitySchemes:
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

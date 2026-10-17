@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ImproperlyConfigured, ValidationError as DjangoValidationError
+from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
 from phonenumber_field.serializerfields import PhoneNumberField
@@ -10,9 +11,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.core.permissions import user_staff_membership
 
 from . import recovery
-from .models import RecoveryCode
+from .models import AvailabilityOverride, BaseAvailability, RecoveryCode
 from .utils import find_user_by_identifier
-
 
 User = get_user_model()
 
@@ -311,3 +311,25 @@ class PasswordChangeSerializer(serializers.Serializer):
         check_new_password(attrs["new_password"], user)
 
         return attrs
+
+
+class BaseAvailabilitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BaseAvailability
+        fields = ['id', 'day_of_week', 'start_time', 'end_time']
+
+    def validate(self, data):
+        if data['start_time'] >= data['end_time']:
+            raise serializers.ValidationError("start_time must precede end_time.")
+        return data
+
+
+class AvailabilityOverrideSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AvailabilityOverride
+        fields = ['id', 'specific_date', 'is_available', 'start_time', 'end_time']
+
+    def validate(self, data):
+        if data.get('is_available') and (not data.get('start_time') or not data.get('end_time')):
+            raise serializers.ValidationError("Time slots are required when setting availability to True.")
+        return data

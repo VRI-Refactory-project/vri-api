@@ -149,3 +149,49 @@ class RecoveryCode(models.Model):
 
     def __str__(self):
         return f"{self.get_purpose_display()} code for {self.user} ({self.created_at:%Y-%m-%d %H:%M})"
+
+
+
+class DayOfWeek(models.IntegerChoices):
+    MONDAY = 0, 'Monday'
+    TUESDAY = 1, 'Tuesday'
+    WEDNESDAY = 2, 'Wednesday'
+    THURSDAY = 3, 'Thursday'
+    FRIDAY = 4, 'Friday'
+    SATURDAY = 5, 'Saturday'
+    SUNDAY = 6, 'Sunday'
+
+
+class BaseAvailability(models.Model):
+    """Stores repeating weekly schedule rules linked to your User model."""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name='weekly_availabilities'
+    )
+    day_of_week = models.PositiveSmallIntegerField(choices=DayOfWeek.choices)
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+
+    class Meta:
+        verbose_name_plural = "Base Availabilities"
+        unique_together = ('user', 'day_of_week', 'start_time', 'end_time')
+
+    def __str__(self):
+        return f"{self.user} - {self.get_day_of_week_display()}"
+
+
+class AvailabilityOverride(models.Model):
+    """Handles specific dates like holidays, sick leave, or one-off shifts."""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name='availability_overrides'
+    )
+    specific_date = models.DateField()
+    is_available = models.BooleanField(default=False)
+    start_time = models.TimeField(blank=True, null=True)
+    end_time = models.TimeField(blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.user} - Override {self.specific_date}"

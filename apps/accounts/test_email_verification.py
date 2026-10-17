@@ -8,7 +8,11 @@ from django.core.exceptions import ValidationError
 from django.urls import reverse
 from rest_framework.test import APITestCase
 
-from apps.institutions.models import InstitutionProfile, InstitutionStatus, OrganisationType
+from apps.institutions.models import (
+    InstitutionProfile,
+    InstitutionStatus,
+    OrganisationType,
+)
 from apps.interpreters.models import InterpreterProfile, VerificationStatus
 
 from .models import RecoveryCode, User

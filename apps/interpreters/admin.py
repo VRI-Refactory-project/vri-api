@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import InterpreterProfile, CertificationDocument, VerificationDecision
+
+from .models import CertificationDocument, InterpreterProfile, VerificationDecision
 
 
 class CertificationDocumentInline(admin.TabularInline):

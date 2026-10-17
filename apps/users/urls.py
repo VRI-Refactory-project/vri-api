@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import UserRegistrationView, DeafUserProfileDetailView
+from .views import DeafUserProfileDetailView, UserRegistrationView
 
 urlpatterns = [
     path(

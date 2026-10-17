@@ -1,6 +1,6 @@
 from django.core.exceptions import ImproperlyConfigured
 
-from .base import *  # noqa: F401,F403
+from .base import *
 from .base import EMAIL_BACKEND, SECRET_KEY
 
 # Refuse to start with settings that would leak recovery codes or make login tokens forgeable.
@@ -16,6 +16,6 @@ CSRF_COOKIE_SECURE = True
 
 # Docs are only public in dev; in prod only staff can open them.
 SPECTACULAR_SETTINGS = {
-    **SPECTACULAR_SETTINGS,  # noqa: F405
+    **SPECTACULAR_SETTINGS,
     "SERVE_PERMISSIONS": ["rest_framework.permissions.IsAdminUser"],
 }

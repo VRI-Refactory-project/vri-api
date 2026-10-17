@@ -51,41 +51,6 @@ class InstitutionProfile(models.Model):
 
 
 
-class InstitutionStaff(models.Model):
-    """A staff member belonging to an institution."""
-
-    institution = models.ForeignKey(
-        InstitutionProfile,
-        on_delete=models.CASCADE,
-        related_name="staff_members",
-    )
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="institution_staff_memberships",
-    )
-    is_active = models.BooleanField(
-        default=True,
-        db_index=True,
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["institution", "user"],
-                name="unique_institution_staff_membership",
-            ),
-        ]
-        indexes = [
-            models.Index(fields=["institution", "is_active"]),
-        ]
-
-    def __str__(self):
-        return (
-            f"{self.user} - {self.institution.organisation_name}"
-        )
 
 class StaffRole(models.TextChoices):
     """What a person may do inside their institution (SRS 2.4)."""
@@ -112,6 +77,7 @@ class InstitutionStaff(models.Model):
     job_title = models.CharField(
         max_length=100, blank=True, default="", help_text="e.g. Doctor, Police officer. Shown only; not a permission.",
     )
+    is_active = models.BooleanField(default=True, db_index=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
     )
@@ -122,9 +88,13 @@ class InstitutionStaff(models.Model):
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
     )
 
+
     class Meta:
         ordering = ["created_at", "id"]
         verbose_name_plural = "institution staff"
+        indexes = [
+          models.Index(fields=["institution", "is_active"]),
+    ]
 
     def __str__(self):
         return f"{self.user.full_name} ({self.get_role_display()}, {self.institution.organisation_name})"

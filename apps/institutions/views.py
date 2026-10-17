@@ -1,36 +1,24 @@
 
 import logging
+
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework.generics import RetrieveAPIView
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import serializers, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import RetrieveAPIView
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
-from rest_framework.permissions import IsAuthenticated
-from rest_framework import status
-from drf_spectacular.utils import extend_schema
-from apps.audit import services as audit
-from apps.audit.models import AuditLog
-from apps.core.permissions import IsAdminRole
-from apps.core.permissions import IsApprovedInstitution, user_institution
-from apps.core.permissions import HasInstitutionalRole
-from .serializers import InstitutionSerializer,InstitutionProfileUpdateSerializer
-
-
-from .models import InstitutionProfile, InstitutionStatus, InstitutionStaff
-
 
 from apps.audit import services as audit
 from apps.audit.models import AuditLog
 from apps.core.permissions import (
+    HasInstitutionalRole,
     IsAdminRole,
     IsApprovedInstitution,
     IsInstitutionAdmin,
@@ -40,12 +28,12 @@ from apps.core.permissions import (
 from . import staff
 from .models import InstitutionProfile, InstitutionStaff, InstitutionStatus
 from .serializers import (
+    InstitutionProfileUpdateSerializer,
     InstitutionSerializer,
     StaffCreateSerializer,
     StaffSerializer,
     StaffUpdateSerializer,
 )
-
 
 logger = logging.getLogger(__name__)
 
