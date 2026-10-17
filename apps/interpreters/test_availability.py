@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
+from .availability import unavailable_reason
 from .models import (
     DateException,
     InterpreterProfile,
@@ -11,7 +12,6 @@ from .models import (
     VerificationStatus,
     WeeklyAvailability,
 )
-from .availability import unavailable_reason
 from .services import get_eligible_interpreters
 
 EAT = ZoneInfo("Africa/Kampala")

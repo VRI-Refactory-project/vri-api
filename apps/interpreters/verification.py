@@ -3,6 +3,7 @@
 Every decision runs in one transaction that locks the interpreter's profile, changes the status, and writes a
 VerificationDecision row (the audit log). See docs/design/V2-045-interpreter-verification.md.
 """
+
 import logging
 
 from django.conf import settings
@@ -44,19 +45,33 @@ def decide(profile_id, action, admin, reason=""):
         raise ValidationError({"reason": ["A reason is required."]})
 
     with transaction.atomic():
-        profile = InterpreterProfile.objects.select_for_update(of=("self",)).select_related("user").get(pk=profile_id)
+        profile = (
+            InterpreterProfile.objects.select_for_update(of=("self",))
+            .select_related("user")
+            .get(pk=profile_id)
+        )
         previous_status = profile.verification_status
         if previous_status not in allowed_from:
-            raise ValidationError({"detail": (
-                f"Cannot {action} an interpreter whose status is {profile.get_verification_status_display()}."
-            )})
+            raise ValidationError(
+                {
+                    "detail": (
+                        f"Cannot {action} an interpreter whose status is {profile.get_verification_status_display()}."
+                    )
+                }
+            )
         if action == Action.APPROVE and not profile.certifications.exists():
-            raise ValidationError({"detail": "This interpreter has not uploaded a certificate yet."})
+            raise ValidationError(
+                {"detail": "This interpreter has not uploaded a certificate yet."}
+            )
 
         profile.verification_status = new_status
         if new_status != Status.APPROVED:
-            profile.is_available = False  # the database also enforces this (available_only_if_approved)
-        profile.save(update_fields=["verification_status", "is_available", "updated_at"])
+            profile.is_available = (
+                False  # the database also enforces this (available_only_if_approved)
+            )
+        profile.save(
+            update_fields=["verification_status", "is_available", "updated_at"]
+        )
 
         if action == Action.REJECT:
             # The interpreter already sees this field on their latest certificate (GET /interpreters/me/).
@@ -65,7 +80,9 @@ def decide(profile_id, action, admin, reason=""):
                 latest.rejection_reason = reason
                 latest.save(update_fields=["rejection_reason"])
         elif action == Action.APPROVE:
-            profile.certifications.exclude(rejection_reason="").update(rejection_reason="")
+            profile.certifications.exclude(rejection_reason="").update(
+                rejection_reason=""
+            )
 
         decision = VerificationDecision.objects.create(
             interpreter=profile,
@@ -79,8 +96,14 @@ def decide(profile_id, action, admin, reason=""):
             # Only email once the decision is safely saved; a rolled-back decision sends nothing.
             transaction.on_commit(lambda: notify_interpreter(decision))
 
-    logger.warning("interpreter_verification_%s admin=%s interpreter=%s previous=%s new=%s",
-                   action, admin.pk, profile.pk, previous_status, new_status)
+    logger.warning(
+        "interpreter_verification_%s admin=%s interpreter=%s previous=%s new=%s",
+        action,
+        admin.pk,
+        profile.pk,
+        previous_status,
+        new_status,
+    )
     return decision
 
 
@@ -91,8 +114,10 @@ def notify_interpreter(decision):
     """
     user = decision.interpreter.user
     if not user.email:
-        logger.warning("interpreter_verification_email_skipped reason=no_email interpreter=%s",
-                       decision.interpreter_id)
+        logger.warning(
+            "interpreter_verification_email_skipped reason=no_email interpreter=%s",
+            decision.interpreter_id,
+        )
         return
     if decision.action == Action.APPROVE:
         subject = "Your SignConnect interpreter account is approved"
@@ -112,5 +137,8 @@ def notify_interpreter(decision):
     try:
         send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [user.email])
     except Exception:  # SMTP down, bad address, ...
-        logger.exception("interpreter_verification_email_failed interpreter=%s action=%s",
-                         decision.interpreter_id, decision.action)
+        logger.exception(
+            "interpreter_verification_email_failed interpreter=%s action=%s",
+            decision.interpreter_id,
+            decision.action,
+        )

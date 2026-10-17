@@ -101,11 +101,13 @@ The role comes from the serializer's `role` attribute, never from the request, a
 ```python
 from apps.core.permissions import IsDeafUser, IsInstitution, IsInterpreter
 
+
 class AvailabilityView(APIView):
     permission_classes = [IsInterpreter]
 
+
 class RequestListView(ListAPIView):
-    permission_classes = [IsDeafUser | IsInstitution]   # either role
+    permission_classes = [IsDeafUser | IsInstitution]  # either role
 ```
 
 Not signed in returns 401, a different role returns 403. The role is read from the database on every request, so

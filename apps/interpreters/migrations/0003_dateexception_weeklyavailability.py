@@ -6,40 +6,83 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('interpreters', '0002_certificationdocument_certificate_type_and_more'),
+        ("interpreters", "0002_certificationdocument_certificate_type_and_more"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='DateException',
+            name="DateException",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('date', models.DateField()),
-                ('is_available', models.BooleanField(default=False)),
-                ('start_time', models.TimeField(blank=True, null=True)),
-                ('end_time', models.TimeField(blank=True, null=True)),
-                ('interpreter', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='date_exceptions', to='interpreters.interpreterprofile')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("date", models.DateField()),
+                ("is_available", models.BooleanField(default=False)),
+                ("start_time", models.TimeField(blank=True, null=True)),
+                ("end_time", models.TimeField(blank=True, null=True)),
+                (
+                    "interpreter",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="date_exceptions",
+                        to="interpreters.interpreterprofile",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['date'],
-                'constraints': [models.UniqueConstraint(fields=('interpreter', 'date'), name='one_exception_per_date')],
+                "ordering": ["date"],
+                "constraints": [
+                    models.UniqueConstraint(
+                        fields=("interpreter", "date"), name="one_exception_per_date"
+                    )
+                ],
             },
         ),
         migrations.CreateModel(
-            name='WeeklyAvailability',
+            name="WeeklyAvailability",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('weekday', models.PositiveSmallIntegerField(validators=[django.core.validators.MaxValueValidator(6)])),
-                ('is_available', models.BooleanField(default=False)),
-                ('start_time', models.TimeField(blank=True, null=True)),
-                ('end_time', models.TimeField(blank=True, null=True)),
-                ('interpreter', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='weekly_availability', to='interpreters.interpreterprofile')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "weekday",
+                    models.PositiveSmallIntegerField(
+                        validators=[django.core.validators.MaxValueValidator(6)]
+                    ),
+                ),
+                ("is_available", models.BooleanField(default=False)),
+                ("start_time", models.TimeField(blank=True, null=True)),
+                ("end_time", models.TimeField(blank=True, null=True)),
+                (
+                    "interpreter",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="weekly_availability",
+                        to="interpreters.interpreterprofile",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['weekday'],
-                'constraints': [models.UniqueConstraint(fields=('interpreter', 'weekday'), name='one_default_row_per_weekday')],
+                "ordering": ["weekday"],
+                "constraints": [
+                    models.UniqueConstraint(
+                        fields=("interpreter", "weekday"),
+                        name="one_default_row_per_weekday",
+                    )
+                ],
             },
         ),
     ]

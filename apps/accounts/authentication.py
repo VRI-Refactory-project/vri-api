@@ -15,11 +15,15 @@ class EnforcePasswordChangeJWTAuthentication(JWTAuthentication):
         if result is not None:
             user, _ = result
             match = getattr(request._request, "resolver_match", None)
-            if user.must_change_password and (match is None or match.url_name not in ALLOWED_WHILE_MUST_CHANGE):
-                raise PermissionDenied({
-                    "detail": "You must change your temporary password before continuing.",
-                    "code": "password_change_required",
-                })
+            if user.must_change_password and (
+                match is None or match.url_name not in ALLOWED_WHILE_MUST_CHANGE
+            ):
+                raise PermissionDenied(
+                    {
+                        "detail": "You must change your temporary password before continuing.",
+                        "code": "password_change_required",
+                    }
+                )
         return result
 
 

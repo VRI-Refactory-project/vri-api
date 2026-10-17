@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ImproperlyConfigured, ValidationError as DjangoValidationError
+from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
 from phonenumber_field.serializerfields import PhoneNumberField
@@ -10,9 +11,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.core.permissions import user_staff_membership
 
 from . import recovery
-from .models import RecoveryCode
+from .models import AvailabilityOverride, BaseAvailability, RecoveryCode
 from .utils import find_user_by_identifier
-
 
 User = get_user_model()
 
@@ -38,15 +38,25 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            "id", "full_name", "phone_number", "email", "email_verified", "role",
-            "must_change_password", "date_joined", "institution_status", "institution_role",
+            "id",
+            "full_name",
+            "phone_number",
+            "email",
+            "email_verified",
+            "role",
+            "must_change_password",
+            "date_joined",
+            "institution_status",
+            "institution_role",
         ]
         read_only_fields = fields
 
     def _membership(self, user):
         if user.role != User.Role.INSTITUTION:
             return None
-        cache = self.context.setdefault("_staff_membership", {})  # one query per user, not per field
+        cache = self.context.setdefault(
+            "_staff_membership", {}
+        )  # one query per user, not per field
         if user.pk not in cache:
             cache[user.pk] = user_staff_membership(user)
         return cache[user.pk]
@@ -85,7 +95,9 @@ class BaseRegistrationSerializer(serializers.Serializer):
     email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
     password = serializers.CharField(write_only=True, style={"input_type": "password"})
     # Sent as true when the person ticks "I accept the Terms and Privacy Policy". The time is stored.
-    terms_accepted = serializers.BooleanField(required=False, default=False, write_only=True)
+    terms_accepted = serializers.BooleanField(
+        required=False, default=False, write_only=True
+    )
 
     USER_FIELDS = ("full_name", "phone_number", "email", "password")
 
@@ -97,7 +109,9 @@ class BaseRegistrationSerializer(serializers.Serializer):
 
     def validate_phone_number(self, value):
         if User.objects.filter(phone_number=value).exists():
-            raise serializers.ValidationError("An account with this phone number already exists.")
+            raise serializers.ValidationError(
+                "An account with this phone number already exists."
+            )
         return value
 
     def validate_email(self, value):
@@ -113,7 +127,9 @@ class BaseRegistrationSerializer(serializers.Serializer):
             )
 
         if User.objects.filter(email__iexact=value).exists():
-            raise serializers.ValidationError("An account with this email already exists.")
+            raise serializers.ValidationError(
+                "An account with this email already exists."
+            )
 
         return value
 
@@ -138,7 +154,9 @@ class BaseRegistrationSerializer(serializers.Serializer):
                 f"Registration serializers can only create these roles: "
                 f"{', '.join(User.SELF_REGISTRATION_ROLES)}."
             )
-        user_data = {k: validated_data.pop(k) for k in self.USER_FIELDS if k in validated_data}
+        user_data = {
+            k: validated_data.pop(k) for k in self.USER_FIELDS if k in validated_data
+        }
         if validated_data.pop("terms_accepted", False):
             user_data["terms_accepted_at"] = timezone.now()
         with transaction.atomic():
@@ -176,7 +194,9 @@ class LoginSerializer(serializers.Serializer):
         user = find_user_by_identifier(attrs["identifier"])
 
         if user is None:
-            User().set_password(attrs["password"])  # equalise timing for unknown accounts
+            User().set_password(
+                attrs["password"]
+            )  # equalise timing for unknown accounts
             self.fail("invalid_credentials")
 
         if not user.check_password(attrs["password"]):
@@ -301,13 +321,35 @@ class PasswordChangeSerializer(serializers.Serializer):
 
         if attrs["current_password"] == attrs["new_password"]:
             raise serializers.ValidationError(
-                {
-                    "new_password": [
-                        "Choose a different password from your current one."
-                    ]
-                }
+                {"new_password": ["Choose a different password from your current one."]}
             )
 
         check_new_password(attrs["new_password"], user)
 
         return attrs
+
+
+class BaseAvailabilitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BaseAvailability
+        fields = ["id", "day_of_week", "start_time", "end_time"]
+
+    def validate(self, data):
+        if data["start_time"] >= data["end_time"]:
+            raise serializers.ValidationError("start_time must precede end_time.")
+        return data
+
+
+class AvailabilityOverrideSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AvailabilityOverride
+        fields = ["id", "specific_date", "is_available", "start_time", "end_time"]
+
+    def validate(self, data):
+        if data.get("is_available") and (
+            not data.get("start_time") or not data.get("end_time")
+        ):
+            raise serializers.ValidationError(
+                "Time slots are required when setting availability to True."
+            )
+        return data

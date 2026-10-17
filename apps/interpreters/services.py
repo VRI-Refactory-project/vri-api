@@ -1,4 +1,3 @@
-
 from django.utils import timezone
 
 from .availability import is_available_now
@@ -40,7 +39,9 @@ def get_eligible_interpreters(
     profiles_with_periods = set(
         InterpreterAvailability.objects.filter(
             interpreter_id__in=profile_ids,
-        ).values_list("interpreter_id", flat=True).distinct()
+        )
+        .values_list("interpreter_id", flat=True)
+        .distinct()
     )
 
     # Period start is inclusive; period end is exclusive.
@@ -49,25 +50,25 @@ def get_eligible_interpreters(
             interpreter_id__in=profile_ids,
             start_at__lte=requested_time,
             end_at__gt=requested_time,
-        ).values_list("interpreter_id", flat=True).distinct()
+        )
+        .values_list("interpreter_id", flat=True)
+        .distinct()
     )
 
     eligible_ids = set(available_in_period)
 
     # Use the weekly schedule/date exceptions only when no saved periods exist.
     for profile in profiles:
-        if profile.pk not in profiles_with_periods:
-            if is_available_now(profile, requested_time):
-                eligible_ids.add(profile.pk)
+        if profile.pk not in profiles_with_periods and is_available_now(profile, requested_time):
+           eligible_ids.add(profile.pk)
+
 
     eligible_queryset = switched_on.filter(pk__in=eligible_ids)
 
     if not specialisation_required:
         return eligible_queryset
 
-    specialists = eligible_queryset.filter(
-        specialisation=specialisation_required
-    )
+    specialists = eligible_queryset.filter(specialisation=specialisation_required)
 
     if specialists.exists() or not allow_fallback:
         return specialists

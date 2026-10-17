@@ -1,4 +1,5 @@
 """Base settings shared by every environment. Secrets come from .env."""
+
 from datetime import timedelta
 from pathlib import Path
 
@@ -82,7 +83,9 @@ else:
             "NAME": env("POSTGRES_DB"),
             "USER": env("POSTGRES_USER"),
             "PASSWORD": env("POSTGRES_PASSWORD"),
-            "HOST": env("DATABASE_HOST", default="db"),  # "db" = service name in docker-compose.yml
+            "HOST": env(
+                "DATABASE_HOST", default="db"
+            ),  # "db" = service name in docker-compose.yml
             "PORT": env("DATABASE_PORT", default="5432"),
         }
     }
@@ -106,8 +109,13 @@ PASSWORD_HASHERS = [
 # Password or numeric PIN, minimum 6 characters. Common PINs/passwords (123456, password...)
 # are rejected, and login attempts are rate-limited (see "login" throttle below).
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 8}},
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 8},
+    },
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "apps.core.validators.NumberAndSpecialCharacterValidator"},
 ]
@@ -136,7 +144,9 @@ CACHES = {"default": env.cache_url("CACHE_URL", default="locmemcache://")}
 # Production: set EMAIL_URL, e.g. smtp+tls://user:password@smtp.example.com:587
 EMAIL_CONFIG = env.email_url("EMAIL_URL", default="consolemail://")
 vars().update(EMAIL_CONFIG)
-DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="SignConnect <no-reply@signconnect.local>")
+DEFAULT_FROM_EMAIL = env(
+    "DEFAULT_FROM_EMAIL", default="SignConnect <no-reply@signconnect.local>"
+)
 
 # --- Logging (recovery events are logged for audit; codes and passwords never are) ---
 LOGGING = {

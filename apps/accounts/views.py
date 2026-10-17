@@ -11,8 +11,12 @@ from drf_spectacular.utils import (
     extend_schema,
     inline_serializer,
 )
-from rest_framework import serializers, status
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework import serializers, status, viewsets
+from rest_framework.decorators import (
+    api_view,
+    authentication_classes,
+    permission_classes,
+)
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.generics import RetrieveAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -24,14 +28,15 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from apps.audit import services as audit
 from apps.audit.models import AuditLog
 from apps.core.permissions import ROLE_PERMISSIONS, IsAdminRole
-
-from . import recovery
-from .models import RecoveryCode
 from apps.institutions.serializers import InstitutionRegistrationSerializer
 from apps.interpreters.serializers import InterpreterRegistrationSerializer
 
+from . import recovery
+from .models import AvailabilityOverride, BaseAvailability, RecoveryCode
 from .serializers import (
     AdminResetConfirmSerializer,
+    AvailabilityOverrideSerializer,
+    BaseAvailabilitySerializer,
     DeafRegistrationSerializer,
     EmailVerifyConfirmSerializer,
     LoginSerializer,
@@ -413,3 +418,26 @@ class AdminResetConfirmView(AdminResetBase):
                                 request.user.pk, target.pk, client_ip(request))
         return Response({"detail": "Temporary password set. Give it to the user in person; "
                                    "they must choose a new one at their next sign-in."})
+    
+
+class BaseAvailabilityViewSet(viewsets.ModelViewSet):
+    serializer_class = BaseAvailabilitySerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        # Users should only manage their own core schedule
+        return BaseAvailability.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class AvailabilityOverrideViewSet(viewsets.ModelViewSet):
+    serializer_class = AvailabilityOverrideSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return AvailabilityOverride.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)

@@ -25,7 +25,11 @@ class EmailVerifiedFilter(admin.SimpleListFilter):
     parameter_name = "email_verified"
 
     def lookups(self, request, model_admin):
-        return [("yes", "Verified"), ("no", "Has email, not verified"), ("none", "No email")]
+        return [
+            ("yes", "Verified"),
+            ("no", "Has email, not verified"),
+            ("none", "No email"),
+        ]
 
     def queryset(self, request, queryset):
         if self.value() == "yes":
@@ -42,21 +46,65 @@ class UserAdmin(BaseUserAdmin):
     form = UserEditForm
     add_form = UserCreateForm
     ordering = ("-date_joined",)
-    list_display = ("full_name", "phone_number", "email", "email_verified", "role", "is_active", "date_joined")
+    list_display = (
+        "full_name",
+        "phone_number",
+        "email",
+        "email_verified",
+        "role",
+        "is_active",
+        "date_joined",
+    )
     list_filter = ("role", "is_active", "is_staff", EmailVerifiedFilter)
     search_fields = ("full_name", "phone_number", "email")
     fieldsets = (
         (None, {"fields": ("full_name", "phone_number", "email", "role", "password")}),
-        ("Status", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
-        ("Dates", {"fields": ("last_login", "date_joined", "terms_accepted_at", "email_verified_at")}),
+        (
+            "Status",
+            {
+                "fields": (
+                    "is_active",
+                    "is_staff",
+                    "is_superuser",
+                    "groups",
+                    "user_permissions",
+                )
+            },
+        ),
+        (
+            "Dates",
+            {
+                "fields": (
+                    "last_login",
+                    "date_joined",
+                    "terms_accepted_at",
+                    "email_verified_at",
+                )
+            },
+        ),
     )
     add_fieldsets = (
-        (None, {
-            "classes": ("wide",),
-            "fields": ("full_name", "phone_number", "email", "role", "password1", "password2"),
-        }),
+        (
+            None,
+            {
+                "classes": ("wide",),
+                "fields": (
+                    "full_name",
+                    "phone_number",
+                    "email",
+                    "role",
+                    "password1",
+                    "password2",
+                ),
+            },
+        ),
     )
-    readonly_fields = ("last_login", "date_joined", "terms_accepted_at", "email_verified_at")
+    readonly_fields = (
+        "last_login",
+        "date_joined",
+        "terms_accepted_at",
+        "email_verified_at",
+    )
 
     @admin.display(boolean=True, description="Email verified")
     def email_verified(self, obj):

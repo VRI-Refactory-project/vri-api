@@ -2,7 +2,6 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, MaxValueValidator
 from django.db import models
-from django.core.exceptions import ValidationError
 
 
 class VerificationStatus(models.TextChoices):
@@ -74,9 +73,14 @@ class InterpreterProfile(models.Model):
 
     def clean(self):
         super().clean()
-        if self.verification_status == VerificationStatus.APPROVED and not self.user.email_verified:
+        if (
+            self.verification_status == VerificationStatus.APPROVED
+            and not self.user.email_verified
+        ):
             raise ValidationError(
-                {"verification_status": "Cannot approve: this interpreter has not verified their email address."}
+                {
+                    "verification_status": "Cannot approve: this interpreter has not verified their email address."
+                }
             )
 
     def __str__(self):
@@ -187,13 +191,9 @@ class CertificationDocument(models.Model):
         ordering = ["-uploaded_at"]
 
     def __str__(self):
-<<<<<<< HEAD
-        return f"Certification: {self.document_name} - {self.interpreter.user.full_name}"
-=======
         return (
             f"Certification: {self.document_name} - {self.interpreter.user.full_name}"
         )
->>>>>>> origin/dev
 
 
 class VerificationDecision(models.Model):
@@ -228,7 +228,7 @@ class VerificationDecision(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["-created_at", "-id"]  # noqa: RUF012
+        ordering = ["-created_at", "-id"]
 
     def __str__(self):
         return f"{self.get_action_display()}: {self.interpreter.user.full_name} by {self.admin.full_name}"

@@ -4,30 +4,51 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('interpreters', '0003_dateexception_weeklyavailability'),
+        ("interpreters", "0003_dateexception_weeklyavailability"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='interpreterprofile',
-            name='sign_languages',
-            field=models.JSONField(blank=True, default=list, help_text="List of sign language preferences, e.g. ['Ugandan Sign Language']"),
+            model_name="interpreterprofile",
+            name="sign_languages",
+            field=models.JSONField(
+                blank=True,
+                default=list,
+                help_text="List of sign language preferences, e.g. ['Ugandan Sign Language']",
+            ),
         ),
         migrations.AddField(
-            model_name='interpreterprofile',
-            name='specialisation_other',
-            field=models.CharField(blank=True, default='', help_text="Custom specialisation text when 'OTHER' is selected.", max_length=100),
+            model_name="interpreterprofile",
+            name="specialisation_other",
+            field=models.CharField(
+                blank=True,
+                default="",
+                help_text="Custom specialisation text when 'OTHER' is selected.",
+                max_length=100,
+            ),
         ),
         migrations.AlterField(
-            model_name='interpreterprofile',
-            name='specialisation',
-            field=models.CharField(choices=[('GENERAL', 'General'), ('MEDICAL', 'Medical'), ('LEGAL', 'Legal'), ('OTHER', 'Other')], default='GENERAL', max_length=20),
+            model_name="interpreterprofile",
+            name="specialisation",
+            field=models.CharField(
+                choices=[
+                    ("GENERAL", "General"),
+                    ("MEDICAL", "Medical"),
+                    ("LEGAL", "Legal"),
+                    ("OTHER", "Other"),
+                ],
+                default="GENERAL",
+                max_length=20,
+            ),
         ),
         migrations.AlterField(
-            model_name='interpreterprofile',
-            name='working_hours_schedule',
-            field=models.JSONField(blank=True, default=dict, help_text='General weekly schedule overview JSON.'),
+            model_name="interpreterprofile",
+            name="working_hours_schedule",
+            field=models.JSONField(
+                blank=True,
+                default=dict,
+                help_text="General weekly schedule overview JSON.",
+            ),
         ),
     ]

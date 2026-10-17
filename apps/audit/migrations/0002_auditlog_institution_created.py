@@ -4,15 +4,21 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('audit', '0001_initial'),
+        ("audit", "0001_initial"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='auditlog',
-            name='event',
-            field=models.CharField(choices=[('admin_sign_in', 'Administrator signed in'), ('institution_created', 'Administrator created an institution')], db_index=True, max_length=40),
+            model_name="auditlog",
+            name="event",
+            field=models.CharField(
+                choices=[
+                    ("admin_sign_in", "Administrator signed in"),
+                    ("institution_created", "Administrator created an institution"),
+                ],
+                db_index=True,
+                max_length=40,
+            ),
         ),
     ]

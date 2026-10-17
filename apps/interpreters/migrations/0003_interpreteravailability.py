@@ -5,26 +5,50 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('interpreters', '0002_certificationdocument_certificate_type_and_more'),
+        ("interpreters", "0002_certificationdocument_certificate_type_and_more"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='InterpreterAvailability',
+            name="InterpreterAvailability",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('start_at', models.DateTimeField()),
-                ('end_at', models.DateTimeField()),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('interpreter', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='availability_periods', to='interpreters.interpreterprofile')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("start_at", models.DateTimeField()),
+                ("end_at", models.DateTimeField()),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "interpreter",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="availability_periods",
+                        to="interpreters.interpreterprofile",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['start_at'],
-                'indexes': [models.Index(fields=['interpreter', 'start_at', 'end_at'], name='interp_avail_period_idx')],
-                'constraints': [models.CheckConstraint(condition=models.Q(('end_at__gt', models.F('start_at'))), name='availability_end_after_start')],
+                "ordering": ["start_at"],
+                "indexes": [
+                    models.Index(
+                        fields=["interpreter", "start_at", "end_at"],
+                        name="interp_avail_period_idx",
+                    )
+                ],
+                "constraints": [
+                    models.CheckConstraint(
+                        condition=models.Q(("end_at__gt", models.F("start_at"))),
+                        name="availability_end_after_start",
+                    )
+                ],
             },
         ),
     ]

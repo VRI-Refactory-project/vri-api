@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import InterpreterProfile, CertificationDocument, VerificationDecision
+
+from .models import CertificationDocument, InterpreterProfile, VerificationDecision
 
 
 class CertificationDocumentInline(admin.TabularInline):
@@ -24,13 +25,27 @@ class ReadOnlyAdminMixin:
 class VerificationDecisionInline(ReadOnlyAdminMixin, admin.TabularInline):
     model = VerificationDecision
     extra = 0
-    fields = ["created_at", "action", "admin", "previous_status", "new_status", "reason"]
+    fields = [
+        "created_at",
+        "action",
+        "admin",
+        "previous_status",
+        "new_status",
+        "reason",
+    ]
     readonly_fields = fields
 
 
 @admin.register(VerificationDecision)
 class VerificationDecisionAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
-    list_display = ["created_at", "action", "interpreter", "admin", "previous_status", "new_status"]
+    list_display = [
+        "created_at",
+        "action",
+        "interpreter",
+        "admin",
+        "previous_status",
+        "new_status",
+    ]
     list_filter = ["action", "new_status"]
     search_fields = ["interpreter__user__full_name", "admin__full_name", "reason"]
     list_select_related = ["interpreter__user", "admin"]

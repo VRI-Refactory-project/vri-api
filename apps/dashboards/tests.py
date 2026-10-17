@@ -11,7 +11,9 @@ PASSWORD = "Sign-Connect-2026"
 
 
 def make_user(role, phone, full_name="Test User", **extra):
-    return User.objects.create_user(phone, PASSWORD, full_name=full_name, role=role, **extra)
+    return User.objects.create_user(
+        phone, PASSWORD, full_name=full_name, role=role, **extra
+    )
 
 
 class DashboardAccessTests(TestCase):
@@ -73,9 +75,13 @@ class AdminDashboardTests(TestCase):
         pending = make_user(User.Role.INTERPRETER, "0700000310")
         InterpreterProfile.objects.create(user=pending)
         approved = make_user(User.Role.INTERPRETER, "0700000311")
-        InterpreterProfile.objects.create(user=approved, verification_status=VerificationStatus.APPROVED)
+        InterpreterProfile.objects.create(
+            user=approved, verification_status=VerificationStatus.APPROVED
+        )
         institution = make_user(User.Role.INSTITUTION, "0700000320")
-        InstitutionProfile.objects.create(user=institution, organisation_name="Mulago", organisation_type="HOSPITAL")
+        InstitutionProfile.objects.create(
+            user=institution, organisation_name="Mulago", organisation_type="HOSPITAL"
+        )
 
         data = self.client.get("/api/v1/dashboard/admin/").json()
         self.assertEqual(data["interpreters_pending_verification"], 1)
@@ -97,7 +103,9 @@ class SignInRecordedTests(TestCase):
         admin = make_user(User.Role.ADMIN, "0700000400")
         self.assertIsNone(admin.last_login)
         response = APIClient().post(
-            "/api/v1/auth/login/", {"identifier": "0700000400", "password": PASSWORD}, format="json"
+            "/api/v1/auth/login/",
+            {"identifier": "0700000400", "password": PASSWORD},
+            format="json",
         )
         self.assertEqual(response.status_code, 200)
         admin.refresh_from_db()
@@ -106,7 +114,9 @@ class SignInRecordedTests(TestCase):
     def test_a_failed_sign_in_records_nothing(self):
         admin = make_user(User.Role.ADMIN, "0700000401")
         response = APIClient().post(
-            "/api/v1/auth/login/", {"identifier": "0700000401", "password": "wrong-password"}, format="json"
+            "/api/v1/auth/login/",
+            {"identifier": "0700000401", "password": "wrong-password"},
+            format="json",
         )
         self.assertEqual(response.status_code, 400)
         admin.refresh_from_db()

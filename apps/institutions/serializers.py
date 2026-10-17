@@ -1,6 +1,5 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from .models import InstitutionProfile
 
 from apps.accounts.serializers import BaseRegistrationSerializer
 
@@ -20,7 +19,9 @@ class InstitutionRegistrationSerializer(BaseRegistrationSerializer):
     email_required = True
     organisation_name = serializers.CharField(max_length=200)
     organisation_type = serializers.ChoiceField(choices=OrganisationType.choices)
-    organisation_type_other = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    organisation_type_other = serializers.CharField(
+        max_length=100, required=False, allow_blank=True
+    )
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -28,7 +29,9 @@ class InstitutionRegistrationSerializer(BaseRegistrationSerializer):
         if attrs["organisation_type"] == OrganisationType.OTHER:
             if not other:
                 raise serializers.ValidationError(
-                    {"organisation_type_other": "Tell us what kind of institution this is."}
+                    {
+                        "organisation_type_other": "Tell us what kind of institution this is."
+                    }
                 )
             attrs["organisation_type_other"] = other
         else:
@@ -43,7 +46,9 @@ class InstitutionRegistrationSerializer(BaseRegistrationSerializer):
             organisation_type_other=validated_data["organisation_type_other"],
         )
         # The registrant is the institution's first administrator (V2-006).
-        InstitutionStaff.objects.create(institution=institution, user=user, role=StaffRole.ADMIN, created_by=user)
+        InstitutionStaff.objects.create(
+            institution=institution, user=user, role=StaffRole.ADMIN, created_by=user
+        )
 
 
 class InstitutionSerializer(serializers.ModelSerializer):
@@ -51,21 +56,32 @@ class InstitutionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = InstitutionProfile
-        fields = ["id", "organisation_name", "organisation_type", "organisation_type_other", "status",
-                  "created_at"]
+        fields = [
+            "id",
+            "organisation_name",
+            "organisation_type",
+            "organisation_type_other",
+            "status",
+            "created_at",
+        ]
         read_only_fields = fields
-
-
 
 
 class InstitutionProfileUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = InstitutionProfile
-        fields = ['name', 'contact_email', 'contact_phone', 'billing_address', 'timezone']
+        fields = [
+            "name",
+            "contact_email",
+            "contact_phone",
+            "billing_address",
+            "timezone",
+        ]
         extra_kwargs = {
-            'name': {'required': False},
-            'contact_email': {'required': False},
+            "name": {"required": False},
+            "contact_email": {"required": False},
         }
+
 
 # --- V2-006: staff accounts -------------------------------------------------------------------------
 
@@ -82,8 +98,19 @@ class StaffSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = InstitutionStaff
-        fields = ["id", "user_id", "full_name", "phone_number", "email", "role", "job_title", "status",
-                  "last_login", "created_at", "revoked_at"]
+        fields = [
+            "id",
+            "user_id",
+            "full_name",
+            "phone_number",
+            "email",
+            "role",
+            "job_title",
+            "status",
+            "last_login",
+            "created_at",
+            "revoked_at",
+        ]
         read_only_fields = fields
 
     def get_status(self, membership) -> str:
@@ -98,14 +125,20 @@ class StaffCreateSerializer(BaseRegistrationSerializer):
     `save()` returns the new InstitutionStaff.
     """
 
-    role = User.Role.INSTITUTION  # the account's platform role; the institution role is the "role" field below
+    role = (
+        User.Role.INSTITUTION
+    )  # the account's platform role; the institution role is the "role" field below
     email_required = True
-    job_title = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+    job_title = serializers.CharField(
+        max_length=100, required=False, allow_blank=True, default=""
+    )
 
     def get_fields(self):
         fields = super().get_fields()
         del fields["password"], fields["terms_accepted"]
-        fields["role"] = serializers.ChoiceField(choices=StaffRole.choices, default=StaffRole.STAFF)
+        fields["role"] = serializers.ChoiceField(
+            choices=StaffRole.choices, default=StaffRole.STAFF
+        )
         return fields
 
     def validate(self, attrs):
@@ -113,7 +146,9 @@ class StaffCreateSerializer(BaseRegistrationSerializer):
         return serializers.Serializer.validate(self, attrs)
 
     def create(self, validated_data):
-        validated_data["password"] = None  # unusable until staff.create_staff sets a temporary one
+        validated_data["password"] = (
+            None  # unusable until staff.create_staff sets a temporary one
+        )
         self.staff_role = validated_data.pop("role")
         user = super().create(validated_data)
         return user.institution_staff

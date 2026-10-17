@@ -7,32 +7,19 @@ from django.db.models import Count
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-<<<<<<< HEAD
-from drf_spectacular.utils import extend_schema
-=======
->>>>>>> origin/dev
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+)
 from rest_framework import generics, permissions
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-<<<<<<< HEAD
-
-from apps.core.permissions import IsInterpreter
-
-from .availability import monday_of, unavailable_reason, week_schedule
-from .models import (
-    DateException,
-    InterpreterAvailability,
-    InterpreterProfile,
-)
-from apps.core.permissions import IsAdminRole
-=======
 from apps.core.permissions import IsAdminRole, IsInterpreter
->>>>>>> origin/dev
 
 from . import verification
 from .availability import (
@@ -56,16 +43,9 @@ from .serializers import (
     CertificationDocumentSerializer,
     DayScheduleSerializer,
     DayUpdateSerializer,
-<<<<<<< HEAD
-    InterpreterAvailabilitySerializer,
-    DecisionReasonOptionalSerializer,
-    DecisionReasonRequiredSerializer,
-
-=======
     DecisionReasonOptionalSerializer,
     DecisionReasonRequiredSerializer,
     InterpreterAvailabilitySerializer,
->>>>>>> origin/dev
     InterpreterProfileSerializer,
     ManageInterpreterDetailSerializer,
     ManageInterpreterListSerializer,
@@ -76,11 +56,6 @@ from .serializers import (
 )
 
 User = get_user_model()
-
-<<<<<<< HEAD
-=======
-
->>>>>>> origin/dev
 @extend_schema(
     tags=["Interpreter Profile Management"],
     summary="Upload interpreter certification document",

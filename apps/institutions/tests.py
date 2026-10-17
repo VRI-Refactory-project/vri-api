@@ -1,13 +1,11 @@
-from django.core.cache import cache
-
 from django.core import mail
+from django.core.cache import cache
 from django.test import override_settings
-
-from apps.audit.models import AuditLog
 from django.urls import reverse
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import User
+from apps.audit.models import AuditLog
 
 from .models import InstitutionProfile, InstitutionStatus
 
@@ -31,7 +29,9 @@ class InstitutionRegistrationTests(APITestCase):
         return data
 
     def test_registrant_becomes_institution_administrator_and_is_signed_in(self):
-        res = self.client.post(reverse("auth-register-institution"), self.data(), format="json")
+        res = self.client.post(
+            reverse("auth-register-institution"), self.data(), format="json"
+        )
         self.assertEqual(res.status_code, 201, res.data)
         self.assertEqual(res.data["user"]["role"], "institution")
         self.assertIn("access", res.data)
@@ -42,7 +42,9 @@ class InstitutionRegistrationTests(APITestCase):
     def test_other_type_stores_what_the_registrant_wrote(self):
         res = self.client.post(
             reverse("auth-register-institution"),
-            self.data(organisation_type="OTHER", organisation_type_other="  Deaf school  "),
+            self.data(
+                organisation_type="OTHER", organisation_type_other="  Deaf school  "
+            ),
             format="json",
         )
         self.assertEqual(res.status_code, 201, res.data)
@@ -51,9 +53,15 @@ class InstitutionRegistrationTests(APITestCase):
         self.assertEqual(profile.organisation_type_other, "Deaf school")
 
     def test_other_type_needs_a_description(self):
-        for text in ({}, {"organisation_type_other": ""}, {"organisation_type_other": "   "}):
+        for text in (
+            {},
+            {"organisation_type_other": ""},
+            {"organisation_type_other": "   "},
+        ):
             res = self.client.post(
-                reverse("auth-register-institution"), self.data(organisation_type="OTHER", **text), format="json"
+                reverse("auth-register-institution"),
+                self.data(organisation_type="OTHER", **text),
+                format="json",
             )
             self.assertEqual(res.status_code, 400, text)
             self.assertIn("organisation_type_other", res.data)
@@ -69,8 +77,12 @@ class InstitutionRegistrationTests(APITestCase):
         self.assertEqual(InstitutionProfile.objects.get().organisation_type_other, "")
 
     def test_institution_starts_pending_approval(self):
-        self.client.post(reverse("auth-register-institution"), self.data(), format="json")
-        self.assertEqual(InstitutionProfile.objects.get().status, InstitutionStatus.PENDING)
+        self.client.post(
+            reverse("auth-register-institution"), self.data(), format="json"
+        )
+        self.assertEqual(
+            InstitutionProfile.objects.get().status, InstitutionStatus.PENDING
+        )
 
     def test_cannot_register_as_platform_admin(self):
         res = self.client.post(
@@ -84,7 +96,9 @@ class InstitutionRegistrationTests(APITestCase):
         for field in ("organisation_name", "organisation_type"):
             data = self.data()
             del data[field]
-            res = self.client.post(reverse("auth-register-institution"), data, format="json")
+            res = self.client.post(
+                reverse("auth-register-institution"), data, format="json"
+            )
             self.assertEqual(res.status_code, 400, field)
             self.assertIn(field, res.data)
         self.assertFalse(User.objects.exists())
@@ -92,19 +106,25 @@ class InstitutionRegistrationTests(APITestCase):
     def test_email_is_required(self):
         data = self.data()
         del data["email"]
-        res = self.client.post(reverse("auth-register-institution"), data, format="json")
+        res = self.client.post(
+            reverse("auth-register-institution"), data, format="json"
+        )
         self.assertEqual(res.status_code, 400)
         self.assertIn("email", res.data)
 
     def test_invalid_organisation_type_rejected(self):
         res = self.client.post(
-            reverse("auth-register-institution"), self.data(organisation_type="CIRCUS"), format="json"
+            reverse("auth-register-institution"),
+            self.data(organisation_type="CIRCUS"),
+            format="json",
         )
         self.assertEqual(res.status_code, 400)
         self.assertIn("organisation_type", res.data)
 
     def test_duplicate_phone_rejected(self):
-        self.client.post(reverse("auth-register-institution"), self.data(), format="json")
+        self.client.post(
+            reverse("auth-register-institution"), self.data(), format="json"
+        )
         res = self.client.post(
             reverse("auth-register-institution"),
             self.data(email="other@example.com"),
@@ -154,9 +174,7 @@ class InstitutionApprovalTests(APITestCase):
             "Mulago Hospital",
         )
 
-    @override_settings(
-        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"
-    )
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_admin_can_approve_and_notification_is_sent(self):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
@@ -181,9 +199,7 @@ class InstitutionApprovalTests(APITestCase):
             ["grace@mulago.example"],
         )
 
-    @override_settings(
-        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"
-    )
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_admin_can_reject_application(self):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
