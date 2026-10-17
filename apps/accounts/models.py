@@ -8,6 +8,7 @@ from django.utils import timezone
 from phonenumber_field.modelfields import PhoneNumberField
 
 
+
 class UserManager(BaseUserManager):
     """Creates users identified by phone number (stored in E.164, e.g. +256772123456)."""
 
@@ -210,3 +211,23 @@ class AvailabilityOverride(models.Model):
 
     def __str__(self):
         return f"{self.user} - Override {self.specific_date}"
+
+
+class AvailabilityPeriod(models.Model):
+    resource = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name='availabilities'
+    )
+    start_time = models.DateTimeField(db_index=True)
+    end_time = models.DateTimeField(db_index=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['start_time', 'end_time', 'is_active']),
+        ]
+
+    def __str__(self):
+        return f"{self.resource} available from {self.start_time} to {self.end_time}"
+

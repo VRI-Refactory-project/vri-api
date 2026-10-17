@@ -11,7 +11,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.core.permissions import user_staff_membership
 
 from . import recovery
-from .models import AvailabilityOverride, BaseAvailability, RecoveryCode
+from .models import AvailabilityOverride, BaseAvailability, RecoveryCode, AvailabilityPeriod
 from .utils import find_user_by_identifier
 
 User = get_user_model()
@@ -353,3 +353,10 @@ class AvailabilityOverrideSerializer(serializers.ModelSerializer):
                 "Time slots are required when setting availability to True."
             )
         return data
+
+class AvailabilityPeriodSerializer(serializers.ModelSerializer):
+    resource_id = serializers.ReadOnlyField(source='resource.id')
+
+    class Meta:
+        model = AvailabilityPeriod
+        fields = ['id', 'resource_id', 'start_time', 'end_time', 'is_active']
