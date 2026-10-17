@@ -120,7 +120,12 @@ def health(request):
 def roles(request):
     """The account types shown on the role selection screen. The chosen `value` decides which
     registration form the user is sent to. Admin accounts are created by staff only, so they are not listed."""
-    return Response([{"value": role.value, "label": role.label} for role in User.SELF_REGISTRATION_ROLES])
+    return Response(
+        [
+            {"value": role.value, "label": role.label}
+            for role in User.SELF_REGISTRATION_ROLES
+        ]
+    )
 
 
 class LoginView(APIView):
@@ -139,17 +144,25 @@ class LoginView(APIView):
         request=LoginSerializer,
         responses={200: TokenPairSerializer},
         examples=[
-            OpenApiExample("With phone", value={"identifier": "0772123456", "password": "your-password"},
-                           request_only=True),
-            OpenApiExample("With email", value={"identifier": "sarah@example.com", "password": "your-password"},
-                           request_only=True),
+            OpenApiExample(
+                "With phone",
+                value={"identifier": "0772123456", "password": "your-password"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "With email",
+                value={"identifier": "sarah@example.com", "password": "your-password"},
+                request_only=True,
+            ),
         ],
     )
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data["user"]
-        update_last_login(None, user)  # when the user last signed in, shown in the admin site
+        update_last_login(
+            None, user
+        )  # when the user last signed in, shown in the admin site
         if user.role == User.Role.ADMIN:
             audit.record(AuditLog.Event.ADMIN_SIGN_IN, user, request)
         return Response(TokenPairSerializer.for_user(user), status=status.HTTP_200_OK)
@@ -177,7 +190,9 @@ class RoleAccessView(APIView):
     """
 
     def get_permissions(self):
-        if getattr(self, "swagger_fake_view", False):  # schema generation has no URL kwargs
+        if getattr(
+            self, "swagger_fake_view", False
+        ):  # schema generation has no URL kwargs
             return [IsAuthenticated()]
         permission_class = ROLE_PERMISSIONS.get(self.kwargs["role"])
         if permission_class is None:
@@ -187,7 +202,11 @@ class RoleAccessView(APIView):
     @extend_schema(
         tags=["Auth"],
         summary="Check access to a role's endpoints",
-        parameters=[OpenApiParameter("role", OpenApiTypes.STR, OpenApiParameter.PATH, enum=User.Role.values)],
+        parameters=[
+            OpenApiParameter(
+                "role", OpenApiTypes.STR, OpenApiParameter.PATH, enum=User.Role.values
+            )
+        ],
         responses={
             200: RoleAccessSerializer,
             401: OpenApiResponse(description="Not signed in."),
@@ -216,8 +235,12 @@ class BaseRegisterView(APIView):
         user = serializer.save()
         if user.email:
             # Best effort: if the mail fails the account still exists and the user can ask for a new code.
-            recovery.issue_code(user, RecoveryCode.Purpose.EMAIL_VERIFY, ip=client_ip(request))
-        return Response(TokenPairSerializer.for_user(user), status=status.HTTP_201_CREATED)
+            recovery.issue_code(
+                user, RecoveryCode.Purpose.EMAIL_VERIFY, ip=client_ip(request)
+            )
+        return Response(
+            TokenPairSerializer.for_user(user), status=status.HTTP_201_CREATED
+        )
 
 
 @extend_schema(
@@ -264,16 +287,24 @@ class RecoveryRequestView(APIView):
     authentication_classes = []
     throttle_scope = "recovery_request"
 
-    @extend_schema(tags=["Auth"], summary="Account recovery: request a code by email",
-                   request=RecoveryRequestSerializer, responses={200: DetailSerializer})
+    @extend_schema(
+        tags=["Auth"],
+        summary="Account recovery: request a code by email",
+        request=RecoveryRequestSerializer,
+        responses={200: DetailSerializer},
+    )
     def post(self, request):
         serializer = RecoveryRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = find_user_by_identifier(serializer.validated_data["identifier"])
         if user is not None and user.is_active and user.email:
-            recovery.issue_code(user, RecoveryCode.Purpose.SELF_RECOVERY, ip=client_ip(request))
+            recovery.issue_code(
+                user, RecoveryCode.Purpose.SELF_RECOVERY, ip=client_ip(request)
+            )
         else:
-            recovery.logger.info("recovery_requested_no_delivery ip=%s", client_ip(request))
+            recovery.logger.info(
+                "recovery_requested_no_delivery ip=%s", client_ip(request)
+            )
         return Response({"detail": RECOVERY_REQUEST_MESSAGE})
 
 
@@ -284,16 +315,24 @@ class RecoveryConfirmView(APIView):
     authentication_classes = []
     throttle_scope = "recovery_confirm"
 
-    @extend_schema(tags=["Auth"], summary="Account recovery: confirm code and set new password",
-                   request=RecoveryConfirmSerializer, responses={200: TokenPairSerializer})
+    @extend_schema(
+        tags=["Auth"],
+        summary="Account recovery: confirm code and set new password",
+        request=RecoveryConfirmSerializer,
+        responses={200: TokenPairSerializer},
+    )
     def post(self, request):
         serializer = RecoveryConfirmSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data["user"]
         if not recovery.mark_used(serializer.validated_data["recovery_code"]):
-            raise ValidationError({"code": ["Invalid or expired code. Request a new one."]})
+            raise ValidationError(
+                {"code": ["Invalid or expired code. Request a new one."]}
+            )
         recovery.set_new_password(user, serializer.validated_data["new_password"])
-        recovery.logger.info("recovery_succeeded user=%s ip=%s", user.pk, client_ip(request))
+        recovery.logger.info(
+            "recovery_succeeded user=%s ip=%s", user.pk, client_ip(request)
+        )
         return Response(TokenPairSerializer.for_user(user))
 
 
@@ -306,18 +345,28 @@ class EmailVerifyResendView(APIView):
     permission_classes = [IsAuthenticated]
     throttle_scope = "email_verify_resend"
 
-    @extend_schema(tags=["Auth"], summary="Email verification: send me a new code",
-                   request=None, responses={200: DetailSerializer})
+    @extend_schema(
+        tags=["Auth"],
+        summary="Email verification: send me a new code",
+        request=None,
+        responses={200: DetailSerializer},
+    )
     def post(self, request):
         user = request.user
         if not user.email:
-            raise ValidationError({"detail": "Your account has no email address to verify."})
+            raise ValidationError(
+                {"detail": "Your account has no email address to verify."}
+            )
         if user.email_verified:
             raise ValidationError({"detail": "Your email is already verified."})
-        result = recovery.issue_code(user, RecoveryCode.Purpose.EMAIL_VERIFY, ip=client_ip(request))
+        result = recovery.issue_code(
+            user, RecoveryCode.Purpose.EMAIL_VERIFY, ip=client_ip(request)
+        )
         if result != "sent":
             raise ValidationError({"detail": EMAIL_CODE_ERRORS[result]})
-        return Response({"detail": f"We sent a code to {recovery.mask_email(user.email)}."})
+        return Response(
+            {"detail": f"We sent a code to {recovery.mask_email(user.email)}."}
+        )
 
 
 class EmailVerifyConfirmView(APIView):
@@ -326,21 +375,33 @@ class EmailVerifyConfirmView(APIView):
     permission_classes = [IsAuthenticated]
     throttle_scope = "email_verify_confirm"
 
-    @extend_schema(tags=["Auth"], summary="Email verification: confirm the code",
-                   request=EmailVerifyConfirmSerializer, responses={200: UserSerializer})
+    @extend_schema(
+        tags=["Auth"],
+        summary="Email verification: confirm the code",
+        request=EmailVerifyConfirmSerializer,
+        responses={200: UserSerializer},
+    )
     def post(self, request):
         serializer = EmailVerifyConfirmSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = request.user
         if not user.email:
-            raise ValidationError({"detail": "Your account has no email address to verify."})
+            raise ValidationError(
+                {"detail": "Your account has no email address to verify."}
+            )
         if user.email_verified:
             return Response(UserSerializer(user).data)
-        rc = recovery.check_code(user, serializer.validated_data["code"], RecoveryCode.Purpose.EMAIL_VERIFY)
+        rc = recovery.check_code(
+            user, serializer.validated_data["code"], RecoveryCode.Purpose.EMAIL_VERIFY
+        )
         if rc is None or not recovery.mark_used(rc):
-            raise ValidationError({"code": ["Invalid or expired code. Request a new one."]})
+            raise ValidationError(
+                {"code": ["Invalid or expired code. Request a new one."]}
+            )
         recovery.mark_email_verified(user)
-        recovery.logger.info("email_verified user=%s ip=%s", user.pk, client_ip(request))
+        recovery.logger.info(
+            "email_verified user=%s ip=%s", user.pk, client_ip(request)
+        )
         return Response(UserSerializer(user).data)
 
 
@@ -349,12 +410,20 @@ class PasswordChangeView(APIView):
 
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(tags=["Auth"], summary="Change my password/PIN",
-                   request=PasswordChangeSerializer, responses={200: TokenPairSerializer})
+    @extend_schema(
+        tags=["Auth"],
+        summary="Change my password/PIN",
+        request=PasswordChangeSerializer,
+        responses={200: TokenPairSerializer},
+    )
     def post(self, request):
-        serializer = PasswordChangeSerializer(data=request.data, context={"request": request})
+        serializer = PasswordChangeSerializer(
+            data=request.data, context={"request": request}
+        )
         serializer.is_valid(raise_exception=True)
-        recovery.set_new_password(request.user, serializer.validated_data["new_password"])
+        recovery.set_new_password(
+            request.user, serializer.validated_data["new_password"]
+        )
         return Response(TokenPairSerializer.for_user(request.user))
 
 
@@ -368,9 +437,13 @@ class AdminResetBase(APIView):
         if target == request.user:
             self.fail("Use account recovery or change password for your own account.")
         if target.role == User.Role.ADMIN and not request.user.is_superuser:
-            raise PermissionDenied("Only a super-admin can reset another administrator.")
+            raise PermissionDenied(
+                "Only a super-admin can reset another administrator."
+            )
         if not request.user.email:
-            self.fail("Add an email address to your admin account first. The confirmation code is sent there.")
+            self.fail(
+                "Add an email address to your admin account first. The confirmation code is sent there."
+            )
         return target
 
     def fail(self, message):
@@ -383,15 +456,27 @@ class AdminResetRequestView(AdminResetBase):
     Verify the user's identity offline first (see docs/design/V2-008-account-recovery.md).
     """
 
-    @extend_schema(tags=["Manage"], summary="Admin reset: email me a confirmation code",
-                   request=None, responses={200: DetailSerializer})
+    @extend_schema(
+        tags=["Manage"],
+        summary="Admin reset: email me a confirmation code",
+        request=None,
+        responses={200: DetailSerializer},
+    )
     def post(self, request, pk):
         target = self.get_target(request, pk)
-        result = recovery.issue_code(request.user, RecoveryCode.Purpose.ADMIN_RESET, target_user=target,
-                                     ip=client_ip(request))
+        result = recovery.issue_code(
+            request.user,
+            RecoveryCode.Purpose.ADMIN_RESET,
+            target_user=target,
+            ip=client_ip(request),
+        )
         if result != "sent":
             self.fail(ADMIN_CODE_ERRORS[result])
-        return Response({"detail": f"Confirmation code sent to {recovery.mask_email(request.user.email)}."})
+        return Response(
+            {
+                "detail": f"Confirmation code sent to {recovery.mask_email(request.user.email)}."
+            }
+        )
 
 
 class AdminResetConfirmView(AdminResetBase):
@@ -400,25 +485,51 @@ class AdminResetConfirmView(AdminResetBase):
     The user must change it at their next sign-in (`must_change_password` = true).
     """
 
-    @extend_schema(tags=["Manage"], summary="Admin reset: confirm code and set a temporary password",
-                   request=AdminResetConfirmSerializer, responses={200: DetailSerializer})
+    @extend_schema(
+        tags=["Manage"],
+        summary="Admin reset: confirm code and set a temporary password",
+        request=AdminResetConfirmSerializer,
+        responses={200: DetailSerializer},
+    )
     def post(self, request, pk):
         target = self.get_target(request, pk)
         serializer = AdminResetConfirmSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        rc = recovery.check_code(request.user, serializer.validated_data["code"],
-                                 RecoveryCode.Purpose.ADMIN_RESET, target_user=target)
+        rc = recovery.check_code(
+            request.user,
+            serializer.validated_data["code"],
+            RecoveryCode.Purpose.ADMIN_RESET,
+            target_user=target,
+        )
         if rc is None:
-            raise ValidationError({"code": ["Invalid or expired code. Request a new one."]})
-        check_new_password(serializer.validated_data["temporary_password"], target, field="temporary_password")
+            raise ValidationError(
+                {"code": ["Invalid or expired code. Request a new one."]}
+            )
+        check_new_password(
+            serializer.validated_data["temporary_password"],
+            target,
+            field="temporary_password",
+        )
         if not recovery.mark_used(rc):
-            raise ValidationError({"code": ["Invalid or expired code. Request a new one."]})
-        recovery.set_new_password(target, serializer.validated_data["temporary_password"], must_change=True)
-        recovery.logger.warning("admin_reset_completed admin=%s user=%s ip=%s",
-                                request.user.pk, target.pk, client_ip(request))
-        return Response({"detail": "Temporary password set. Give it to the user in person; "
-                                   "they must choose a new one at their next sign-in."})
-    
+            raise ValidationError(
+                {"code": ["Invalid or expired code. Request a new one."]}
+            )
+        recovery.set_new_password(
+            target, serializer.validated_data["temporary_password"], must_change=True
+        )
+        recovery.logger.warning(
+            "admin_reset_completed admin=%s user=%s ip=%s",
+            request.user.pk,
+            target.pk,
+            client_ip(request),
+        )
+        return Response(
+            {
+                "detail": "Temporary password set. Give it to the user in person; "
+                "they must choose a new one at their next sign-in."
+            }
+        )
+
 
 class BaseAvailabilityViewSet(viewsets.ModelViewSet):
     serializer_class = BaseAvailabilitySerializer
