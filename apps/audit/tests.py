@@ -16,7 +16,9 @@ def make_user(role, phone, full_name="Test User"):
 
 
 def sign_in(phone, password=PASSWORD, **extra):
-    return APIClient().post(LOGIN, {"identifier": phone, "password": password}, format="json", **extra)
+    return APIClient().post(
+        LOGIN, {"identifier": phone, "password": password}, format="json", **extra
+    )
 
 
 class AdminSignInLogTests(TestCase):
@@ -38,14 +40,18 @@ class AdminSignInLogTests(TestCase):
         self.assertEqual(AuditLog.objects.count(), 2)
 
     def test_other_roles_are_not_logged(self):
-        for i, role in enumerate([User.Role.DEAF_HOH, User.Role.INTERPRETER, User.Role.INSTITUTION]):
+        for i, role in enumerate(
+            [User.Role.DEAF_HOH, User.Role.INTERPRETER, User.Role.INSTITUTION]
+        ):
             make_user(role, f"070000052{i}")
             self.assertEqual(sign_in(f"070000052{i}").status_code, 200)
         self.assertEqual(AuditLog.objects.count(), 0)
 
     def test_a_failed_sign_in_is_not_logged(self):
         make_user(User.Role.ADMIN, "0700000502")
-        self.assertEqual(sign_in("0700000502", password="wrong-password").status_code, 400)
+        self.assertEqual(
+            sign_in("0700000502", password="wrong-password").status_code, 400
+        )
         self.assertEqual(AuditLog.objects.count(), 0)
 
     def test_the_history_survives_deleting_the_account(self):
@@ -62,12 +68,20 @@ class AdminDashboardAuditTests(TestCase):
         self.client.force_authenticate(user=self.admin)
 
     def test_shows_nothing_before_any_sign_in(self):
-        self.assertEqual(self.client.get(ADMIN_DASHBOARD).json()["recent_admin_sign_ins"], [])
+        self.assertEqual(
+            self.client.get(ADMIN_DASHBOARD).json()["recent_admin_sign_ins"], []
+        )
 
     def test_lists_the_latest_sign_ins_newest_first_and_at_most_ten(self):
         for _ in range(12):
-            AuditLog.objects.create(user=self.admin, event=AuditLog.Event.ADMIN_SIGN_IN, ip_address="10.0.0.9")
-        newest = AuditLog.objects.create(user=self.admin, event=AuditLog.Event.ADMIN_SIGN_IN, ip_address="10.0.0.1")
+            AuditLog.objects.create(
+                user=self.admin,
+                event=AuditLog.Event.ADMIN_SIGN_IN,
+                ip_address="10.0.0.9",
+            )
+        newest = AuditLog.objects.create(
+            user=self.admin, event=AuditLog.Event.ADMIN_SIGN_IN, ip_address="10.0.0.1"
+        )
         entries = self.client.get(ADMIN_DASHBOARD).json()["recent_admin_sign_ins"]
         self.assertEqual(len(entries), 10)
         self.assertEqual(entries[0]["id"], newest.id)

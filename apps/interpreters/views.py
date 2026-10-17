@@ -1,4 +1,3 @@
-
 import os
 from datetime import date, timedelta
 
@@ -56,7 +55,7 @@ from .serializers import (
     WeekScheduleSerializer,
 )
 
-
+User = get_user_model()
 @extend_schema(
     tags=["Interpreter Profile Management"],
     summary="Upload interpreter certification document",

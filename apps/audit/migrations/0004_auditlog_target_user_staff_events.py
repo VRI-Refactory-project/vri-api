@@ -6,21 +6,36 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('audit', '0003_auditlog_remove_institution_created'),
+        ("audit", "0003_auditlog_remove_institution_created"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='auditlog',
-            name='target_user',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to=settings.AUTH_USER_MODEL),
+            model_name="auditlog",
+            name="target_user",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="+",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
         migrations.AlterField(
-            model_name='auditlog',
-            name='event',
-            field=models.CharField(choices=[('admin_sign_in', 'Administrator signed in'), ('staff_created', 'Institution staff account created'), ('staff_updated', 'Institution staff account changed'), ('staff_revoked', 'Institution staff access revoked'), ('staff_reinstated', 'Institution staff access reinstated')], db_index=True, max_length=40),
+            model_name="auditlog",
+            name="event",
+            field=models.CharField(
+                choices=[
+                    ("admin_sign_in", "Administrator signed in"),
+                    ("staff_created", "Institution staff account created"),
+                    ("staff_updated", "Institution staff account changed"),
+                    ("staff_revoked", "Institution staff access revoked"),
+                    ("staff_reinstated", "Institution staff access reinstated"),
+                ],
+                db_index=True,
+                max_length=40,
+            ),
         ),
     ]

@@ -17,7 +17,9 @@ class UserManager(BaseUserManager):
         if not phone_number:
             raise ValueError("A phone number is required.")
         if extra_fields.get("role") not in self.model.Role.values:
-            raise ValueError(f"A valid role is required, one of: {', '.join(self.model.Role.values)}.")
+            raise ValueError(
+                f"A valid role is required, one of: {', '.join(self.model.Role.values)}."
+            )
         email = extra_fields.pop("email", None)
         extra_fields["email"] = self.normalize_email(email).lower() if email else None
         user = self.model(phone_number=phone_number, **extra_fields)
@@ -35,7 +37,9 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("role", User.Role.ADMIN)
         if not extra_fields["is_staff"] or not extra_fields["is_superuser"]:
-            raise ValueError("A superuser must have is_staff=True and is_superuser=True.")
+            raise ValueError(
+                "A superuser must have is_staff=True and is_superuser=True."
+            )
         return self._create_user(phone_number, password, **extra_fields)
 
 
@@ -69,7 +73,9 @@ class User(AbstractBaseUser, PermissionsMixin):
         default=True,
         help_text="Untick to deactivate the account. Deactivated users cannot sign in.",
     )
-    is_staff = models.BooleanField(default=False, help_text="Can log in to the Django admin site.")
+    is_staff = models.BooleanField(
+        default=False, help_text="Can log in to the Django admin site."
+    )
     must_change_password = models.BooleanField(
         default=False,
         help_text="Set after an admin reset. The app should ask the user to choose a new password/PIN.",
@@ -130,9 +136,17 @@ class RecoveryCode(models.Model):
         ADMIN_RESET = "admin_reset", "Admin-assisted reset"
         EMAIL_VERIFY = "email_verify", "Email verification"
 
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="recovery_codes")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="recovery_codes",
+    )
     target_user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="+",
     )
     purpose = models.CharField(max_length=20, choices=Purpose.choices)
     channel = models.CharField(max_length=10, default="email")
@@ -151,23 +165,23 @@ class RecoveryCode(models.Model):
         return f"{self.get_purpose_display()} code for {self.user} ({self.created_at:%Y-%m-%d %H:%M})"
 
 
-
 class DayOfWeek(models.IntegerChoices):
-    MONDAY = 0, 'Monday'
-    TUESDAY = 1, 'Tuesday'
-    WEDNESDAY = 2, 'Wednesday'
-    THURSDAY = 3, 'Thursday'
-    FRIDAY = 4, 'Friday'
-    SATURDAY = 5, 'Saturday'
-    SUNDAY = 6, 'Sunday'
+    MONDAY = 0, "Monday"
+    TUESDAY = 1, "Tuesday"
+    WEDNESDAY = 2, "Wednesday"
+    THURSDAY = 3, "Thursday"
+    FRIDAY = 4, "Friday"
+    SATURDAY = 5, "Saturday"
+    SUNDAY = 6, "Sunday"
 
 
 class BaseAvailability(models.Model):
     """Stores repeating weekly schedule rules linked to your User model."""
+
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
-        on_delete=models.CASCADE, 
-        related_name='weekly_availabilities'
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="weekly_availabilities",
     )
     day_of_week = models.PositiveSmallIntegerField(choices=DayOfWeek.choices)
     start_time = models.TimeField()
@@ -175,7 +189,7 @@ class BaseAvailability(models.Model):
 
     class Meta:
         verbose_name_plural = "Base Availabilities"
-        unique_together = ('user', 'day_of_week', 'start_time', 'end_time')
+        unique_together = ("user", "day_of_week", "start_time", "end_time")
 
     def __str__(self):
         return f"{self.user} - {self.get_day_of_week_display()}"
@@ -183,10 +197,11 @@ class BaseAvailability(models.Model):
 
 class AvailabilityOverride(models.Model):
     """Handles specific dates like holidays, sick leave, or one-off shifts."""
+
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
-        on_delete=models.CASCADE, 
-        related_name='availability_overrides'
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="availability_overrides",
     )
     specific_date = models.DateField()
     is_available = models.BooleanField(default=False)

@@ -11,7 +11,11 @@ class NumberAndSpecialCharacterValidator:
     def validate(self, password, user=None):
         errors = []
         if not any(ch.isdigit() for ch in password):
-            errors.append(ValidationError("This password must contain at least one number.", code="no_number"))
+            errors.append(
+                ValidationError(
+                    "This password must contain at least one number.", code="no_number"
+                )
+            )
         if not any(not (ch.isalnum() or ch.isspace()) for ch in password):
             errors.append(
                 ValidationError(
@@ -23,4 +27,6 @@ class NumberAndSpecialCharacterValidator:
             raise ValidationError(errors)
 
     def get_help_text(self):
-        return "Your password must contain at least one number and one special character."
+        return (
+            "Your password must contain at least one number and one special character."
+        )

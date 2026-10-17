@@ -3,13 +3,16 @@
 Unlike prod.py this allows console email (recovery codes appear in the host's logs) and keeps
 the Swagger docs public, because reviewers use them. Use prod.py for the real pilot.
 """
+
 from django.core.exceptions import ImproperlyConfigured
 
 from .base import *
 from .base import ALLOWED_HOSTS, MIDDLEWARE, SECRET_KEY, env
 
 if len(SECRET_KEY) < 32 or SECRET_KEY.startswith(("change-me", "django-insecure")):
-    raise ImproperlyConfigured("Set a long random SECRET_KEY (32+ characters) for staging.")
+    raise ImproperlyConfigured(
+        "Set a long random SECRET_KEY (32+ characters) for staging."
+    )
 
 DEBUG = False
 
@@ -27,8 +30,15 @@ CSRF_COOKIE_SECURE = True
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
 # Serve static files (admin, Swagger UI) from the app itself; there is no nginx in front.
-MIDDLEWARE = [MIDDLEWARE[0], MIDDLEWARE[1], "whitenoise.middleware.WhiteNoiseMiddleware", *MIDDLEWARE[2:]]
+MIDDLEWARE = [
+    MIDDLEWARE[0],
+    MIDDLEWARE[1],
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    *MIDDLEWARE[2:],
+]
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
+    },
 }

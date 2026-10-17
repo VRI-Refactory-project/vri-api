@@ -6,20 +6,23 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('institutions', '0003_institutionstaff'),
+        ("institutions", "0003_institutionstaff"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.RemoveConstraint(
-            model_name='institutionstaff',
-            name='unique_institution_staff_membership',
+            model_name="institutionstaff",
+            name="unique_institution_staff_membership",
         ),
         migrations.AlterField(
-            model_name='institutionstaff',
-            name='user',
-            field=models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='institution_staff', to=settings.AUTH_USER_MODEL),
+            model_name="institutionstaff",
+            name="user",
+            field=models.OneToOneField(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="institution_staff",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
     ]

@@ -9,7 +9,6 @@ import apps.interpreters.models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
@@ -18,34 +17,104 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='InterpreterProfile',
+            name="InterpreterProfile",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('verification_status', models.CharField(choices=[('INACTIVE', 'Inactive / Pending Review'), ('APPROVED', 'Approved'), ('REJECTED', 'Rejected')], db_index=True, default='INACTIVE', max_length=20)),
-                ('is_available', models.BooleanField(default=False)),
-                ('specialisation', models.CharField(choices=[('GENERAL', 'General'), ('MEDICAL', 'Medical'), ('LEGAL', 'Legal')], default='GENERAL', max_length=20)),
-                ('working_hours_schedule', models.JSONField(blank=True, default=dict)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='interpreter_profile', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "verification_status",
+                    models.CharField(
+                        choices=[
+                            ("INACTIVE", "Inactive / Pending Review"),
+                            ("APPROVED", "Approved"),
+                            ("REJECTED", "Rejected"),
+                        ],
+                        db_index=True,
+                        default="INACTIVE",
+                        max_length=20,
+                    ),
+                ),
+                ("is_available", models.BooleanField(default=False)),
+                (
+                    "specialisation",
+                    models.CharField(
+                        choices=[
+                            ("GENERAL", "General"),
+                            ("MEDICAL", "Medical"),
+                            ("LEGAL", "Legal"),
+                        ],
+                        default="GENERAL",
+                        max_length=20,
+                    ),
+                ),
+                ("working_hours_schedule", models.JSONField(blank=True, default=dict)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "user",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="interpreter_profile",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='CertificationDocument',
+            name="CertificationDocument",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('document', models.FileField(upload_to=apps.interpreters.models.certification_upload_path, validators=[django.core.validators.FileExtensionValidator(['pdf', 'jpg', 'jpeg', 'png'])])),
-                ('document_name', models.CharField(max_length=255)),
-                ('uploaded_at', models.DateTimeField(auto_now_add=True)),
-                ('rejection_reason', models.TextField(blank=True, default='')),
-                ('interpreter', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='certifications', to='interpreters.interpreterprofile')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "document",
+                    models.FileField(
+                        upload_to=apps.interpreters.models.certification_upload_path,
+                        validators=[
+                            django.core.validators.FileExtensionValidator(
+                                ["pdf", "jpg", "jpeg", "png"]
+                            )
+                        ],
+                    ),
+                ),
+                ("document_name", models.CharField(max_length=255)),
+                ("uploaded_at", models.DateTimeField(auto_now_add=True)),
+                ("rejection_reason", models.TextField(blank=True, default="")),
+                (
+                    "interpreter",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="certifications",
+                        to="interpreters.interpreterprofile",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-uploaded_at'],
+                "ordering": ["-uploaded_at"],
             },
         ),
         migrations.AddConstraint(
-            model_name='interpreterprofile',
-            constraint=models.CheckConstraint(condition=models.Q(('is_available', False), ('verification_status', 'APPROVED'), _connector='OR'), name='available_only_if_approved'),
+            model_name="interpreterprofile",
+            constraint=models.CheckConstraint(
+                condition=models.Q(
+                    ("is_available", False),
+                    ("verification_status", "APPROVED"),
+                    _connector="OR",
+                ),
+                name="available_only_if_approved",
+            ),
         ),
     ]

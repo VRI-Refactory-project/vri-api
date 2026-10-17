@@ -10,6 +10,7 @@ Use them on a view to limit it to one or more roles:
 
 Not signed in -> 401. Signed in with another role -> 403.
 """
+
 from django.contrib.auth import get_user_model
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import BasePermission
@@ -43,6 +44,7 @@ class IsInterpreter(HasRole):
 class IsInstitution(HasRole):
     allowed_roles = (User.Role.INSTITUTION,)
 
+
 class HasInstitutionalRole(HasRole):
     """Allows authenticated users with the institutional role."""
 
@@ -62,8 +64,11 @@ def user_staff_membership(user):
         return None
     from apps.institutions.models import InstitutionStaff  # avoids an app-loading cycle
 
-    return (InstitutionStaff.objects.select_related("institution")
-            .filter(user=user, revoked_at__isnull=True).first())
+    return (
+        InstitutionStaff.objects.select_related("institution")
+        .filter(user=user, revoked_at__isnull=True)
+        .first()
+    )
 
 
 def user_institution(user):
@@ -89,15 +94,19 @@ class IsApprovedInstitution(BasePermission):
         from apps.institutions.models import InstitutionStatus
 
         if institution.status == InstitutionStatus.PENDING:
-            raise PermissionDenied({
-                "detail": "Your institution is waiting for approval by the SignConnect team.",
-                "code": "institution_pending",
-            })
+            raise PermissionDenied(
+                {
+                    "detail": "Your institution is waiting for approval by the SignConnect team.",
+                    "code": "institution_pending",
+                }
+            )
         if institution.status == InstitutionStatus.REJECTED:
-            raise PermissionDenied({
-                "detail": "Your institution's application was not approved. Please contact the SignConnect team.",
-                "code": "institution_rejected",
-            })
+            raise PermissionDenied(
+                {
+                    "detail": "Your institution's application was not approved. Please contact the SignConnect team.",
+                    "code": "institution_rejected",
+                }
+            )
         return institution.status == InstitutionStatus.APPROVED
 
 
@@ -113,10 +122,12 @@ class IsInstitutionAdmin(IsApprovedInstitution):
         from apps.institutions.models import StaffRole
 
         if user_staff_membership(request.user).role != StaffRole.ADMIN:
-            raise PermissionDenied({
-                "detail": "Only your institution's administrators can manage staff accounts.",
-                "code": "institution_admin_required",
-            })
+            raise PermissionDenied(
+                {
+                    "detail": "Only your institution's administrators can manage staff accounts.",
+                    "code": "institution_admin_required",
+                }
+            )
         return True
 
 

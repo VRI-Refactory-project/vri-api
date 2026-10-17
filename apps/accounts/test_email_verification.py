@@ -29,8 +29,12 @@ class EmailVerificationTests(APITestCase):
         cache.clear()
         res = self.client.post(
             reverse("auth-register-interpreter"),
-            {"full_name": "Ruth Auma", "phone_number": "0772000111", "email": "ruth@example.com",
-             "password": PASSWORD},
+            {
+                "full_name": "Ruth Auma",
+                "phone_number": "0772000111",
+                "email": "ruth@example.com",
+                "password": PASSWORD,
+            },
             format="json",
         )
         self.assertEqual(res.status_code, 201, res.data)
@@ -38,7 +42,9 @@ class EmailVerificationTests(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {res.data['access']}")
 
     def verify(self, code):
-        return self.client.post(reverse("auth-email-verify"), {"code": code}, format="json")
+        return self.client.post(
+            reverse("auth-email-verify"), {"code": code}, format="json"
+        )
 
     def test_registering_with_an_email_sends_a_code_and_starts_unverified(self):
         self.assertEqual(len(mail.outbox), 1)
@@ -49,8 +55,11 @@ class EmailVerificationTests(APITestCase):
 
     def test_registering_without_an_email_sends_nothing(self):
         mail.outbox.clear()
-        self.client.post(reverse("auth-register-deaf"),
-                         {"full_name": "Amina", "phone_number": "0772123456", "password": PASSWORD}, format="json")
+        self.client.post(
+            reverse("auth-register-deaf"),
+            {"full_name": "Amina", "phone_number": "0772123456", "password": PASSWORD},
+            format="json",
+        )
         self.assertEqual(len(mail.outbox), 0)
 
     def test_correct_code_verifies_the_email(self):
@@ -74,7 +83,11 @@ class EmailVerificationTests(APITestCase):
         self.assertEqual(self.verify(code).status_code, 400)
 
     def test_code_for_another_purpose_does_not_verify(self):
-        self.client.post(reverse("auth-recovery-request"), {"identifier": "ruth@example.com"}, format="json")
+        self.client.post(
+            reverse("auth-recovery-request"),
+            {"identifier": "ruth@example.com"},
+            format="json",
+        )
         recovery_code = code_from_last_email()
         self.assertEqual(self.verify(recovery_code).status_code, 400)
 
@@ -85,7 +98,9 @@ class EmailVerificationTests(APITestCase):
         self.assertEqual(self.verify(good).status_code, 400)
 
     def test_resend_sends_a_new_code_after_the_cooldown(self):
-        RecoveryCode.objects.update(created_at=RecoveryCode.objects.first().created_at.replace(year=2020))
+        RecoveryCode.objects.update(
+            created_at=RecoveryCode.objects.first().created_at.replace(year=2020)
+        )
         res = self.client.post(reverse("auth-email-resend"))
         self.assertEqual(res.status_code, 200, res.data)
         self.assertEqual(len(mail.outbox), 2)
@@ -97,21 +112,31 @@ class EmailVerificationTests(APITestCase):
 
     def test_resend_is_refused_once_verified(self):
         self.verify(code_from_last_email())
-        self.assertEqual(self.client.post(reverse("auth-email-resend")).status_code, 400)
+        self.assertEqual(
+            self.client.post(reverse("auth-email-resend")).status_code, 400
+        )
 
     def test_endpoints_need_sign_in(self):
         self.client.credentials()
         self.assertEqual(self.verify("123456").status_code, 401)
-        self.assertEqual(self.client.post(reverse("auth-email-resend")).status_code, 401)
+        self.assertEqual(
+            self.client.post(reverse("auth-email-resend")).status_code, 401
+        )
 
     def test_failed_email_does_not_break_registration(self):
         from unittest import mock
 
-        with mock.patch("apps.accounts.recovery.send_mail", side_effect=OSError("smtp down")):
+        with mock.patch(
+            "apps.accounts.recovery.send_mail", side_effect=OSError("smtp down")
+        ):
             res = self.client.post(
                 reverse("auth-register-interpreter"),
-                {"full_name": "Sam", "phone_number": "0772000222", "email": "sam@example.com",
-                 "password": PASSWORD},
+                {
+                    "full_name": "Sam",
+                    "phone_number": "0772000222",
+                    "email": "sam@example.com",
+                    "password": PASSWORD,
+                },
                 format="json",
             )
         self.assertEqual(res.status_code, 201)
@@ -135,30 +160,56 @@ class EmailVerificationTests(APITestCase):
 
 class ApprovalNeedsVerifiedEmailTests(APITestCase):
     def test_interpreter_cannot_be_approved_with_an_unverified_email(self):
-        user = User.objects.create_user("0772000111", PASSWORD, full_name="Ruth", email="r@example.com",
-                                        role=User.Role.INTERPRETER)
+        user = User.objects.create_user(
+            "0772000111",
+            PASSWORD,
+            full_name="Ruth",
+            email="r@example.com",
+            role=User.Role.INTERPRETER,
+        )
         profile = InterpreterProfile.objects.create(user=user)
         profile.verification_status = VerificationStatus.APPROVED
         with self.assertRaises(ValidationError):
             profile.full_clean()
 
     def test_interpreter_can_be_approved_once_the_email_is_verified(self):
-        user = User.objects.create_user("0772000111", PASSWORD, full_name="Ruth", email="r@example.com",
-                                        role=User.Role.INTERPRETER)
+        user = User.objects.create_user(
+            "0772000111",
+            PASSWORD,
+            full_name="Ruth",
+            email="r@example.com",
+            role=User.Role.INTERPRETER,
+        )
         user.email_verified_at = user.date_joined
         user.save()
-        profile = InterpreterProfile.objects.create(user=user, verification_status=VerificationStatus.APPROVED)
+        profile = InterpreterProfile.objects.create(
+            user=user, verification_status=VerificationStatus.APPROVED
+        )
         profile.full_clean()
 
     def test_institution_cannot_be_approved_with_an_unverified_email(self):
-        user = User.objects.create_user("0772000222", PASSWORD, full_name="Admin", email="i@example.com",
-                                        role=User.Role.INSTITUTION)
-        profile = InstitutionProfile(user=user, organisation_name="Clinic",
-                                     organisation_type=OrganisationType.HOSPITAL, status=InstitutionStatus.APPROVED)
+        user = User.objects.create_user(
+            "0772000222",
+            PASSWORD,
+            full_name="Admin",
+            email="i@example.com",
+            role=User.Role.INSTITUTION,
+        )
+        profile = InstitutionProfile(
+            user=user,
+            organisation_name="Clinic",
+            organisation_type=OrganisationType.HOSPITAL,
+            status=InstitutionStatus.APPROVED,
+        )
         with self.assertRaises(ValidationError):
             profile.full_clean()
 
     def test_pending_profiles_are_not_affected(self):
-        user = User.objects.create_user("0772000333", PASSWORD, full_name="Ruth", email="x@example.com",
-                                        role=User.Role.INTERPRETER)
+        user = User.objects.create_user(
+            "0772000333",
+            PASSWORD,
+            full_name="Ruth",
+            email="x@example.com",
+            role=User.Role.INTERPRETER,
+        )
         InterpreterProfile.objects.create(user=user).full_clean()

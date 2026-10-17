@@ -4,75 +4,94 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('users', '0001_initial'),
+        ("users", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='userprofile',
-            name='communication_methods',
-            field=models.JSONField(blank=True, default=list, help_text="e.g. ['Ugandan Sign Language', 'English (text)', 'International Sign']"),
+            model_name="userprofile",
+            name="communication_methods",
+            field=models.JSONField(
+                blank=True,
+                default=list,
+                help_text="e.g. ['Ugandan Sign Language', 'English (text)', 'International Sign']",
+            ),
         ),
         migrations.AddField(
-            model_name='userprofile',
-            name='emergency_contact_name',
-            field=models.CharField(blank=True, help_text='e.g. Sarah Kiggundu (Sister)', max_length=255),
+            model_name="userprofile",
+            name="emergency_contact_name",
+            field=models.CharField(
+                blank=True, help_text="e.g. Sarah Kiggundu (Sister)", max_length=255
+            ),
         ),
         migrations.AddField(
-            model_name='userprofile',
-            name='emergency_contact_phone',
-            field=models.CharField(blank=True, help_text='e.g. +256 700 987 654', max_length=20),
+            model_name="userprofile",
+            name="emergency_contact_phone",
+            field=models.CharField(
+                blank=True, help_text="e.g. +256 700 987 654", max_length=20
+            ),
         ),
         migrations.AddField(
-            model_name='userprofile',
-            name='flash_alerts',
-            field=models.BooleanField(default=True, help_text='Flash alert for incoming calls'),
+            model_name="userprofile",
+            name="flash_alerts",
+            field=models.BooleanField(
+                default=True, help_text="Flash alert for incoming calls"
+            ),
         ),
         migrations.AddField(
-            model_name='userprofile',
-            name='large_text',
-            field=models.BooleanField(default=False, help_text='Increase UI font size'),
+            model_name="userprofile",
+            name="large_text",
+            field=models.BooleanField(default=False, help_text="Increase UI font size"),
         ),
         migrations.AddField(
-            model_name='userprofile',
-            name='live_captions',
-            field=models.BooleanField(default=False, help_text='Enable live automated/manual captions'),
+            model_name="userprofile",
+            name="live_captions",
+            field=models.BooleanField(
+                default=False, help_text="Enable live automated/manual captions"
+            ),
         ),
         migrations.AddField(
-            model_name='userprofile',
-            name='location',
-            field=models.CharField(blank=True, help_text='e.g. Kampala', max_length=255),
+            model_name="userprofile",
+            name="location",
+            field=models.CharField(
+                blank=True, help_text="e.g. Kampala", max_length=255
+            ),
         ),
         migrations.AddField(
-            model_name='userprofile',
-            name='preferred_contact_mode',
-            field=models.CharField(default='Video, Chat', max_length=50),
+            model_name="userprofile",
+            name="preferred_contact_mode",
+            field=models.CharField(default="Video, Chat", max_length=50),
         ),
         migrations.AddField(
-            model_name='userprofile',
-            name='preferred_domains',
-            field=models.JSONField(blank=True, default=list, help_text="e.g. ['healthcare', 'legal', 'education']"),
+            model_name="userprofile",
+            name="preferred_domains",
+            field=models.JSONField(
+                blank=True,
+                default=list,
+                help_text="e.g. ['healthcare', 'legal', 'education']",
+            ),
         ),
         migrations.AddField(
-            model_name='userprofile',
-            name='preferred_name',
+            model_name="userprofile",
+            name="preferred_name",
             field=models.CharField(blank=True, max_length=100),
         ),
         migrations.AddField(
-            model_name='userprofile',
-            name='sign_language_preference',
-            field=models.CharField(default='Ugandan Sign Language', max_length=100),
+            model_name="userprofile",
+            name="sign_language_preference",
+            field=models.CharField(default="Ugandan Sign Language", max_length=100),
         ),
         migrations.AddField(
-            model_name='userprofile',
-            name='updated_at',
+            model_name="userprofile",
+            name="updated_at",
             field=models.DateTimeField(auto_now=True),
         ),
         migrations.AddField(
-            model_name='userprofile',
-            name='vibrate_on_call',
-            field=models.BooleanField(default=True, help_text='Vibrate on incoming call'),
+            model_name="userprofile",
+            name="vibrate_on_call",
+            field=models.BooleanField(
+                default=True, help_text="Vibrate on incoming call"
+            ),
         ),
     ]

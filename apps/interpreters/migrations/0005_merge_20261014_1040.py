@@ -4,11 +4,9 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('interpreters', '0003_interpreteravailability'),
-        ('interpreters', '0004_interpreterprofile_sign_languages_and_more'),
+        ("interpreters", "0003_interpreteravailability"),
+        ("interpreters", "0004_interpreterprofile_sign_languages_and_more"),
     ]
 
-    operations = [
-    ]
+    operations = []

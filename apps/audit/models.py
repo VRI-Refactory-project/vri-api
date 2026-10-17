@@ -12,7 +12,10 @@ class AuditLog(models.Model):
 
     class Event(models.TextChoices):
         ADMIN_SIGN_IN = "admin_sign_in", "Administrator signed in"
-        INSTITUTION_CREATED = "institution_created", "Administrator created an institution"
+        INSTITUTION_CREATED = (
+            "institution_created",
+            "Administrator created an institution",
+        )
         INSTITUTION_APPROVED = "institution_approved", "Institution approved"
         INSTITUTION_REJECTED = "institution_rejected", "Institution rejected"
         INSTITUTION_DEACTIVATED = "institution_deactivated", "Institution deactivated"

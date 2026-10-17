@@ -1,0 +1,5 @@
+[lint]
+ignore = ["RUF012"]
+[lint.per-file-ignores]
+"**/tests.py" = ["B017"]
+"**/test_*.py" = ["B017"]

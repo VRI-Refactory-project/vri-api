@@ -1,3 +1,5 @@
+from datetime import date, time
+
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.staticfiles import finders
 from django.core.cache import cache
@@ -6,11 +8,14 @@ from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework import serializers
-from rest_framework.test import APITestCase
-from datetime import date, time
 from rest_framework.exceptions import ValidationError as DRFValidationError
-from apps.accounts.models import DayOfWeek, BaseAvailability, AvailabilityOverride
-from apps.accounts.serializers import BaseAvailabilitySerializer, AvailabilityOverrideSerializer
+from rest_framework.test import APITestCase
+
+from apps.accounts.models import AvailabilityOverride, BaseAvailability, DayOfWeek
+from apps.accounts.serializers import (
+    AvailabilityOverrideSerializer,
+    BaseAvailabilitySerializer,
+)
 
 from .serializers import BaseRegistrationSerializer, TokenPairSerializer
 
@@ -19,7 +24,9 @@ PASSWORD = "Sign-Connect-2026"
 
 
 def make_user(phone="0772123456", email=None, role=User.Role.DEAF_HOH, **extra):
-    return User.objects.create_user(phone, PASSWORD, full_name="Test User", email=email, role=role, **extra)
+    return User.objects.create_user(
+        phone, PASSWORD, full_name="Test User", email=email, role=role, **extra
+    )
 
 
 class HealthAndDocsTests(TestCase):
@@ -37,22 +44,29 @@ class HealthAndDocsTests(TestCase):
             html = self.client.get(reverse(name)).content.decode()
             self.assertNotIn("cdn.jsdelivr.net", html, name)
             self.assertIn("/static/drf_spectacular_sidecar/", html, name)
-        self.assertIsNotNone(finders.find("drf_spectacular_sidecar/swagger-ui-dist/swagger-ui-bundle.js"))
+        self.assertIsNotNone(
+            finders.find("drf_spectacular_sidecar/swagger-ui-dist/swagger-ui-bundle.js")
+        )
 
 
 class RoleOptionsApiTests(TestCase):
     def test_roles_lists_self_registration_roles_without_admin(self):
         response = self.client.get(reverse("auth-roles"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), [
-            {"value": "deaf_hoh", "label": "Deaf / Hard of Hearing"},
-            {"value": "interpreter", "label": "Interpreter"},
-            {"value": "institution", "label": "Institution"},
-        ])
+        self.assertEqual(
+            response.json(),
+            [
+                {"value": "deaf_hoh", "label": "Deaf / Hard of Hearing"},
+                {"value": "interpreter", "label": "Interpreter"},
+                {"value": "institution", "label": "Institution"},
+            ],
+        )
 
     def test_roles_ignores_stale_tokens(self):
         # The role screen is the first thing a user sees, so an old token must not block it.
-        response = self.client.get(reverse("auth-roles"), HTTP_AUTHORIZATION="Bearer expired-or-invalid")
+        response = self.client.get(
+            reverse("auth-roles"), HTTP_AUTHORIZATION="Bearer expired-or-invalid"
+        )
         self.assertEqual(response.status_code, 200)
 
 
@@ -99,13 +113,20 @@ class UserModelTests(TestCase):
             self.assertEqual(user.role, role)
 
     def test_self_registration_roles_exclude_admin(self):
-        self.assertEqual(set(User.SELF_REGISTRATION_ROLES), {"deaf_hoh", "interpreter", "institution"})
+        self.assertEqual(
+            set(User.SELF_REGISTRATION_ROLES),
+            {"deaf_hoh", "interpreter", "institution"},
+        )
 
     def test_backend_accepts_phone_or_email(self):
         user = make_user(email="sarah@example.com")
         self.assertEqual(authenticate(username="0772123456", password=PASSWORD), user)
-        self.assertEqual(authenticate(username="SARAH@example.com", password=PASSWORD), user)
-        self.assertIsNone(authenticate(username="0772123456", password="wrong-password"))
+        self.assertEqual(
+            authenticate(username="SARAH@example.com", password=PASSWORD), user
+        )
+        self.assertIsNone(
+            authenticate(username="0772123456", password="wrong-password")
+        )
 
 
 class LoginApiTests(APITestCase):
@@ -115,7 +136,9 @@ class LoginApiTests(APITestCase):
         self.url = reverse("auth-login")
 
     def login(self, identifier, password=PASSWORD):
-        return self.client.post(self.url, {"identifier": identifier, "password": password}, format="json")
+        return self.client.post(
+            self.url, {"identifier": identifier, "password": password}, format="json"
+        )
 
     def test_login_with_local_phone(self):
         response = self.login("0772123456")
@@ -152,7 +175,9 @@ class LoginApiTests(APITestCase):
 
     def test_refresh_returns_new_access_token(self):
         refresh = self.login("0772123456").data["refresh"]
-        response = self.client.post(reverse("auth-token-refresh"), {"refresh": refresh}, format="json")
+        response = self.client.post(
+            reverse("auth-token-refresh"), {"refresh": refresh}, format="json"
+        )
         self.assertEqual(response.status_code, 200)
         self.assertIn("access", response.data)
 
@@ -175,7 +200,9 @@ class RoleAccessApiTests(APITestCase):
     def test_own_role_is_granted(self):
         response = self.check("interpreter", self.user)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, {"role": "interpreter", "detail": "Access granted."})
+        self.assertEqual(
+            response.data, {"role": "interpreter", "detail": "Access granted."}
+        )
 
     def test_other_roles_are_forbidden(self):
         for role in ("deaf_hoh", "institution", "admin"):
@@ -202,8 +229,13 @@ class ExampleRegistrationSerializer(BaseRegistrationSerializer):
 
 class BaseRegistrationSerializerTests(TestCase):
     def data(self, **overrides):
-        base = {"full_name": "Sarah N", "phone_number": "0772123456", "email": "sarah@example.com",
-                "password": PASSWORD, "city": "Kampala"}
+        base = {
+            "full_name": "Sarah N",
+            "phone_number": "0772123456",
+            "email": "sarah@example.com",
+            "password": PASSWORD,
+            "city": "Kampala",
+        }
         base.update(overrides)
         return base
 
@@ -247,8 +279,14 @@ class BaseRegistrationSerializerTests(TestCase):
 
     def test_each_self_registration_role_is_stored(self):
         for i, role in enumerate(User.SELF_REGISTRATION_ROLES):
-            serializer_class = type("RoleRegistration", (BaseRegistrationSerializer,), {"role": role})
-            s = serializer_class(data=self.data(phone_number=f"070000002{i}", email=f"user{i}@example.com"))
+            serializer_class = type(
+                "RoleRegistration", (BaseRegistrationSerializer,), {"role": role}
+            )
+            s = serializer_class(
+                data=self.data(
+                    phone_number=f"070000002{i}", email=f"user{i}@example.com"
+                )
+            )
             self.assertTrue(s.is_valid(), s.errors)
             self.assertEqual(s.save().role, role)
             self.assertEqual(s.data["role"], role)
@@ -271,9 +309,8 @@ class BaseRegistrationSerializerTests(TestCase):
         self.assertFalse(User.objects.filter(phone_number="+256772123456").exists())
 
 
-
-
 User = get_user_model()
+
 
 class BaseAvailabilityModelAndSerializerTests(TestCase):
     """Tests validation constraints for recurring weekly base schedules."""

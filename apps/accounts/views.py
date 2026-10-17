@@ -3,7 +3,6 @@ from django.contrib.auth.models import update_last_login
 from django.db import connection
 from django.db.utils import OperationalError
 from django.shortcuts import get_object_or_404
-from apps.core import permissions
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -12,8 +11,12 @@ from drf_spectacular.utils import (
     extend_schema,
     inline_serializer,
 )
-from rest_framework import serializers, status,viewsets
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework import serializers, status, viewsets
+from rest_framework.decorators import (
+    api_view,
+    authentication_classes,
+    permission_classes,
+)
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.generics import RetrieveAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -25,14 +28,15 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from apps.audit import services as audit
 from apps.audit.models import AuditLog
 from apps.core.permissions import ROLE_PERMISSIONS, IsAdminRole
-
-from . import recovery
-from .models import RecoveryCode
 from apps.institutions.serializers import InstitutionRegistrationSerializer
 from apps.interpreters.serializers import InterpreterRegistrationSerializer
 
+from . import recovery
+from .models import AvailabilityOverride, BaseAvailability, RecoveryCode
 from .serializers import (
     AdminResetConfirmSerializer,
+    AvailabilityOverrideSerializer,
+    BaseAvailabilitySerializer,
     DeafRegistrationSerializer,
     EmailVerifyConfirmSerializer,
     LoginSerializer,
@@ -44,8 +48,6 @@ from .serializers import (
     check_new_password,
 )
 from .utils import find_user_by_identifier
-from .models import BaseAvailability, AvailabilityOverride
-from .serializers import BaseAvailabilitySerializer, AvailabilityOverrideSerializer
 
 User = get_user_model()
 DetailSerializer = inline_serializer("Detail", {"detail": serializers.CharField()})

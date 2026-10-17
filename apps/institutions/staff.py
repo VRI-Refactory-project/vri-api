@@ -81,7 +81,9 @@ def update_staff(membership, data, admin, request=None):
         membership.job_title = data.get("job_title", membership.job_title)
         membership.role = new_role
         membership.save(update_fields=["job_title", "role", "updated_at"])
-        audit.record(AuditLog.Event.STAFF_UPDATED, admin, request, target_user=membership.user)
+        audit.record(
+            AuditLog.Event.STAFF_UPDATED, admin, request, target_user=membership.user
+        )
     return membership
 
 
@@ -103,9 +105,15 @@ def revoke_staff(membership, admin, request=None):
         membership.user.is_active = False
         membership.user.save(update_fields=["is_active"])
         recovery.sign_out_everywhere(membership.user)
-        audit.record(AuditLog.Event.STAFF_REVOKED, admin, request, target_user=membership.user)
-    logger.info("staff_revoked admin=%s user=%s institution=%s", admin.pk, membership.user_id,
-                membership.institution_id)
+        audit.record(
+            AuditLog.Event.STAFF_REVOKED, admin, request, target_user=membership.user
+        )
+    logger.info(
+        "staff_revoked admin=%s user=%s institution=%s",
+        admin.pk,
+        membership.user_id,
+        membership.institution_id,
+    )
     return membership
 
 
@@ -119,18 +127,26 @@ def reinstate_staff(membership, admin, request=None):
         membership.save(update_fields=["revoked_at", "revoked_by", "updated_at"])
         membership.user.is_active = True
         membership.user.save(update_fields=["is_active"])
-        audit.record(AuditLog.Event.STAFF_REINSTATED, admin, request, target_user=membership.user)
+        audit.record(
+            AuditLog.Event.STAFF_REINSTATED, admin, request, target_user=membership.user
+        )
     return membership
 
 
 def _keep_an_admin(membership):
     """An institution must always keep at least one active administrator, or nobody could manage its staff."""
     other_admins = InstitutionStaff.objects.filter(
-        institution=membership.institution, role=StaffRole.ADMIN, revoked_at__isnull=True,
+        institution=membership.institution,
+        role=StaffRole.ADMIN,
+        revoked_at__isnull=True,
     ).exclude(pk=membership.pk)
     if not other_admins.exists():
-        raise ValidationError({"detail": "Your institution must keep at least one active administrator. "
-                                         "Make someone else an administrator first."})
+        raise ValidationError(
+            {
+                "detail": "Your institution must keep at least one active administrator. "
+                "Make someone else an administrator first."
+            }
+        )
 
 
 def _send_login_details(membership, admin, temporary_password):
@@ -144,4 +160,9 @@ def _send_login_details(membership, admin, temporary_password):
         "You will be asked to choose your own password when you first sign in.\n"
         "If you were not expecting this email, contact your institution's administrator.\n"
     )
-    send_mail("Your SignConnect staff account", body, settings.DEFAULT_FROM_EMAIL, [user.email])
+    send_mail(
+        "Your SignConnect staff account",
+        body,
+        settings.DEFAULT_FROM_EMAIL,
+        [user.email],
+    )

@@ -4,11 +4,9 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('audit', '0004_alter_auditlog_event'),
-        ('audit', '0006_alter_auditlog_event_all_events'),
+        ("audit", "0004_alter_auditlog_event"),
+        ("audit", "0006_alter_auditlog_event_all_events"),
     ]
 
-    operations = [
-    ]
+    operations = []

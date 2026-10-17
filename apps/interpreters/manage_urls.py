@@ -1,4 +1,5 @@
 """Admin-only interpreter verification routes (V2-045), included under /api/v1/manage/interpreters/."""
+
 from django.urls import path
 
 from . import views
@@ -15,6 +16,14 @@ urlpatterns = [
     ),
     path("<int:pk>/approve/", views.ApproveInterpreterView.as_view(), name="approve"),
     path("<int:pk>/reject/", views.RejectInterpreterView.as_view(), name="reject"),
-    path("<int:pk>/deactivate/", views.DeactivateInterpreterView.as_view(), name="deactivate"),
-    path("<int:pk>/reactivate/", views.ReactivateInterpreterView.as_view(), name="reactivate"),
+    path(
+        "<int:pk>/deactivate/",
+        views.DeactivateInterpreterView.as_view(),
+        name="deactivate",
+    ),
+    path(
+        "<int:pk>/reactivate/",
+        views.ReactivateInterpreterView.as_view(),
+        name="reactivate",
+    ),
 ]

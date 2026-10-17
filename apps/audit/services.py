@@ -14,5 +14,8 @@ def record(event, user, request=None, target_user=None):
     `target_user` is the account the action was done to, when that is someone other than `user`.
     """
     return AuditLog.objects.create(
-        user=user, event=event, target_user=target_user, ip_address=client_ip(request) if request else None,
+        user=user,
+        event=event,
+        target_user=target_user,
+        ip_address=client_ip(request) if request else None,
     )

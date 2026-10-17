@@ -1,9 +1,9 @@
-
 """Dashboard data for each role.
 
 Deaf, interpreter, and administrator dashboard endpoints are restricted
 by shared permission classes in apps/core/permissions.py.
 """
+
 from django.contrib.auth import get_user_model
 from django.db.models import Count
 from drf_spectacular.utils import extend_schema, inline_serializer
@@ -41,9 +41,7 @@ AdminDashboardSerializer = inline_serializer(
         "user": UserSerializer(),
         "interpreters_pending_verification": serializers.IntegerField(),
         "institutions_pending_approval": serializers.IntegerField(),
-        "users_by_role": serializers.DictField(
-            child=serializers.IntegerField()
-        ),
+        "users_by_role": serializers.DictField(child=serializers.IntegerField()),
         "recent_admin_sign_ins": inline_serializer(
             "AdminSignIn",
             {
@@ -126,17 +124,14 @@ class AdminDashboardView(APIView):
                 "recent_admin_sign_ins": [
                     {
                         "id": entry.id,
-                        "admin": (
-                            entry.user.full_name if entry.user else None
-                        ),
+                        "admin": (entry.user.full_name if entry.user else None),
                         "ip_address": entry.ip_address,
                         "at": entry.created_at,
                     }
                     for entry in (
                         AuditLog.objects.filter(
                             event=AuditLog.Event.ADMIN_SIGN_IN
-                        )
-                        .select_related("user")[:RECENT_SIGN_INS]
+                        ).select_related("user")[:RECENT_SIGN_INS]
                     )
                 ],
             }

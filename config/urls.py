@@ -26,9 +26,13 @@ urlpatterns = [
     # API v1 Endpoints
     path("api/v1/", include("apps.accounts.urls")),
     path("api/v1/interpreters/", include("apps.interpreters.urls")),
-    path("api/v1/manage/interpreters/", include("apps.interpreters.manage_urls")),  # V2-045, admins only
+    path(
+        "api/v1/manage/interpreters/", include("apps.interpreters.manage_urls")
+    ),  # V2-045, admins only
     path("api/v1/dashboard/", include("apps.dashboards.urls")),
-    path("api/v1/institutions/", include("apps.institutions.urls")),  # V2-005, the institution's own data
+    path(
+        "api/v1/institutions/", include("apps.institutions.urls")
+    ),  # V2-005, the institution's own data
     path("api/v1/auth/", include("apps.users.urls")),  # Web Registration endpoint
     path("api/v1/administration/", include("apps.administration.urls")),
     # OpenAPI Schema & Documentation

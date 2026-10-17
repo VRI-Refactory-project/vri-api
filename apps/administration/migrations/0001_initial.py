@@ -6,7 +6,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
@@ -15,15 +14,48 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='AdminProfile',
+            name="AdminProfile",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('session_alerts', models.BooleanField(default=True, help_text='Receive alerts for connection failures & sessions needing attention.')),
-                ('verification_alerts', models.BooleanField(default=True, help_text='Receive alerts for new interpreter & institution applications.')),
-                ('password_last_changed', models.DateTimeField(auto_now_add=True, help_text='Timestamp recording when the administrator last updated their password.')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='admin_profile', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "session_alerts",
+                    models.BooleanField(
+                        default=True,
+                        help_text="Receive alerts for connection failures & sessions needing attention.",
+                    ),
+                ),
+                (
+                    "verification_alerts",
+                    models.BooleanField(
+                        default=True,
+                        help_text="Receive alerts for new interpreter & institution applications.",
+                    ),
+                ),
+                (
+                    "password_last_changed",
+                    models.DateTimeField(
+                        auto_now_add=True,
+                        help_text="Timestamp recording when the administrator last updated their password.",
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "user",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="admin_profile",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
         ),
     ]

@@ -122,9 +122,9 @@ class InterpreterAvailabilitySerializer(serializers.ModelSerializer):
         )
 
         if start_at and end_at and end_at <= start_at:
-            raise serializers.ValidationError({
-                "end_at": "End time must be later than start time."
-            })
+            raise serializers.ValidationError(
+                {"end_at": "End time must be later than start time."}
+            )
 
         if start_at and end_at:
             profile = self.context["availability_profile"]
@@ -138,11 +138,13 @@ class InterpreterAvailabilitySerializer(serializers.ModelSerializer):
                 overlapping = overlapping.exclude(pk=self.instance.pk)
 
             if overlapping.exists():
-                raise serializers.ValidationError({
-                    "non_field_errors": [
-                        "This period overlaps an existing availability period."
-                    ]
-                })
+                raise serializers.ValidationError(
+                    {
+                        "non_field_errors": [
+                            "This period overlaps an existing availability period."
+                        ]
+                    }
+                )
 
         return attrs
 
@@ -266,7 +268,9 @@ class ManageInterpreterDetailSerializer(ManageInterpreterListSerializer):
 
 
 class DecisionReasonOptionalSerializer(serializers.Serializer):
-    reason = serializers.CharField(required=False, allow_blank=True, max_length=2000, default="")
+    reason = serializers.CharField(
+        required=False, allow_blank=True, max_length=2000, default=""
+    )
 
 
 class DecisionReasonRequiredSerializer(serializers.Serializer):

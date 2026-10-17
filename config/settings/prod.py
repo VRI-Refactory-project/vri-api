@@ -5,9 +5,13 @@ from .base import EMAIL_BACKEND, SECRET_KEY
 
 # Refuse to start with settings that would leak recovery codes or make login tokens forgeable.
 if EMAIL_BACKEND.endswith("console.EmailBackend"):
-    raise ImproperlyConfigured("Set EMAIL_URL in production: recovery codes would be printed to the logs.")
+    raise ImproperlyConfigured(
+        "Set EMAIL_URL in production: recovery codes would be printed to the logs."
+    )
 if len(SECRET_KEY) < 50 or SECRET_KEY.startswith(("change-me", "django-insecure")):
-    raise ImproperlyConfigured("Set a long random SECRET_KEY (50+ characters) in production.")
+    raise ImproperlyConfigured(
+        "Set a long random SECRET_KEY (50+ characters) in production."
+    )
 
 DEBUG = False
 SECURE_SSL_REDIRECT = True

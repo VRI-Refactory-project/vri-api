@@ -23,17 +23,29 @@ TEMPORARY_PASSWORD = re.compile(r"\b([A-Z2-9]{4}-[A-Z2-9]{4})\b")
 
 def make_institution(phone, name, status=InstitutionStatus.APPROVED):
     """An institution and its registrant (first ADMIN), as registration creates them."""
-    admin = User.objects.create_user(phone, PASSWORD, full_name=f"{name} admin", role=User.Role.INSTITUTION,
-                                     email=f"admin{phone}@example.com")
-    institution = InstitutionProfile.objects.create(user=admin, organisation_name=name, organisation_type="HOSPITAL",
-                                                    status=status)
-    InstitutionStaff.objects.create(institution=institution, user=admin, role=StaffRole.ADMIN)
+    admin = User.objects.create_user(
+        phone,
+        PASSWORD,
+        full_name=f"{name} admin",
+        role=User.Role.INSTITUTION,
+        email=f"admin{phone}@example.com",
+    )
+    institution = InstitutionProfile.objects.create(
+        user=admin, organisation_name=name, organisation_type="HOSPITAL", status=status
+    )
+    InstitutionStaff.objects.create(
+        institution=institution, user=admin, role=StaffRole.ADMIN
+    )
     return admin
 
 
 def staff_data(**overrides):
-    data = {"full_name": "Dr Sarah Nakato", "phone_number": "0772111000", "email": "sarah@mulago.example",
-            "job_title": "Doctor"}
+    data = {
+        "full_name": "Dr Sarah Nakato",
+        "phone_number": "0772111000",
+        "email": "sarah@mulago.example",
+        "job_title": "Doctor",
+    }
     data.update(overrides)
     return data
 
@@ -56,7 +68,9 @@ class StaffTestCase(APITestCase):
         self.sign_in_as(self.admin)
 
     def sign_in_as(self, user):
-        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {TokenPairSerializer.for_user(user)['access']}")
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {TokenPairSerializer.for_user(user)['access']}"
+        )
 
     def add_staff(self, **overrides):
         res = self.client.post(STAFF_URL, staff_data(**overrides), format="json")
@@ -65,17 +79,28 @@ class StaffTestCase(APITestCase):
 
     def login(self, identifier, password):
         self.client.credentials()
-        return self.client.post(reverse("auth-login"), {"identifier": identifier, "password": password},
-                                format="json")
+        return self.client.post(
+            reverse("auth-login"),
+            {"identifier": identifier, "password": password},
+            format="json",
+        )
 
 
 class RegistrantIsAdminTests(StaffTestCase):
     def test_registering_an_institution_makes_the_registrant_its_admin(self):
         self.client.credentials()
-        res = self.client.post(reverse("auth-register-institution"), {
-            "full_name": "Grace Namutebi", "phone_number": "0772555000", "email": "grace@nsambya.example",
-            "password": PASSWORD, "organisation_name": "Nsambya Hospital", "organisation_type": "HOSPITAL",
-        }, format="json")
+        res = self.client.post(
+            reverse("auth-register-institution"),
+            {
+                "full_name": "Grace Namutebi",
+                "phone_number": "0772555000",
+                "email": "grace@nsambya.example",
+                "password": PASSWORD,
+                "organisation_name": "Nsambya Hospital",
+                "organisation_type": "HOSPITAL",
+            },
+            format="json",
+        )
         self.assertEqual(res.status_code, 201, res.data)
         self.assertEqual(res.data["user"]["institution_role"], "ADMIN")
         membership = InstitutionStaff.objects.get(user__email="grace@nsambya.example")
@@ -104,8 +129,13 @@ class CreateStaffTests(StaffTestCase):
         self.assertEqual(email.to, ["sarah@mulago.example"])
         self.assertIn("Mulago Hospital", email.body)
         self.assertTrue(membership.user.check_password(emailed_password()))
-        self.assertTrue(AuditLog.objects.filter(event=AuditLog.Event.STAFF_CREATED, user=self.admin,
-                                                target_user=membership.user).exists())
+        self.assertTrue(
+            AuditLog.objects.filter(
+                event=AuditLog.Event.STAFF_CREATED,
+                user=self.admin,
+                target_user=membership.user,
+            ).exists()
+        )
 
     def test_admin_can_add_another_admin(self):
         self.assertEqual(self.add_staff(role="ADMIN").role, StaffRole.ADMIN)
@@ -118,9 +148,11 @@ class CreateStaffTests(StaffTestCase):
         self.assertEqual(res.data["user"]["institution_role"], "STAFF")
         self.assertEqual(res.data["user"]["institution_status"], "APPROVED")
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {res.data['access']}")
-        changed = self.client.post(reverse("auth-password-change"),
-                                   {"current_password": emailed_password(), "new_password": NEW_PASSWORD},
-                                   format="json")
+        changed = self.client.post(
+            reverse("auth-password-change"),
+            {"current_password": emailed_password(), "new_password": NEW_PASSWORD},
+            format="json",
+        )
         self.assertEqual(changed.status_code, 200, changed.data)
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {changed.data['access']}")
         me = self.client.get(reverse("institution-me"))
@@ -129,21 +161,34 @@ class CreateStaffTests(StaffTestCase):
 
     def test_same_validation_as_registration(self):
         self.add_staff()
-        duplicate = self.client.post(STAFF_URL, staff_data(email="other@mulago.example"), format="json")
+        duplicate = self.client.post(
+            STAFF_URL, staff_data(email="other@mulago.example"), format="json"
+        )
         self.assertIn("phone_number", duplicate.data)
-        no_email = self.client.post(STAFF_URL, staff_data(phone_number="0772111001", email=""), format="json")
+        no_email = self.client.post(
+            STAFF_URL, staff_data(phone_number="0772111001", email=""), format="json"
+        )
         self.assertIn("email", no_email.data)
-        bad_role = self.client.post(STAFF_URL, staff_data(phone_number="0772111002", email="b@x.example",
-                                                          role="OWNER"), format="json")
+        bad_role = self.client.post(
+            STAFF_URL,
+            staff_data(phone_number="0772111002", email="b@x.example", role="OWNER"),
+            format="json",
+        )
         self.assertIn("role", bad_role.data)
-        self.assertEqual(InstitutionStaff.objects.filter(institution=self.institution).count(), 2)
+        self.assertEqual(
+            InstitutionStaff.objects.filter(institution=self.institution).count(), 2
+        )
 
     def test_nothing_is_created_if_the_email_cannot_be_sent(self):
-        with mock.patch("apps.institutions.staff.send_mail", side_effect=OSError("smtp down")):
+        with mock.patch(
+            "apps.institutions.staff.send_mail", side_effect=OSError("smtp down")
+        ):
             res = self.client.post(STAFF_URL, staff_data(), format="json")
         self.assertEqual(res.status_code, 503)
         self.assertFalse(User.objects.filter(email="sarah@mulago.example").exists())
-        self.assertFalse(AuditLog.objects.filter(event=AuditLog.Event.STAFF_CREATED).exists())
+        self.assertFalse(
+            AuditLog.objects.filter(event=AuditLog.Event.STAFF_CREATED).exists()
+        )
 
 
 class ListAndIsolationTests(StaffTestCase):
@@ -154,19 +199,30 @@ class ListAndIsolationTests(StaffTestCase):
         self.sarah = self.add_staff()
         self.other_admin = make_institution("0700000200", "Nsambya Hospital")
         self.sign_in_as(self.other_admin)
-        self.other_staff = self.add_staff(full_name="Officer Okello", phone_number="0772222000",
-                                          email="okello@nsambya.example")
+        self.other_staff = self.add_staff(
+            full_name="Officer Okello",
+            phone_number="0772222000",
+            email="okello@nsambya.example",
+        )
         self.sign_in_as(self.admin)
 
     def test_list_shows_only_my_institutions_staff(self):
         res = self.client.get(STAFF_URL)
         self.assertEqual(res.status_code, 200)
-        self.assertEqual({s["full_name"] for s in res.data}, {"Mulago Hospital admin", "Dr Sarah Nakato"})
+        self.assertEqual(
+            {s["full_name"] for s in res.data},
+            {"Mulago Hospital admin", "Dr Sarah Nakato"},
+        )
 
     def test_another_institutions_staff_are_not_found(self):
         pk = self.other_staff.pk
         self.assertEqual(self.client.get(detail("detail", pk)).status_code, 404)
-        self.assertEqual(self.client.patch(detail("detail", pk), {"job_title": "X"}, format="json").status_code, 404)
+        self.assertEqual(
+            self.client.patch(
+                detail("detail", pk), {"job_title": "X"}, format="json"
+            ).status_code,
+            404,
+        )
         self.assertEqual(self.client.post(detail("revoke", pk)).status_code, 404)
         self.other_staff.user.refresh_from_db()
         self.assertTrue(self.other_staff.user.is_active)
@@ -176,8 +232,12 @@ class ListAndIsolationTests(StaffTestCase):
         revoked = self.client.get(STAFF_URL, {"status": "REVOKED"})
         self.assertEqual([s["full_name"] for s in revoked.data], ["Dr Sarah Nakato"])
         active = self.client.get(STAFF_URL, {"status": "ACTIVE"})
-        self.assertEqual([s["full_name"] for s in active.data], ["Mulago Hospital admin"])
-        self.assertEqual(self.client.get(STAFF_URL, {"status": "GONE"}).status_code, 400)
+        self.assertEqual(
+            [s["full_name"] for s in active.data], ["Mulago Hospital admin"]
+        )
+        self.assertEqual(
+            self.client.get(STAFF_URL, {"status": "GONE"}).status_code, 400
+        )
 
 
 class RolePermissionTests(StaffTestCase):
@@ -188,9 +248,13 @@ class RolePermissionTests(StaffTestCase):
         sarah.user.must_change_password = False
         sarah.user.save()
         self.sign_in_as(sarah.user)
-        for res in [self.client.get(STAFF_URL), self.client.post(STAFF_URL, staff_data(phone_number="0772333000"),
-                                                                 format="json"),
-                    self.client.post(detail("revoke", self.admin.institution_staff.pk))]:
+        for res in [
+            self.client.get(STAFF_URL),
+            self.client.post(
+                STAFF_URL, staff_data(phone_number="0772333000"), format="json"
+            ),
+            self.client.post(detail("revoke", self.admin.institution_staff.pk)),
+        ]:
             self.assertEqual(res.status_code, 403)
             self.assertEqual(res.data["code"], "institution_admin_required")
         self.assertEqual(self.client.get(reverse("institution-me")).status_code, 200)
@@ -204,25 +268,41 @@ class RolePermissionTests(StaffTestCase):
         self.assertEqual(self.client.get(STAFF_URL).status_code, 200)
 
     def test_pending_and_rejected_institutions_cannot_manage_staff(self):
-        for status, code in [(InstitutionStatus.PENDING, "institution_pending"),
-                             (InstitutionStatus.REJECTED, "institution_rejected")]:
+        for status, code in [
+            (InstitutionStatus.PENDING, "institution_pending"),
+            (InstitutionStatus.REJECTED, "institution_rejected"),
+        ]:
             with self.subTest(status=status):
-                InstitutionProfile.objects.filter(pk=self.institution.pk).update(status=status)
+                InstitutionProfile.objects.filter(pk=self.institution.pk).update(
+                    status=status
+                )
                 res = self.client.get(STAFF_URL)
                 self.assertEqual(res.status_code, 403)
                 self.assertEqual(res.data["code"], code)
 
     def test_other_roles_are_blocked(self):
-        for i, role in enumerate([User.Role.ADMIN, User.Role.INTERPRETER, User.Role.DEAF_HOH]):
+        for i, role in enumerate(
+            [User.Role.ADMIN, User.Role.INTERPRETER, User.Role.DEAF_HOH]
+        ):
             with self.subTest(role=role):
-                self.sign_in_as(User.objects.create_user(f"07009000{i:02d}", PASSWORD, full_name="X", role=role))
+                self.sign_in_as(
+                    User.objects.create_user(
+                        f"07009000{i:02d}", PASSWORD, full_name="X", role=role
+                    )
+                )
                 self.assertEqual(self.client.get(STAFF_URL).status_code, 403)
         self.client.credentials()
         self.assertEqual(self.client.get(STAFF_URL).status_code, 401)
 
     def test_me_shows_the_institution_role(self):
-        self.assertEqual(self.client.get(reverse("auth-me")).data["institution_role"], "ADMIN")
-        self.sign_in_as(User.objects.create_user("0700900099", PASSWORD, full_name="D", role=User.Role.DEAF_HOH))
+        self.assertEqual(
+            self.client.get(reverse("auth-me")).data["institution_role"], "ADMIN"
+        )
+        self.sign_in_as(
+            User.objects.create_user(
+                "0700900099", PASSWORD, full_name="D", role=User.Role.DEAF_HOH
+            )
+        )
         self.assertIsNone(self.client.get(reverse("auth-me")).data["institution_role"])
 
 
@@ -231,28 +311,51 @@ class UpdateStaffTests(StaffTestCase):
 
     def test_admin_changes_name_job_title_and_role(self):
         sarah = self.add_staff()
-        res = self.client.patch(detail("detail", sarah.pk),
-                                {"full_name": "Dr Sarah N. Nakato", "job_title": "Senior doctor", "role": "ADMIN"},
-                                format="json")
+        res = self.client.patch(
+            detail("detail", sarah.pk),
+            {
+                "full_name": "Dr Sarah N. Nakato",
+                "job_title": "Senior doctor",
+                "role": "ADMIN",
+            },
+            format="json",
+        )
         self.assertEqual(res.status_code, 200, res.data)
-        self.assertEqual((res.data["full_name"], res.data["job_title"], res.data["role"]),
-                         ("Dr Sarah N. Nakato", "Senior doctor", "ADMIN"))
-        self.assertTrue(AuditLog.objects.filter(event=AuditLog.Event.STAFF_UPDATED, target_user=sarah.user).exists())
+        self.assertEqual(
+            (res.data["full_name"], res.data["job_title"], res.data["role"]),
+            ("Dr Sarah N. Nakato", "Senior doctor", "ADMIN"),
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                event=AuditLog.Event.STAFF_UPDATED, target_user=sarah.user
+            ).exists()
+        )
 
     def test_phone_and_email_cannot_be_changed_by_the_admin(self):
         sarah = self.add_staff()
-        self.client.patch(detail("detail", sarah.pk), {"email": "new@x.example", "phone_number": "0772999999"},
-                          format="json")
+        self.client.patch(
+            detail("detail", sarah.pk),
+            {"email": "new@x.example", "phone_number": "0772999999"},
+            format="json",
+        )
         sarah.user.refresh_from_db()
         self.assertEqual(sarah.user.email, "sarah@mulago.example")
         self.assertEqual(str(sarah.user.phone_number), "+256772111000")
 
     def test_the_last_admin_cannot_be_demoted(self):
-        res = self.client.patch(detail("detail", self.admin.institution_staff.pk), {"role": "STAFF"}, format="json")
+        res = self.client.patch(
+            detail("detail", self.admin.institution_staff.pk),
+            {"role": "STAFF"},
+            format="json",
+        )
         self.assertEqual(res.status_code, 400)
         self.assertIn("at least one active administrator", res.data["detail"])
         self.add_staff(role="ADMIN")
-        res = self.client.patch(detail("detail", self.admin.institution_staff.pk), {"role": "STAFF"}, format="json")
+        res = self.client.patch(
+            detail("detail", self.admin.institution_staff.pk),
+            {"role": "STAFF"},
+            format="json",
+        )
         self.assertEqual(res.status_code, 200)
 
 
@@ -263,7 +366,10 @@ class RevokeTests(StaffTestCase):
         super().setUp()
         self.sarah = self.add_staff()
         signed_in = self.login("sarah@mulago.example", emailed_password())
-        self.sarah_access, self.sarah_refresh = signed_in.data["access"], signed_in.data["refresh"]
+        self.sarah_access, self.sarah_refresh = (
+            signed_in.data["access"],
+            signed_in.data["refresh"],
+        )
         self.sign_in_as(self.admin)
 
     def test_revoking_blocks_sign_in_and_ends_open_sessions_at_once(self):
@@ -275,21 +381,38 @@ class RevokeTests(StaffTestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.sarah_access}")
         self.assertEqual(self.client.get(reverse("auth-me")).status_code, 401)
         # Her refresh token is cancelled, and she cannot sign in again.
-        refreshed = self.client.post(reverse("auth-token-refresh"), {"refresh": self.sarah_refresh}, format="json")
+        refreshed = self.client.post(
+            reverse("auth-token-refresh"),
+            {"refresh": self.sarah_refresh},
+            format="json",
+        )
         self.assertEqual(refreshed.status_code, 401)
-        self.assertEqual(self.login("sarah@mulago.example", emailed_password()).status_code, 400)
+        self.assertEqual(
+            self.login("sarah@mulago.example", emailed_password()).status_code, 400
+        )
 
         self.sarah.refresh_from_db()
         self.assertEqual(self.sarah.revoked_by, self.admin)
         self.assertFalse(self.sarah.user.is_active)
-        self.assertTrue(User.objects.filter(pk=self.sarah.user_id).exists())  # kept, not deleted
-        self.assertTrue(AuditLog.objects.filter(event=AuditLog.Event.STAFF_REVOKED, user=self.admin,
-                                                target_user=self.sarah.user).exists())
+        self.assertTrue(
+            User.objects.filter(pk=self.sarah.user_id).exists()
+        )  # kept, not deleted
+        self.assertTrue(
+            AuditLog.objects.filter(
+                event=AuditLog.Event.STAFF_REVOKED,
+                user=self.admin,
+                target_user=self.sarah.user,
+            ).exists()
+        )
 
     def test_revoking_twice_changes_nothing(self):
         self.client.post(detail("revoke", self.sarah.pk))
-        self.assertEqual(self.client.post(detail("revoke", self.sarah.pk)).status_code, 200)
-        self.assertEqual(AuditLog.objects.filter(event=AuditLog.Event.STAFF_REVOKED).count(), 1)
+        self.assertEqual(
+            self.client.post(detail("revoke", self.sarah.pk)).status_code, 200
+        )
+        self.assertEqual(
+            AuditLog.objects.filter(event=AuditLog.Event.STAFF_REVOKED).count(), 1
+        )
 
     def test_admin_cannot_revoke_themselves(self):
         res = self.client.post(detail("revoke", self.admin.institution_staff.pk))
@@ -298,15 +421,26 @@ class RevokeTests(StaffTestCase):
         self.assertTrue(self.admin.is_active)
 
     def test_another_admin_can_be_revoked_while_one_remains(self):
-        second_admin = self.add_staff(full_name="Second Admin", phone_number="0772444000",
-                                      email="second@mulago.example", role="ADMIN")
-        self.assertEqual(self.client.post(detail("revoke", second_admin.pk)).status_code, 200)
+        second_admin = self.add_staff(
+            full_name="Second Admin",
+            phone_number="0772444000",
+            email="second@mulago.example",
+            role="ADMIN",
+        )
+        self.assertEqual(
+            self.client.post(detail("revoke", second_admin.pk)).status_code, 200
+        )
 
     def test_reinstating_gives_access_back(self):
         self.client.post(detail("revoke", self.sarah.pk))
         res = self.client.post(detail("reinstate", self.sarah.pk))
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.data["status"], "ACTIVE")
-        self.assertEqual(self.login("sarah@mulago.example", emailed_password()).status_code, 200)
-        self.assertTrue(AuditLog.objects.filter(event=AuditLog.Event.STAFF_REINSTATED,
-                                                target_user=self.sarah.user).exists())
+        self.assertEqual(
+            self.login("sarah@mulago.example", emailed_password()).status_code, 200
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                event=AuditLog.Event.STAFF_REINSTATED, target_user=self.sarah.user
+            ).exists()
+        )
