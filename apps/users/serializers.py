@@ -30,10 +30,14 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     def validate_contact_number(self, value):
         """If a contact number is provided, check that it isn't already registered."""
-        if value and value.strip() and UserProfile.objects.filter(contact_number=value.strip()).exists():
-           raise serializers.ValidationError(
-                    "This contact number is already registered to another account."
-                )
+        if (
+            value
+            and value.strip()
+            and UserProfile.objects.filter(contact_number=value.strip()).exists()
+        ):
+            raise serializers.ValidationError(
+                "This contact number is already registered to another account."
+            )
         return value
 
     @transaction.atomic

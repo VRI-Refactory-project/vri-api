@@ -30,7 +30,7 @@ def record(status, label, detail=""):
 def run(cmd, timeout=60):
     try:
         p = subprocess.run(
-            cmd, cwd=ROOT, capture_output=True, text=True, timeout=timeout, check=False  
+            cmd, cwd=ROOT, capture_output=True, text=True, timeout=timeout, check=False
         )
         return p.returncode, (p.stdout + p.stderr).strip()
     except (OSError, subprocess.TimeoutExpired) as exc:

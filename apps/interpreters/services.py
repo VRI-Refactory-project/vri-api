@@ -59,9 +59,10 @@ def get_eligible_interpreters(
 
     # Use the weekly schedule/date exceptions only when no saved periods exist.
     for profile in profiles:
-        if profile.pk not in profiles_with_periods and is_available_now(profile, requested_time):
-           eligible_ids.add(profile.pk)
-
+        if profile.pk not in profiles_with_periods and is_available_now(
+            profile, requested_time
+        ):
+            eligible_ids.add(profile.pk)
 
     eligible_queryset = switched_on.filter(pk__in=eligible_ids)
 
