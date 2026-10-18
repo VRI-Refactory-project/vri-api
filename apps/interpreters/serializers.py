@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import serializers
@@ -397,8 +398,8 @@ class MonthExceptionsSerializer(serializers.Serializer):
 class AvailabilityPeriodSerializer(serializers.ModelSerializer):
     class Meta:
         model = AvailabilityPeriod
-        fields = ['id', 'interpreter', 'start_time', 'end_time']
-        read_only_fields = ['interpreter'] # Automatically set via the view
+        fields = ["id", "interpreter", "start_time", "end_time"]
+        read_only_fields = ["interpreter"]
 
     def validate_start_time(self, value):
         if value < timezone.now():
@@ -406,19 +407,34 @@ class AvailabilityPeriodSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
-        # Ensure end_time is after start_time
-        if data['start_time'] >= data['end_time']:
-            raise serializers.ValidationError({"end_time": "End time must be after start_time."})
-        
-        # Trigger the model clean method to check for overlaps
-        instance = AvailabilityPeriod(
-            interpreter=self.context['request'].user,
-            start_time=data['start_time'],
-            end_time=data['end_time']
+        start_time = data.get(
+            "start_time",
+            self.instance.start_time if self.instance else None,
         )
-        try:
-            instance.clean()
-        except Exception as e:
-            raise serializers.ValidationError(e.message_dict if hasattr(e, 'message_dict') else str(e))
-            
+        end_time = data.get(
+            "end_time",
+            self.instance.end_time if self.instance else None,
+        )
+
+        if start_time is not None and end_time is not None:
+            if start_time >= end_time:
+                raise serializers.ValidationError(
+                    {"end_time": "End time must be after start time."}
+                )
+
+            instance = AvailabilityPeriod(
+                interpreter=self.context["request"].user,
+                start_time=start_time,
+                end_time=end_time,
+            )
+
+            try:
+                instance.clean()
+            except DjangoValidationError as exc:
+                raise serializers.ValidationError(
+                    exc.message_dict
+                    if hasattr(exc, "message_dict")
+                    else exc.messages
+                ) from exc
+
         return data

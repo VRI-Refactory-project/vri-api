@@ -1,12 +1,10 @@
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, MaxValueValidator
 from django.db import models
-from django.contrib.auth import get_user_model
 
 User = get_user_model()
-
-
 
 
 class VerificationStatus(models.TextChoices):
@@ -239,25 +237,19 @@ class VerificationDecision(models.Model):
         return f"{self.get_action_display()}: {self.interpreter.user.full_name} by {self.admin.full_name}"
 
 
-
-
-
-
 class AvailabilityPeriod(models.Model):
     interpreter = models.ForeignKey(
-        User, 
-        on_delete=models.CASCADE, 
-        related_name='availabilities'
+        User, on_delete=models.CASCADE, related_name="availabilities"
     )
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
-    
+
     class Meta:
-        ordering = ['start_time']
+        ordering = ["start_time"]
         constraints = [
             models.CheckConstraint(
-                check=models.Q(end_time__gt=models.F('start_time')),
-                name='check_end_time_after_start_time'
+                check=models.Q(end_time__gt=models.F("start_time")),
+                name="check_end_time_after_start_time",
             )
         ]
 
@@ -269,10 +261,12 @@ class AvailabilityPeriod(models.Model):
         overlapping = AvailabilityPeriod.objects.filter(
             interpreter=self.interpreter,
             start_time__lt=self.end_time,
-            end_time__gt=self.start_time
+            end_time__gt=self.start_time,
         )
         if self.pk:
             overlapping = overlapping.exclude(pk=self.pk)
-            
+
         if overlapping.exists():
-            raise ValidationError("This period overlaps with an existing availability slot.")
+            raise ValidationError(
+                "This period overlaps with an existing availability slot."
+            )

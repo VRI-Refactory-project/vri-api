@@ -316,11 +316,11 @@ class BaseAvailabilityModelAndSerializerTests(TestCase):
     """Tests validation constraints for recurring weekly base schedules."""
 
     def setUp(self):
-        # Using simple fields since user model configurations vary by team
         self.user = User.objects.create_user(
-            username="testprovider",
-            email="provider@example.com",
-            password="securepassword123",
+          email="provider@example.com",
+          phone_number="+256700000321",
+          password="securepassword123",
+          role="interpreter",
         )
 
     def test_clean_method_raises_error_when_start_after_end(self):
@@ -351,9 +351,10 @@ class AvailabilityOverrideModelAndSerializerTests(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            username="testprovider2",
-            email="provider2@example.com",
-            password="securepassword123",
+          email="provider2@example.com",
+          phone_number="+256700000322",
+          password="securepassword123",
+          role="interpreter",
         )
         self.target_date = date(2026, 11, 25)
 
