@@ -393,6 +393,7 @@ class MonthExceptionsSerializer(serializers.Serializer):
     month = serializers.CharField()
     exceptions = ExceptionSerializer(many=True)
 
+
 class AvailabilityPeriodSerializer(serializers.ModelSerializer):
     class Meta:
         model = AvailabilityPeriod
