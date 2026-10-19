@@ -165,7 +165,6 @@ class RecoveryCode(models.Model):
     def __str__(self):
         return f"{self.get_purpose_display()} code for {self.user} ({self.created_at:%Y-%m-%d %H:%M})"
 
-
 class DayOfWeek(models.IntegerChoices):
     MONDAY = 0, "Monday"
     TUESDAY = 1, "Tuesday"
@@ -174,8 +173,6 @@ class DayOfWeek(models.IntegerChoices):
     FRIDAY = 4, "Friday"
     SATURDAY = 5, "Saturday"
     SUNDAY = 6, "Sunday"
-
-
 
 class BaseAvailability(models.Model):
     """Stores repeating weekly schedule rules linked to your User model."""
@@ -208,7 +205,6 @@ class BaseAvailability(models.Model):
     def __str__(self):
         return f"{self.user} - {self.get_day_of_week_display()}"
 
-
 class AvailabilityOverride(models.Model):
     """Handles specific dates like holidays, sick leave, or one-off shifts."""
 
@@ -239,12 +235,10 @@ class AvailabilityOverride(models.Model):
     def __str__(self):
         return f"{self.user} - Override {self.specific_date}"
 
-
-
 class AvailabilityPeriod(models.Model):
     resource = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
-        on_delete=models.CASCADE, 
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
         related_name='routing_availability_periods'
     )
     start_time = models.DateTimeField(db_index=True)
@@ -258,4 +252,3 @@ class AvailabilityPeriod(models.Model):
 
     def __str__(self):
         return f"{self.resource} available from {self.start_time} to {self.end_time}"
-

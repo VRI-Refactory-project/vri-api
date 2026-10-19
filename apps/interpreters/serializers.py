@@ -393,13 +393,17 @@ class MonthExceptionsSerializer(serializers.Serializer):
     month = serializers.CharField()
     exceptions = ExceptionSerializer(many=True)
 
-
-
 class AvailabilityPeriodSerializer(serializers.ModelSerializer):
     class Meta:
         model = AvailabilityPeriod
-        fields = ["id", "interpreter", "start_time", "end_time"]
-        read_only_fields = ["interpreter"]
+        fields = [
+            "id",
+            "resource",
+            "start_time",
+            "end_time",
+            "is_active",
+        ]
+        read_only_fields = ["id", "resource", "is_active"]
 
     def validate_start_time(self, value):
         if value < timezone.now():
@@ -423,7 +427,7 @@ class AvailabilityPeriodSerializer(serializers.ModelSerializer):
                 )
 
             instance = AvailabilityPeriod(
-                interpreter=self.context["request"].user,
+                resource=self.context["request"].user,
                 start_time=start_time,
                 end_time=end_time,
             )
