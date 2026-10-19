@@ -13,7 +13,7 @@ from drf_spectacular.utils import (
     OpenApiResponse,
     extend_schema,
 )
-from rest_framework import generics, permissions
+from rest_framework import generics, permissions, viewsets
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
@@ -29,6 +29,7 @@ from .availability import (
     week_schedule,
 )
 from .models import (
+    AvailabilityPeriod,
     CertificationDocument,
     DateException,
     InterpreterAvailability,
@@ -38,6 +39,7 @@ from .models import (
     WeeklyAvailability,
 )
 from .serializers import (
+    AvailabilityPeriodSerializer,
     AvailabilityStatusSerializer,
     AvailabilityStatusUpdateSerializer,
     CertificationDocumentSerializer,
@@ -549,3 +551,16 @@ class ExceptionDetailView(APIView):
         if not deleted:
             raise NotFound("No change is saved for this date.")
         return Response(status=204)
+
+
+class AvailabilityPeriodViewSet(viewsets.ModelViewSet):
+    serializer_class = AvailabilityPeriodSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # Users can only view and manage their own availability
+        return AvailabilityPeriod.objects.filter(interpreter=self.request.user)
+
+    def perform_create(self, serializer):
+        # Automatically attach the logged-in user
+        serializer.save(interpreter=self.request.user)

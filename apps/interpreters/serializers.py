@@ -1,10 +1,13 @@
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import serializers
 
 from apps.accounts.serializers import BaseRegistrationSerializer
 
 from .models import (
+    AvailabilityPeriod,
     CertificationDocument,
     InterpreterAvailability,
     InterpreterProfile,
@@ -389,3 +392,54 @@ class ExceptionSerializer(serializers.Serializer):
 class MonthExceptionsSerializer(serializers.Serializer):
     month = serializers.CharField()
     exceptions = ExceptionSerializer(many=True)
+
+
+class AvailabilityPeriodSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AvailabilityPeriod
+        fields = [
+            "id",
+            "resource",
+            "start_time",
+            "end_time",
+            "is_active",
+        ]
+        read_only_fields = ["id", "resource", "is_active"]
+
+    def validate_start_time(self, value):
+        if value < timezone.now():
+            raise serializers.ValidationError("Start time cannot be in the past.")
+        return value
+
+    def validate(self, data):
+        start_time = data.get(
+            "start_time",
+            self.instance.start_time if self.instance else None,
+        )
+        end_time = data.get(
+            "end_time",
+            self.instance.end_time if self.instance else None,
+        )
+
+        if start_time is not None and end_time is not None:
+            if start_time >= end_time:
+                raise serializers.ValidationError(
+                    {"end_time": "End time must be after start time."}
+                )
+
+            instance = AvailabilityPeriod(
+                resource=self.context["request"].user,
+                start_time=start_time,
+                end_time=end_time,
+            )
+
+            try:
+                instance.clean()
+            except DjangoValidationError as exc:
+                raise serializers.ValidationError(
+                    exc.message_dict
+                    if hasattr(exc, "message_dict")
+                    else exc.messages
+                ) from exc
+
+        return data

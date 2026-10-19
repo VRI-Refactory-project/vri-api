@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 from phonenumber_field.modelfields import PhoneNumberField
@@ -191,6 +192,18 @@ class BaseAvailability(models.Model):
         verbose_name_plural = "Base Availabilities"
         unique_together = ("user", "day_of_week", "start_time", "end_time")
 
+    def clean(self):
+        super().clean()
+
+        if (
+            self.start_time is not None
+            and self.end_time is not None
+            and self.start_time >= self.end_time
+        ):
+            raise ValidationError(
+                {"end_time": "End time must be later than start time."}
+            )
+
     def __str__(self):
         return f"{self.user} - {self.get_day_of_week_display()}"
 
@@ -208,5 +221,38 @@ class AvailabilityOverride(models.Model):
     start_time = models.TimeField(blank=True, null=True)
     end_time = models.TimeField(blank=True, null=True)
 
+    def clean(self):
+        super().clean()
+
+        if self.is_available:
+            if self.start_time is None or self.end_time is None:
+                raise ValidationError(
+                    "Start and end times are required when available."
+                )
+
+            if self.start_time >= self.end_time:
+                raise ValidationError(
+                    {"end_time": "End time must be later than start time."}
+                )
+
     def __str__(self):
         return f"{self.user} - Override {self.specific_date}"
+
+
+class AvailabilityPeriod(models.Model):
+    resource = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='routing_availability_periods'
+    )
+    start_time = models.DateTimeField(db_index=True)
+    end_time = models.DateTimeField(db_index=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['start_time', 'end_time', 'is_active']),
+        ]
+
+    def __str__(self):
+        return f"{self.resource} available from {self.start_time} to {self.end_time}"

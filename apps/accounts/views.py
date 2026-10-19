@@ -3,6 +3,7 @@ from django.contrib.auth.models import update_last_login
 from django.db import connection
 from django.db.utils import OperationalError
 from django.shortcuts import get_object_or_404
+from django.utils.dateparse import parse_datetime
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -32,10 +33,16 @@ from apps.institutions.serializers import InstitutionRegistrationSerializer
 from apps.interpreters.serializers import InterpreterRegistrationSerializer
 
 from . import recovery
-from .models import AvailabilityOverride, BaseAvailability, RecoveryCode
+from .models import (
+    AvailabilityOverride,
+    AvailabilityPeriod,
+    BaseAvailability,
+    RecoveryCode,
+)
 from .serializers import (
     AdminResetConfirmSerializer,
     AvailabilityOverrideSerializer,
+    AvailabilityPeriodSerializer,
     BaseAvailabilitySerializer,
     DeafRegistrationSerializer,
     EmailVerifyConfirmSerializer,
@@ -552,3 +559,35 @@ class AvailabilityOverrideViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+
+class RoutingAvailabilityViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint for the request router to discover available resources
+    within a specific time dimension or boundary.
+    """
+
+    serializer_class = AvailabilityPeriodSerializer
+
+    def get_queryset(self):
+        queryset = AvailabilityPeriod.objects.filter(is_active=True).select_related(
+            "resource"
+        )
+
+        start_window = self.request.query_params.get("start_window")
+        end_window = self.request.query_params.get("end_window")
+        resource_id = self.request.query_params.get("resource_id")
+
+        if resource_id:
+            queryset = queryset.filter(resource_id=resource_id)
+
+        if start_window and end_window:
+            parsed_start = parse_datetime(start_window)
+            parsed_end = parse_datetime(end_window)
+
+            if parsed_start and parsed_end:
+                queryset = queryset.filter(
+                    start_time__lte=parsed_end, end_time__gte=parsed_start
+                )
+
+        return queryset

@@ -2,20 +2,28 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from . import views
-from .views import AvailabilityOverrideViewSet, BaseAvailabilityViewSet
 
+# 1. Router Initialization
 router = DefaultRouter()
 router.register(
-    r"availability/base", BaseAvailabilityViewSet, basename="base-availability"
+    r"availability/base", views.BaseAvailabilityViewSet, basename="base-availability"
 )
 router.register(
     r"availability/overrides",
-    AvailabilityOverrideViewSet,
+    views.AvailabilityOverrideViewSet,
     basename="availability-override",
 )
+router.register(
+    r"routing-availability",
+    views.RoutingAvailabilityViewSet,
+    basename="routing-availability",
+)
 
+# 2. URL Patterns
 urlpatterns = [
+    # System Health
     path("health/", views.health, name="health"),
+    # Authentication Core
     path("auth/roles/", views.roles, name="auth-roles"),
     path("auth/login/", views.LoginView.as_view(), name="auth-login"),
     path("auth/token/refresh/", views.RefreshView.as_view(), name="auth-token-refresh"),
@@ -30,7 +38,7 @@ urlpatterns = [
         views.PasswordChangeView.as_view(),
         name="auth-password-change",
     ),
-    # V2-001 / V2-003 registration (signs the user in: returns access, refresh, user)
+    # User Registration (V2-001 / V2-003)
     path(
         "auth/register/deaf/",
         views.DeafRegisterView.as_view(),
@@ -46,7 +54,7 @@ urlpatterns = [
         views.InstitutionRegisterView.as_view(),
         name="auth-register-institution",
     ),
-    # Email verification (signed-in user)
+    # Account Verification & Recovery (V2-008)
     path(
         "auth/email/verify/",
         views.EmailVerifyConfirmView.as_view(),
@@ -57,7 +65,6 @@ urlpatterns = [
         views.EmailVerifyResendView.as_view(),
         name="auth-email-resend",
     ),
-    # V2-008 account recovery
     path(
         "auth/recovery/request/",
         views.RecoveryRequestView.as_view(),
@@ -68,6 +75,7 @@ urlpatterns = [
         views.RecoveryConfirmView.as_view(),
         name="auth-recovery-confirm",
     ),
+    # User Management / Administration
     path(
         "manage/users/<int:pk>/reset-password/request/",
         views.AdminResetRequestView.as_view(),
@@ -78,5 +86,6 @@ urlpatterns = [
         views.AdminResetConfirmView.as_view(),
         name="manage-reset-password-confirm",
     ),
+    # Unified API ViewSet Endpoints
     path("api/", include(router.urls)),
 ]
