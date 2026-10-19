@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "apps.users",
     "apps.audit",
     "apps.administration",
+    "apps.notifications",
 ]
 
 MIDDLEWARE = [
@@ -147,6 +148,9 @@ vars().update(EMAIL_CONFIG)
 DEFAULT_FROM_EMAIL = env(
     "DEFAULT_FROM_EMAIL", default="SignConnect <no-reply@signconnect.local>"
 )
+# --- Expo Push Notifications ---
+EXPO_PUSH_ENABLED = env.bool("EXPO_PUSH_ENABLED", default=False)
+EXPO_ACCESS_TOKEN = env("EXPO_ACCESS_TOKEN", default="")
 
 # --- Logging (recovery events are logged for audit; codes and passwords never are) ---
 LOGGING = {
