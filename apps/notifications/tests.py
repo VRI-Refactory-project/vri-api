@@ -146,9 +146,6 @@ class NotificationAPITests(APITestCase):
             format="json",
         )
 
-        print("Response status:", response.status_code)
-        print("Response data:", response.data)
-
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
 
     def test_user_can_deactivate_their_push_device(self):
@@ -192,4 +189,3 @@ class NotificationAPITests(APITestCase):
         )
         device.refresh_from_db()
         self.assertTrue(device.is_active)
-

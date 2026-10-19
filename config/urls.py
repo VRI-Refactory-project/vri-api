@@ -53,7 +53,7 @@ urlpatterns = [
         name="redoc",
     ),
     path(
-    "api/v1/notifications/",
-    include("apps.notifications.urls"),
+        "api/v1/notifications/",
+        include("apps.notifications.urls"),
     ),
 ]

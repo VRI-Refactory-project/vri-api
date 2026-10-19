@@ -20,12 +20,11 @@ class NotificationListView(generics.ListAPIView):
     def get_queryset(self):
         return Notification.objects.filter(user=self.request.user)
 
+
 @extend_schema(
     request=None,
     responses={200: NotificationSerializer},
 )
-
-
 class NotificationMarkReadView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -43,12 +42,11 @@ class NotificationMarkReadView(APIView):
             status=status.HTTP_200_OK,
         )
 
+
 @extend_schema(
     request=PushDeviceRegistrationSerializer,
     responses={200: None, 400: None, 409: None},
 )
-
-
 class PushDeviceRegistrationView(APIView):
     permission_classes = [IsAuthenticated]
 
