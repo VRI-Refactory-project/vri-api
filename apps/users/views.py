@@ -38,26 +38,39 @@ class UserRegistrationView(generics.CreateAPIView):
     description=(
         "Retrieve or update details for the authenticated Deaf user, "
         "including emergency contact information, sign language "
-        "preferences, and sensory accessibility settings."
+        "preferences, and sensory accessibility settings (V2-001 / FR-UM-003)."
     ),
 )
 class DeafUserProfileDetailView(generics.RetrieveUpdateAPIView):
+    """Handles GET, PUT, and PATCH requests for viewing and updating
+
+    Deaf user profile details, emergency contact info, and accessibility
+    preferences.
     """
-    Handles GET, PUT, and PATCH requests for viewing and updating
-    Deaf user profile details,
-    emergency contact info, and accessibility preferences (V2-001 / FR-UM-003)."""
 
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = UserProfileSerializer
 
     def get_object(self):
-        # Automatically fetch or create UserProfile for logged-in user
+        # Automatically fetch or create UserProfile for the logged-in user
         profile, _ = UserProfile.objects.get_or_create(user=self.request.user)
+
+        # Copy registered phone number if profile contact number is missing
+        if not profile.contact_number and getattr(
+            self.request.user, "phone_number", None
+        ):
+            profile.contact_number = str(self.request.user.phone_number)
+            profile.save(update_fields=["contact_number"])
+
         return profile
 
     def partial_update(self, request, *args, **kwargs):
         profile = self.get_object()
-        serializer = self.get_serializer(profile, data=request.data, partial=True)
+        serializer = self.get_serializer(
+            profile,
+            data=request.data,
+            partial=True,
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
