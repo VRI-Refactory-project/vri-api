@@ -17,6 +17,8 @@ from apps.service_requests.services import (
     OpenRequestExists,
     cancel_request,
     create_request,
+    expire_stale_offers,
+    refresh_request,
 )
 
 
@@ -66,6 +68,9 @@ class MyOpenRequestView(APIView):
         ).first()
         if open_request is None:
             return Response(status=status.HTTP_204_NO_CONTENT)
+        open_request = refresh_request(open_request)
+        if open_request.status not in OPEN_STATUSES:
+            return Response(status=status.HTTP_204_NO_CONTENT)
         return Response(ServiceRequestSerializer(open_request).data)
 
 
@@ -80,6 +85,7 @@ class ServiceRequestDetailView(APIView):
         if found.status in OPEN_STATUSES:
             found.last_seen_at = timezone.now()
             found.save(update_fields=["last_seen_at"])
+            found = refresh_request(found)
         return Response(ServiceRequestSerializer(found).data)
 
 
@@ -111,6 +117,7 @@ class InterpreterOffersView(APIView):
 
     @extend_schema(responses={200: OfferedRequestSerializer(many=True)})
     def get(self, request):
+        expire_stale_offers(interpreter_user=request.user)
         offered = ServiceRequest.objects.filter(
             status=ServiceRequest.Status.OFFERED, interpreter__user=request.user
         ).select_related("requester")
