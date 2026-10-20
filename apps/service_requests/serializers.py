@@ -1,44 +1,114 @@
-
+from apps.interpreters.models import Specialisation
 from rest_framework import serializers
 
-from apps.interpreters.models import Specialisation
-from apps.service_requests.models import ServiceRequest
+from .models import SessionRequest
+from .services import queue_position as get_queue_position
 
 
-class ServiceRequestSerializer(serializers.ModelSerializer):
-    requester_id = serializers.IntegerField(source="requester.id", read_only=True)
-    interpreter_id = serializers.IntegerField(
-        source="interpreter.id",
-        read_only=True,
+class SessionRequestCreateSerializer(serializers.ModelSerializer):
+    """Serializer used when a Deaf user or institutional requester creates a new request.
+    Validates input fields and accepts idempotency keys for network retries.
+    """
+
+    specialisation = serializers.ChoiceField(
+        choices=Specialisation.choices,
+        default=Specialisation.GENERAL,
+        required=False,
+    )
+    description = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+    )
+    is_emergency = serializers.BooleanField(
+        default=False,
+        required=False,
+    )
+    request_key = serializers.CharField(
+        required=False,
         allow_null=True,
+        write_only=True,
+        max_length=64,
     )
 
     class Meta:
-        model = ServiceRequest
+        model = SessionRequest
+        fields = (
+            "specialisation",
+            "description",
+            "is_emergency",
+            "request_key",
+        )
+
+    def validate_specialisation(self, value):
+        if value not in Specialisation.values:
+            raise serializers.ValidationError(
+                "Select a valid interpreter specialisation (general, medical, or legal)."
+            )
+        return value
+
+
+class SessionRequestSerializer(serializers.ModelSerializer):
+    """Complete detail serializer for SessionRequest data returned to clients.
+    Exposes participant IDs, status labels, queue metrics, and timestamps.
+    """
+
+    requester_id = serializers.IntegerField(source="requester.id", read_only=True)
+    offered_interpreter_id = serializers.IntegerField(
+        source="offered_interpreter.id",
+        read_only=True,
+        allow_null=True,
+    )
+    accepted_interpreter_id = serializers.IntegerField(
+        source="accepted_interpreter.id",
+        read_only=True,
+        allow_null=True,
+    )
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    queue_position = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SessionRequest
         fields = (
             "id",
             "requester_id",
-            "interpreter_id",
-            "specialisation_required",
+            "offered_interpreter_id",
+            "accepted_interpreter_id",
+            "specialisation",
             "description",
+            "is_emergency",
             "status",
-            "assigned_at",
+            "status_label",
+            "queue_position",
+            "matched_by_fallback",
             "created_at",
+            "queued_at",
+            "offered_at",
+            "accepted_at",
             "updated_at",
         )
-        read_only_fields = (
-            "id",
-            "requester_id",
-            "interpreter_id",
-            "status",
-            "assigned_at",
-            "created_at",
-            "updated_at",
-        )
+        read_only_fields = fields
 
-    def validate_specialisation_required(self, value):
-        if value not in Specialisation.values:
-            raise serializers.ValidationError(
-                "Select a valid interpreter specialisation."
-            )
-        return value
+    def get_queue_position(self, obj):
+        """Returns the integer position in queue if status is QUEUED, otherwise None."""
+        return get_queue_position(obj)
+
+
+class SessionStatusSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for mobile app polling (GET /api/v1/sessions/)."""
+
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    queue_position = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SessionRequest
+        fields = (
+            "id",
+            "status",
+            "status_label",
+            "queue_position",
+        )
+        read_only_fields = fields
+
+    def get_queue_position(self, obj):
+        return get_queue_position(obj)
