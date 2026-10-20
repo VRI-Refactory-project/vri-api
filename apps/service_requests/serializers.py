@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from apps.core.permissions import user_institution
 from apps.interpreters.models import Specialisation
 from apps.service_requests.models import RequestOffer, ServiceRequest
 
@@ -88,3 +89,63 @@ class OfferedRequestSerializer(serializers.ModelSerializer):
     def get_expires_at(self, obj):
         offer = obj.offers.filter(outcome=RequestOffer.Outcome.PENDING).first()
         return offer.expires_at if offer else None
+
+
+# V2-010: the interpreter's offers screen (vri-web RequestsPage) was built first, so these responses use
+# the exact names and values it reads (camelCase, lowercase statuses). Do not rename them to match the
+# rest of the API without changing the screen too.
+OFFER_STATUS_FOR_SCREEN = {
+    RequestOffer.Outcome.PENDING: "pending",
+    RequestOffer.Outcome.ACCEPTED: "accepted",
+    RequestOffer.Outcome.DECLINED: "declined",
+    RequestOffer.Outcome.EXPIRED: "expired",
+    # The screen has no "withdrawn": either way the offer is gone from the interpreter's list.
+    RequestOffer.Outcome.WITHDRAWN: "rerouted",
+}
+SESSION_LANGUAGE = "Uganda Sign Language ⇄ English"
+SESSION_PARTICIPANTS = "Deaf user and hearing participant"
+
+
+class InterpreterOfferSerializer(serializers.Serializer):
+    """One pending offer on the interpreter's offers screen."""
+
+    id = serializers.SerializerMethodField()
+    title = serializers.SerializerMethodField()
+    institutionName = serializers.SerializerMethodField()
+    sector = serializers.SerializerMethodField()
+    language = serializers.SerializerMethodField()
+    participants = serializers.SerializerMethodField()
+    expiresAt = serializers.DateTimeField(source="expires_at")
+
+    def get_id(self, offer) -> str:
+        return str(offer.pk)
+
+    def get_title(self, offer) -> str:
+        service_request = offer.service_request
+        title = f"{service_request.get_specialisation_required_display()} interpreting request"
+        if service_request.priority == ServiceRequest.Priority.EMERGENCY:
+            return f"Emergency: {title}"
+        return title
+
+    def get_institutionName(self, offer) -> str:
+        # Who is asking: their institution when they are institution staff, otherwise their name.
+        requester = offer.service_request.requester
+        institution = user_institution(requester)
+        return institution.organisation_name if institution else requester.full_name
+
+    def get_sector(self, offer) -> str:
+        return offer.service_request.get_specialisation_required_display()
+
+    def get_language(self, offer) -> str:
+        return SESSION_LANGUAGE
+
+    def get_participants(self, offer) -> str:
+        return SESSION_PARTICIPANTS
+
+
+class OfferResponseSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=["accept", "decline"])
+
+
+class OfferStatusSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=sorted(set(OFFER_STATUS_FOR_SCREEN.values())))

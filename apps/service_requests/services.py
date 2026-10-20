@@ -16,7 +16,7 @@ from django.utils import timezone
 
 from apps.audit import services as audit
 from apps.audit.models import AuditLog
-from apps.interpreters.models import Specialisation
+from apps.interpreters.models import InterpreterProfile, Specialisation
 from apps.interpreters.routing import pick_interpreter
 from apps.notifications.models import Notification
 from apps.notifications.services import send_expo_push
@@ -33,6 +33,10 @@ class NotCancellable(Exception):
 
 class InvalidTransition(Exception):
     """A request was asked to move to a status it cannot reach from where it is."""
+
+
+class OfferNotActive(Exception):
+    """The offer can no longer be answered (expired, withdrawn, already answered, or moved on)."""
 
 
 Status = ServiceRequest.Status
@@ -228,6 +232,77 @@ def cancel_request(service_request):
     return locked
 
 
+OFFER_ACCEPT = "accept"
+OFFER_DECLINE = "decline"
+
+_NOT_ACTIVE_MESSAGES = {
+    RequestOffer.Outcome.EXPIRED: "This offer has expired.",
+    RequestOffer.Outcome.WITHDRAWN: "This request was cancelled.",
+    RequestOffer.Outcome.ACCEPTED: "You have already accepted this offer.",
+    RequestOffer.Outcome.DECLINED: "You have already declined this offer.",
+}
+
+
+def respond_to_offer(offer, action, *, request=None, now=None):
+    """An interpreter accepts or declines an offer made to them (V2-010).
+
+    Accepting assigns the request to them and switches them to unavailable, so they are not offered
+    another request during the session (until V2-011 ends sessions, they switch back on themselves).
+    Declining sends the request straight to the next eligible interpreter, or back to pending.
+
+    Giving the same answer twice returns the offer unchanged, so a retry is safe. Raises OfferNotActive
+    when the offer can no longer be answered. ``request`` is the HTTP request, for the audit entry.
+    """
+    now = now or timezone.now()
+    # An offer whose time ran out is expired first, so it cannot be accepted late.
+    expire_stale_offers(now=now, service_request=offer.service_request)
+    accepting = action == OFFER_ACCEPT
+    wanted = RequestOffer.Outcome.ACCEPTED if accepting else RequestOffer.Outcome.DECLINED
+
+    with transaction.atomic():
+        locked = ServiceRequest.objects.select_for_update().get(pk=offer.service_request_id)
+        offer = RequestOffer.objects.select_related("interpreter__user").get(pk=offer.pk)
+        if offer.outcome == wanted:
+            return offer
+        if offer.outcome != RequestOffer.Outcome.PENDING:
+            raise OfferNotActive(_NOT_ACTIVE_MESSAGES[offer.outcome])
+        if locked.status != Status.OFFERED or locked.interpreter_id != offer.interpreter_id:
+            raise OfferNotActive("This offer is no longer available.")
+
+        offer.outcome = wanted
+        offer.responded_at = now
+        offer.save(update_fields=["outcome", "responded_at"])
+
+        if accepting:
+            check_transition(locked.status, Status.ASSIGNED)
+            locked.status = Status.ASSIGNED
+            locked.assigned_at = now
+            locked.save(update_fields=["status", "assigned_at", "updated_at"])
+            InterpreterProfile.objects.filter(pk=offer.interpreter_id).update(is_available=False)
+        else:
+            check_transition(locked.status, Status.PENDING)
+            locked.status = Status.PENDING
+            locked.interpreter = None
+            locked.offered_at = None
+            locked.matched_by_fallback = False
+            locked.save(
+                update_fields=["status", "interpreter", "offered_at", "matched_by_fallback", "updated_at"]
+            )
+
+        audit.record(
+            AuditLog.Event.OFFER_ACCEPTED if accepting else AuditLog.Event.OFFER_DECLINED,
+            offer.interpreter.user,
+            request,
+            target_user=locked.requester,
+            details={"request_id": locked.pk, "offer_id": offer.pk},
+        )
+
+    if not accepting:
+        # Re-route straight away; the one who declined is never asked again.
+        offer_next(locked, now=now)
+    return offer
+
+
 def disconnect_cutoff(now=None):
     return (now or timezone.now()) - settings.REQUESTER_DISCONNECT_GRACE_WINDOW
 
@@ -299,7 +374,7 @@ def expire_stale_offers(*, now=None, service_request=None, interpreter_user=None
         outcome=RequestOffer.Outcome.PENDING,
         expires_at__lte=now,
         service_request__status=ServiceRequest.Status.OFFERED,
-    )
+    ).select_related("interpreter__user")
     if service_request is not None:
         stale = stale.filter(service_request=service_request)
     if interpreter_user is not None:
@@ -325,6 +400,12 @@ def expire_stale_offers(*, now=None, service_request=None, interpreter_user=None
             locked.offered_at = None
             locked.matched_by_fallback = False
             locked.save()
+            audit.record(
+                AuditLog.Event.OFFER_EXPIRED,
+                None,
+                target_user=offer.interpreter.user,
+                details={"request_id": locked.pk, "offer_id": offer.pk},
+            )
             expired += 1
     return expired
 

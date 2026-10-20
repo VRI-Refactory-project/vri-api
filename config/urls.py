@@ -45,6 +45,10 @@ urlpatterns = [
         InterpreterOffersView.as_view(),
         name="interpreter-offers",
     ),  # V2-022, requests offered to the signed-in interpreter
+    path(
+        "api/v1/interpreters/me/offers/",
+        include("apps.service_requests.interpreter_urls"),
+    ),  # V2-010, accept or decline an offer
     path("api/v1/interpreters/", include("apps.interpreters.urls")),
     path(
         "api/v1/manage/interpreters/",
