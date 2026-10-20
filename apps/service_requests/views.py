@@ -1,9 +1,7 @@
-from django.conf import settings
 from django.shortcuts import get_object_or_404
-from django.utils.crypto import constant_time_compare
-from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
-from rest_framework import generics, serializers, status
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from drf_spectacular.utils import extend_schema
+from rest_framework import generics, status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -18,8 +16,8 @@ from apps.service_requests.services import (
     OpenRequestExists,
     cancel_request,
     create_request,
+    expire_stale_offers,
     refresh_for_requester,
-    sweep_requests,
 )
 
 
@@ -77,9 +75,10 @@ class MyOpenRequestView(APIView):
         open_request = ServiceRequest.objects.filter(
             requester=request.user, status__in=OPEN_STATUSES
         ).first()
-        if open_request is not None:
-            refresh_for_requester(open_request)
-        if open_request is None or open_request.status not in OPEN_STATUSES:
+        if open_request is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        open_request = refresh_for_requester(open_request)
+        if open_request.status not in OPEN_STATUSES:
             return Response(status=status.HTTP_204_NO_CONTENT)
         return Response(ServiceRequestSerializer(open_request).data)
 
@@ -92,7 +91,7 @@ class ServiceRequestDetailView(APIView):
     @extend_schema(responses={200: ServiceRequestSerializer})
     def get(self, request, pk):
         found = get_object_or_404(ServiceRequest, pk=pk, requester=request.user)
-        refresh_for_requester(found)
+        found = refresh_for_requester(found)
         return Response(ServiceRequestSerializer(found).data)
 
 
@@ -124,37 +123,8 @@ class InterpreterOffersView(APIView):
 
     @extend_schema(responses={200: OfferedRequestSerializer(many=True)})
     def get(self, request):
+        expire_stale_offers(interpreter_user=request.user)
         offered = ServiceRequest.objects.filter(
             status=ServiceRequest.Status.OFFERED, interpreter__user=request.user
         ).select_related("requester")
         return Response(OfferedRequestSerializer(offered, many=True).data)
-
-
-class RequestSweepView(APIView):
-    """POST /api/v1/requests/sweep/: apply request timeouts to every open request (V2-009).
-
-    There is no background worker on the free hosting plan, so the uptime monitor calls this with the
-    X-Sweep-Token header. Safe to call repeatedly.
-    """
-
-    authentication_classes = []
-    permission_classes = [AllowAny]
-
-    @extend_schema(
-        request=None,
-        responses={
-            200: inline_serializer(
-                "RequestSweepResult",
-                {"cancelled_requester_disconnected": serializers.IntegerField()},
-            ),
-            403: OpenApiResponse(description="Missing or wrong X-Sweep-Token."),
-            404: OpenApiResponse(description="The sweep is turned off (REQUEST_SWEEP_TOKEN not set)."),
-        },
-    )
-    def post(self, request):
-        expected = settings.REQUEST_SWEEP_TOKEN
-        if not expected:
-            return Response(status=status.HTTP_404_NOT_FOUND)
-        if not constant_time_compare(request.headers.get("X-Sweep-Token", ""), expected):
-            return Response({"detail": "Invalid sweep token."}, status=status.HTTP_403_FORBIDDEN)
-        return Response(sweep_requests())

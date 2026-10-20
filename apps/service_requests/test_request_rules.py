@@ -1,4 +1,4 @@
-"""V2-009: the CREATED state, allowed status changes, the disconnect grace window, the sweep and the audit log."""
+"""V2-009: the CREATED state, allowed status changes, the disconnect grace window and the audit log."""
 
 from datetime import timedelta
 from io import StringIO
@@ -14,7 +14,7 @@ from rest_framework.test import APITestCase
 from apps.audit.models import AuditLog
 from apps.interpreters.models import Specialisation
 from apps.service_requests.models import ServiceRequest
-from apps.service_requests.services import InvalidTransition, check_transition, offer_next
+from apps.service_requests.services import InvalidTransition, check_transition, offer_next, sweep
 from apps.service_requests.test_offers import make_interpreter, make_user
 
 User = get_user_model()
@@ -177,59 +177,53 @@ class DisconnectWindowTests(APITestCase):
         self.assertEqual(mine.status_code, status.HTTP_204_NO_CONTENT)
         self.assertEqual(listed.data[0]["status"], Status.CANCELLED)
 
+    @override_settings(REQUEST_MAX_WAIT_SECONDS=300)
+    def test_a_request_that_also_ran_out_of_time_fails_rather_than_cancels(self):
+        waiting = waiting_request(self.deaf, seen_ago=timedelta(minutes=3))
+        ServiceRequest.objects.filter(pk=waiting.pk).update(created_at=timezone.now() - timedelta(minutes=6))
+
+        self.assertEqual(self.detail(waiting).data["status"], Status.FAILED)
+
     def test_an_offered_request_is_not_cancelled_for_disconnecting(self):
         offered = waiting_request(self.deaf, seen_ago=timedelta(minutes=10), status=Status.OFFERED)
 
         self.assertEqual(self.detail(offered).data["status"], Status.OFFERED)
 
 
-@override_settings(REQUEST_SWEEP_TOKEN="test-sweep-token", REQUESTER_DISCONNECT_GRACE_WINDOW=timedelta(minutes=2))
-class SweepTests(APITestCase):
+@override_settings(REQUESTER_DISCONNECT_GRACE_WINDOW=timedelta(minutes=2))
+class SweepTests(TestCase):
+    """The queue sweep (V2-022) also cancels requests whose requester has gone quiet."""
+
     def setUp(self):
-        self.url = reverse("service-request-sweep")
         self.stale = waiting_request(make_user(User.Role.DEAF_HOH), seen_ago=timedelta(minutes=5))
         self.fresh = waiting_request(make_user(User.Role.DEAF_HOH), seen_ago=timedelta(seconds=10))
 
-    def sweep(self, token="test-sweep-token"):
-        return self.client.post(self.url, HTTP_X_SWEEP_TOKEN=token)
-
     def test_sweep_cancels_only_stale_requests(self):
-        response = self.sweep()
+        sweep()
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data, {"cancelled_requester_disconnected": 1})
         self.stale.refresh_from_db()
         self.fresh.refresh_from_db()
         self.assertEqual(self.stale.status, Status.CANCELLED)
+        self.assertEqual(self.stale.cancel_reason, ServiceRequest.CancelReason.REQUESTER_DISCONNECTED)
         self.assertEqual(self.fresh.status, Status.PENDING)
 
     def test_running_the_sweep_twice_changes_nothing_more(self):
-        self.sweep()
+        sweep()
+        sweep()
 
-        response = self.sweep()
-
-        self.assertEqual(response.data, {"cancelled_requester_disconnected": 0})
         self.assertEqual(AuditLog.objects.filter(event=AuditLog.Event.REQUEST_CANCELLED).count(), 1)
 
-    def test_wrong_token_is_refused(self):
-        response = self.sweep(token="wrong")
+    def test_a_disconnected_request_is_not_offered_by_the_sweep(self):
+        interpreter = make_interpreter()
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        sweep()
+
         self.stale.refresh_from_db()
-        self.assertEqual(self.stale.status, Status.PENDING)
+        self.assertEqual(self.stale.status, Status.CANCELLED)
+        self.assertFalse(self.stale.offers.filter(interpreter=interpreter).exists())
 
-    def test_missing_token_is_refused(self):
-        self.assertEqual(self.client.post(self.url).status_code, status.HTTP_403_FORBIDDEN)
+    def test_dispatch_command_runs_the_same_sweep(self):
+        call_command("dispatch_requests", stdout=StringIO())
 
-    @override_settings(REQUEST_SWEEP_TOKEN="")
-    def test_sweep_is_off_without_a_configured_token(self):
-        self.assertEqual(self.sweep(token="").status_code, status.HTTP_404_NOT_FOUND)
-
-    def test_management_command_runs_the_same_sweep(self):
-        out = StringIO()
-
-        call_command("sweep_requests", stdout=out)
-
-        self.assertIn("cancelled_requester_disconnected: 1", out.getvalue())
         self.stale.refresh_from_db()
         self.assertEqual(self.stale.status, Status.CANCELLED)

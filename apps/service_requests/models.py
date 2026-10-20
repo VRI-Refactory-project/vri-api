@@ -11,6 +11,7 @@ class ServiceRequest(models.Model):
         OFFERED = "OFFERED", "Offered"  # sent to one interpreter, no answer yet
         ASSIGNED = "ASSIGNED", "Assigned"  # an interpreter accepted
         CANCELLED = "CANCELLED", "Cancelled"
+        FAILED = "FAILED", "Failed"  # nobody could take it in time
 
     class CancelReason(models.TextChoices):
         REQUESTER_DISCONNECTED = "REQUESTER_DISCONNECTED", "Requester disconnected"
@@ -57,6 +58,8 @@ class ServiceRequest(models.Model):
     cancel_reason = models.CharField(
         max_length=30, choices=CancelReason.choices, blank=True, default=""
     )
+    failed_at = models.DateTimeField(null=True, blank=True)
+    failure_reason = models.CharField(max_length=100, blank=True, default="")
     # Updated each time the requester's app asks for the status: proof they are still there.
     last_seen_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

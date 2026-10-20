@@ -9,7 +9,6 @@ urlpatterns = [
         name="service-request-list-create",
     ),
     path("mine/", views.MyOpenRequestView.as_view(), name="service-request-mine"),
-    path("sweep/", views.RequestSweepView.as_view(), name="service-request-sweep"),
     path(
         "<int:pk>/",
         views.ServiceRequestDetailView.as_view(),

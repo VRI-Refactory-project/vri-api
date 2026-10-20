@@ -4,14 +4,14 @@ A new request is offered to one interpreter at a time. Accepting and declining a
 V2-023 and are not here yet.
 
 There is no background worker (free hosting), so timeouts such as the requester-disconnect window
-(V2-009) are applied whenever a request is read, and by ``sweep_requests`` for requests nobody reads.
+(V2-009) are applied whenever a request is read, and by ``sweep`` for requests nobody reads.
 """
 
 from datetime import timedelta
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.db.models import Max, Q
+from django.db.models import Case, IntegerField, Max, Q, Value, When
 from django.utils import timezone
 
 from apps.audit import services as audit
@@ -40,10 +40,11 @@ Status = ServiceRequest.Status
 # The moves a request can make (V2-009 BE-03). Anything else is refused by ``check_transition``.
 ALLOWED_TRANSITIONS = {
     Status.CREATED: {Status.PENDING, Status.OFFERED, Status.CANCELLED},
-    Status.PENDING: {Status.OFFERED, Status.CANCELLED},
+    Status.PENDING: {Status.OFFERED, Status.CANCELLED, Status.FAILED},
     Status.OFFERED: {Status.ASSIGNED, Status.OFFERED, Status.PENDING, Status.CANCELLED},
     Status.ASSIGNED: set(),
     Status.CANCELLED: set(),
+    Status.FAILED: set(),
 }
 
 # A silent requester only loses a request that is still waiting. Once it is offered, the
@@ -57,7 +58,13 @@ def check_transition(current, new):
 
 
 def offer_expiry_seconds():
+    """How long an interpreter has to answer an offer."""
     return getattr(settings, "REQUEST_OFFER_EXPIRY_SECONDS", 60)
+
+
+def max_wait_seconds():
+    """How long a request may wait for an interpreter before it is marked failed."""
+    return getattr(settings, "REQUEST_MAX_WAIT_SECONDS", 300)
 
 
 def create_request(
@@ -81,6 +88,12 @@ def create_request(
         ).first()
         if existing:
             return existing, False
+
+    # An old request that has run out of time must not stop the person asking again.
+    for open_request in ServiceRequest.objects.filter(
+        requester=requester, status__in=OPEN_STATUSES
+    ):
+        refresh_request(open_request)
 
     try:
         with transaction.atomic():
@@ -256,23 +269,138 @@ def cancel_if_requester_gone(service_request, now=None):
     return True
 
 
-def refresh_for_requester(service_request, now=None):
-    """Bring a request up to date when its requester reads it, then note that they are still there."""
-    now = now or timezone.now()
-    cancel_if_requester_gone(service_request, now)
-    if service_request.status in OPEN_STATUSES:
-        ServiceRequest.objects.filter(pk=service_request.pk).update(last_seen_at=now)
-        service_request.last_seen_at = now
-    return service_request
-
-
-def sweep_requests(now=None):
-    """Apply timeouts to every open request. Safe to run repeatedly; returns what it changed."""
+def cancel_disconnected_requests(*, now=None):
+    """Cancel every waiting request whose requester has gone quiet. Returns how many."""
     now = now or timezone.now()
     stale = (
         ServiceRequest.objects.filter(status__in=DISCONNECT_CANCELLABLE)
         .filter(_requester_gone(disconnect_cutoff(now)))
         .select_related("requester")
     )
-    cancelled = sum(cancel_if_requester_gone(service_request, now) for service_request in stale)
-    return {"cancelled_requester_disconnected": cancelled}
+    return sum(cancel_if_requester_gone(service_request, now) for service_request in stale)
+
+
+def refresh_for_requester(service_request, *, now=None):
+    """What the requester's app gets when it checks on a request: the request is brought up to date
+    (using when they were last seen), and only then does this check count as "still here"."""
+    now = now or timezone.now()
+    refresh_request(service_request, now=now)
+    if service_request.status in OPEN_STATUSES:
+        ServiceRequest.objects.filter(pk=service_request.pk).update(last_seen_at=now)
+        service_request.last_seen_at = now
+    return service_request
+
+
+def expire_stale_offers(*, now=None, service_request=None, interpreter_user=None):
+    """Take back offers nobody answered in time. Each such request goes back to pending, and the
+    interpreter is never offered that request again. Returns how many offers expired."""
+    now = now or timezone.now()
+    stale = RequestOffer.objects.filter(
+        outcome=RequestOffer.Outcome.PENDING,
+        expires_at__lte=now,
+        service_request__status=ServiceRequest.Status.OFFERED,
+    )
+    if service_request is not None:
+        stale = stale.filter(service_request=service_request)
+    if interpreter_user is not None:
+        stale = stale.filter(interpreter__user=interpreter_user)
+
+    expired = 0
+    for offer in stale:
+        with transaction.atomic():
+            locked = ServiceRequest.objects.select_for_update().get(
+                pk=offer.service_request_id
+            )
+            # Look again now the row is locked: it may have been accepted or cancelled meanwhile.
+            if (
+                locked.status != ServiceRequest.Status.OFFERED
+                or locked.interpreter_id != offer.interpreter_id
+            ):
+                continue
+            RequestOffer.objects.filter(pk=offer.pk).update(
+                outcome=RequestOffer.Outcome.EXPIRED, responded_at=now
+            )
+            locked.status = ServiceRequest.Status.PENDING
+            locked.interpreter = None
+            locked.offered_at = None
+            locked.matched_by_fallback = False
+            locked.save()
+            expired += 1
+    return expired
+
+
+def fail_overdue_requests(*, now=None, service_request=None):
+    """Mark requests that have waited too long as failed. Returns how many."""
+    now = now or timezone.now()
+    cutoff = now - timedelta(seconds=max_wait_seconds())
+    overdue = ServiceRequest.objects.filter(
+        status=ServiceRequest.Status.PENDING, created_at__lte=cutoff
+    )
+    if service_request is not None:
+        overdue = overdue.filter(pk=service_request.pk)
+
+    failed = 0
+    for found in overdue:
+        with transaction.atomic():
+            locked = ServiceRequest.objects.select_for_update().get(pk=found.pk)
+            if locked.status != ServiceRequest.Status.PENDING:
+                continue
+            locked.status = ServiceRequest.Status.FAILED
+            locked.failed_at = now
+            locked.failure_reason = "no_interpreter_available"
+            locked.save()
+            failed += 1
+    return failed
+
+
+def dispatch_pending(*, now=None):
+    """Offer every waiting request to an interpreter who is now free. Emergencies go first, then the
+    request that has waited longest. Returns how many were offered."""
+    waiting = ServiceRequest.objects.filter(
+        status=ServiceRequest.Status.PENDING
+    ).order_by(
+        Case(
+            When(priority=ServiceRequest.Priority.EMERGENCY, then=Value(0)),
+            default=Value(1),
+            output_field=IntegerField(),
+        ),
+        "created_at",
+        "id",
+    )
+    offered = 0
+    for found in waiting:
+        if offer_next(found, now=now) is not None:
+            offered += 1
+    return offered
+
+
+def refresh_request(service_request, *, now=None):
+    """Bring one request up to date: expire its offer if unanswered, give up if it has waited too
+    long, and otherwise look for another interpreter. The app polling for status calls this, so the
+    queue keeps moving without a background worker. A waiting request whose requester has gone quiet
+    is cancelled before it is offered again (V2-009); one that has run out of time fails first."""
+    now = now or timezone.now()
+    expire_stale_offers(now=now, service_request=service_request)
+    service_request.refresh_from_db()
+    if service_request.status == ServiceRequest.Status.PENDING:
+        fail_overdue_requests(now=now, service_request=service_request)
+        service_request.refresh_from_db()
+    cancel_if_requester_gone(service_request, now)
+    if service_request.status == ServiceRequest.Status.PENDING:
+        offer_next(service_request, now=now)
+        service_request.refresh_from_db()
+    return service_request
+
+
+def sweep(*, now=None):
+    """Move the whole queue forward once. Meant to be run every minute or so, by the
+    `dispatch_requests` command or the health check."""
+    now = now or timezone.now()
+    expired = expire_stale_offers(now=now)
+    # Requests that have waited too long fail first: the person has almost certainly given up, so
+    # an interpreter should not be asked to take one.
+    failed = fail_overdue_requests(now=now)
+    # Then waiting requests whose requester's app has gone quiet are cancelled (V2-009).
+    cancel_disconnected_requests(now=now)
+    offered = dispatch_pending(now=now)
+    return {"expired": expired, "offered": offered, "failed": failed}

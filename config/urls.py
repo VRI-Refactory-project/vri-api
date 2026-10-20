@@ -1,3 +1,6 @@
+import logging
+
+from django.conf import settings
 from django.contrib import admin
 from django.db import connection
 from django.http import JsonResponse
@@ -8,7 +11,10 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from apps.service_requests.services import sweep
 from apps.service_requests.views import InterpreterOffersView
+
+logger = logging.getLogger(__name__)
 
 
 def health(request):
@@ -18,6 +24,13 @@ def health(request):
     """
     with connection.cursor() as cursor:
         cursor.execute("SELECT 1")
+    if settings.DISPATCH_REQUESTS_ON_HEALTH:
+        # The monitor calls this every few minutes, which is how the request queue moves on the free
+        # server. A problem here must never make the health check itself fail.
+        try:
+            sweep()
+        except Exception:
+            logger.exception("Request queue sweep failed")
     return JsonResponse({"status": "ok"})
 
 
