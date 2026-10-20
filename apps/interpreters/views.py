@@ -100,7 +100,7 @@ class CertificationUploadView(generics.CreateAPIView):
     ),
 )
 class InterpreterProfileDetailView(generics.RetrieveUpdateAPIView):
-    permission_classes = (permissions.IsAuthenticated,)
+    permission_classes = (permissions.IsAuthenticated, IsInterpreter)
     serializer_class = InterpreterProfileSerializer
 
     def get_object(self):
@@ -363,7 +363,7 @@ def parse_editable_date(value):
     responses=WeekScheduleSerializer,
 )
 class WeeklyScheduleView(APIView):
-    permission_classes = (permissions.IsAuthenticated,)
+    permission_classes = (permissions.IsAuthenticated, IsInterpreter)
 
     def get(self, request):
         profile = get_interpreter_profile(request.user)
@@ -397,7 +397,7 @@ class WeeklyScheduleView(APIView):
     responses=DayScheduleSerializer,
 )
 class DayAvailabilityView(APIView):
-    permission_classes = (permissions.IsAuthenticated,)
+    permission_classes = (permissions.IsAuthenticated, IsInterpreter)
 
     def patch(self, request, day):
         profile = get_interpreter_profile(request.user)
@@ -454,7 +454,7 @@ def status_payload(profile):
 class AvailabilityStatusView(APIView):
     """The dashboard control (MOB-01 to MOB-04): read the status, flip the switch."""
 
-    permission_classes = (permissions.IsAuthenticated,)
+    permission_classes = (permissions.IsAuthenticated, IsInterpreter)
 
     @extend_schema(
         tags=["Interpreter Availability"],
@@ -506,7 +506,7 @@ class AvailabilityStatusView(APIView):
     responses=MonthExceptionsSerializer,
 )
 class ExceptionListView(APIView):
-    permission_classes = (permissions.IsAuthenticated,)
+    permission_classes = (permissions.IsAuthenticated, IsInterpreter)
 
     def get(self, request):
         profile = get_interpreter_profile(request.user)
@@ -539,7 +539,7 @@ class ExceptionListView(APIView):
     responses={204: None},
 )
 class ExceptionDetailView(APIView):
-    permission_classes = (permissions.IsAuthenticated,)
+    permission_classes = (permissions.IsAuthenticated, IsInterpreter)
 
     def delete(self, request, day):
         profile = get_interpreter_profile(request.user)
@@ -555,7 +555,7 @@ class ExceptionDetailView(APIView):
 
 class AvailabilityPeriodViewSet(viewsets.ModelViewSet):
     serializer_class = AvailabilityPeriodSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsInterpreter]
 
     def get_queryset(self):
         # Users can only view and manage their own availability
