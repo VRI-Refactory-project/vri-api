@@ -1,114 +1,90 @@
-from apps.interpreters.models import Specialisation
 from rest_framework import serializers
 
-from .models import SessionRequest
-from .services import queue_position as get_queue_position
+from apps.interpreters.models import Specialisation
+from apps.service_requests.models import RequestOffer, ServiceRequest
+
+# The contexts a requester can choose. "Other" is an interpreter specialisation only.
+REQUEST_CONTEXTS = (Specialisation.GENERAL, Specialisation.MEDICAL, Specialisation.LEGAL)
 
 
-class SessionRequestCreateSerializer(serializers.ModelSerializer):
-    """Serializer used when a Deaf user or institutional requester creates a new request.
-    Validates input fields and accepts idempotency keys for network retries.
-    """
-
-    specialisation = serializers.ChoiceField(
-        choices=Specialisation.choices,
-        default=Specialisation.GENERAL,
-        required=False,
-    )
-    description = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        default="",
-    )
-    is_emergency = serializers.BooleanField(
-        default=False,
-        required=False,
-    )
-    request_key = serializers.CharField(
-        required=False,
-        allow_null=True,
-        write_only=True,
-        max_length=64,
-    )
-
-    class Meta:
-        model = SessionRequest
-        fields = (
-            "specialisation",
-            "description",
-            "is_emergency",
-            "request_key",
-        )
-
-    def validate_specialisation(self, value):
-        if value not in Specialisation.values:
-            raise serializers.ValidationError(
-                "Select a valid interpreter specialisation (general, medical, or legal)."
-            )
-        return value
-
-
-class SessionRequestSerializer(serializers.ModelSerializer):
-    """Complete detail serializer for SessionRequest data returned to clients.
-    Exposes participant IDs, status labels, queue metrics, and timestamps.
-    """
+class ServiceRequestSerializer(serializers.ModelSerializer):
+    """What the person who asked sees. Who an offer went to is not shown until they accept."""
 
     requester_id = serializers.IntegerField(source="requester.id", read_only=True)
-    offered_interpreter_id = serializers.IntegerField(
-        source="offered_interpreter.id",
-        read_only=True,
-        allow_null=True,
-    )
-    accepted_interpreter_id = serializers.IntegerField(
-        source="accepted_interpreter.id",
-        read_only=True,
-        allow_null=True,
-    )
-    status_label = serializers.CharField(source="get_status_display", read_only=True)
-    queue_position = serializers.SerializerMethodField()
+    interpreter_id = serializers.SerializerMethodField()
+    interpreter = serializers.SerializerMethodField()
 
     class Meta:
-        model = SessionRequest
+        model = ServiceRequest
         fields = (
             "id",
             "requester_id",
-            "offered_interpreter_id",
-            "accepted_interpreter_id",
-            "specialisation",
+            "interpreter_id",
+            "interpreter",
+            "specialisation_required",
             "description",
-            "is_emergency",
+            "priority",
+            "request_key",
             "status",
-            "status_label",
-            "queue_position",
-            "matched_by_fallback",
+            "assigned_at",
+            "cancelled_at",
+            "cancel_reason",
             "created_at",
-            "queued_at",
-            "offered_at",
-            "accepted_at",
             "updated_at",
         )
-        read_only_fields = fields
+        read_only_fields = (
+            "id",
+            "requester_id",
+            "interpreter_id",
+            "interpreter",
+            "status",
+            "assigned_at",
+            "cancelled_at",
+            "cancel_reason",
+            "created_at",
+            "updated_at",
+        )
+        extra_kwargs = {"request_key": {"write_only": True, "required": False}}
 
-    def get_queue_position(self, obj):
-        """Returns the integer position in queue if status is QUEUED, otherwise None."""
-        return get_queue_position(obj)
+    def get_interpreter_id(self, obj):
+        if obj.status != ServiceRequest.Status.ASSIGNED:
+            return None
+        return obj.interpreter_id
+
+    def get_interpreter(self, obj):
+        if obj.status != ServiceRequest.Status.ASSIGNED or obj.interpreter is None:
+            return None
+        profile = obj.interpreter
+        return {
+            "name": profile.user.full_name,
+            "languages": ", ".join(profile.sign_languages or []),
+        }
+
+    def validate_specialisation_required(self, value):
+        if value not in REQUEST_CONTEXTS:
+            raise serializers.ValidationError("Choose General, Medical or Legal.")
+        return value
 
 
-class SessionStatusSerializer(serializers.ModelSerializer):
-    """Lightweight serializer for mobile app polling (GET /api/v1/sessions/)."""
+class OfferedRequestSerializer(serializers.ModelSerializer):
+    """What an interpreter sees about a request offered to them."""
 
-    status_label = serializers.CharField(source="get_status_display", read_only=True)
-    queue_position = serializers.SerializerMethodField()
+    requester_name = serializers.CharField(source="requester.full_name", read_only=True)
+    expires_at = serializers.SerializerMethodField()
 
     class Meta:
-        model = SessionRequest
+        model = ServiceRequest
         fields = (
             "id",
-            "status",
-            "status_label",
-            "queue_position",
+            "specialisation_required",
+            "description",
+            "priority",
+            "requester_name",
+            "offered_at",
+            "expires_at",
+            "matched_by_fallback",
         )
-        read_only_fields = fields
 
-    def get_queue_position(self, obj):
-        return get_queue_position(obj)
+    def get_expires_at(self, obj):
+        offer = obj.offers.filter(outcome=RequestOffer.Outcome.PENDING).first()
+        return offer.expires_at if offer else None

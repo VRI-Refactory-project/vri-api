@@ -1,3 +1,4 @@
+
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -14,7 +15,7 @@ from apps.interpreters.models import (
     VerificationStatus,
 )
 from apps.notifications.models import Notification
-from apps.service_requests.models import SessionRequest, SessionRequestStatus
+from apps.service_requests.models import ServiceRequest
 
 User = get_user_model()
 
@@ -50,7 +51,7 @@ class ServiceRequestAPITests(APITestCase):
 
     def setUp(self):
         self.client.force_authenticate(user=self.requester)
-        self.url = reverse("service_requests:session-request-list-create")
+        self.url = reverse("service-request-list-create")
 
     def make_interpreter_available(self):
         now = timezone.now()
@@ -61,36 +62,36 @@ class ServiceRequestAPITests(APITestCase):
         )
 
     @patch("apps.service_requests.services.send_expo_push")
-    def test_request_is_assigned_and_notification_created(self, mock_push):
+    def test_request_is_offered_and_notification_created(self, mock_push):
         self.make_interpreter_available()
 
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
                 self.url,
                 {
-                    "specialisation": Specialisation.GENERAL,
+                    "specialisation_required": Specialisation.GENERAL,
                     "description": "Please arrange a sign language interpreter.",
                 },
                 format="json",
             )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["status"], SessionRequestStatus.OFFERED)
-        self.assertEqual(
-            response.data["offered_interpreter_id"],
-            self.interpreter_user.pk,
-        )
+        # The request is offered, not assigned: the interpreter still has to accept (V2-023).
+        self.assertEqual(response.data["status"], ServiceRequest.Status.OFFERED)
+        # Who it was offered to is not shown to the requester until they accept.
+        self.assertIsNone(response.data["interpreter_id"])
 
-        session_request = SessionRequest.objects.get(pk=response.data["id"])
-        self.assertEqual(session_request.requester, self.requester)
-        self.assertEqual(session_request.offered_interpreter, self.interpreter_user)
-        self.assertIsNotNone(session_request.offered_at)
+        service_request = ServiceRequest.objects.get(pk=response.data["id"])
+        self.assertEqual(service_request.requester, self.requester)
+        self.assertEqual(service_request.interpreter, self.interpreter)
+        self.assertIsNotNone(service_request.offered_at)
+        self.assertIsNone(service_request.assigned_at)
 
         notification = Notification.objects.get(
             user=self.interpreter_user,
             category=Notification.Category.INCOMING_REQUEST,
         )
-        self.assertEqual(notification.data["request_id"], session_request.pk)
+        self.assertEqual(notification.data["request_id"], service_request.pk)
         self.assertEqual(notification.data["screen"], "request-details")
         mock_push.assert_called_once_with(notification)
 
@@ -101,15 +102,15 @@ class ServiceRequestAPITests(APITestCase):
         response = self.client.post(
             self.url,
             {
-                "specialisation": Specialisation.GENERAL,
+                "specialisation_required": Specialisation.GENERAL,
                 "description": "Waiting for an available interpreter.",
             },
             format="json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["status"], SessionRequestStatus.QUEUED)
-        self.assertIsNone(response.data["offered_interpreter_id"])
+        self.assertEqual(response.data["status"], ServiceRequest.Status.PENDING)
+        self.assertIsNone(response.data["interpreter_id"])
         self.assertFalse(
             Notification.objects.filter(
                 user=self.interpreter_user,
@@ -122,7 +123,7 @@ class ServiceRequestAPITests(APITestCase):
 
         response = self.client.post(
             self.url,
-            {"specialisation": Specialisation.GENERAL},
+            {"specialisation_required": Specialisation.GENERAL},
             format="json",
         )
 
@@ -133,20 +134,20 @@ class ServiceRequestAPITests(APITestCase):
 
         response = self.client.post(
             self.url,
-            {"specialisation": Specialisation.GENERAL},
+            {"specialisation_required": Specialisation.GENERAL},
             format="json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_requester_only_sees_their_own_requests(self):
-        own_request = SessionRequest.objects.create(
+        own_request = ServiceRequest.objects.create(
             requester=self.requester,
-            specialisation=Specialisation.GENERAL,
+            specialisation_required=Specialisation.GENERAL,
         )
-        SessionRequest.objects.create(
+        ServiceRequest.objects.create(
             requester=self.other_requester,
-            specialisation=Specialisation.GENERAL,
+            specialisation_required=Specialisation.GENERAL,
         )
 
         response = self.client.get(self.url)
@@ -158,7 +159,7 @@ class ServiceRequestAPITests(APITestCase):
     def test_invalid_specialisation_is_rejected(self):
         response = self.client.post(
             self.url,
-            {"specialisation": "INVALID"},
+            {"specialisation_required": "INVALID"},
             format="json",
         )
 
@@ -171,13 +172,13 @@ class ServiceRequestAPITests(APITestCase):
         response = self.client.post(
             self.url,
             {
-                "specialisation": Specialisation.GENERAL,
-                "offered_interpreter": self.interpreter_user.pk,
-                "status": SessionRequestStatus.OFFERED,
+                "specialisation_required": Specialisation.GENERAL,
+                "interpreter_id": self.interpreter.pk,
+                "status": ServiceRequest.Status.ASSIGNED,
             },
             format="json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["status"], SessionRequestStatus.QUEUED)
-        self.assertIsNone(response.data["offered_interpreter_id"])
+        self.assertEqual(response.data["status"], ServiceRequest.Status.PENDING)
+        self.assertIsNone(response.data["interpreter_id"])

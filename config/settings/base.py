@@ -154,6 +154,19 @@ DEFAULT_FROM_EMAIL = env(
 EXPO_PUSH_ENABLED = env.bool("EXPO_PUSH_ENABLED", default=False)
 EXPO_ACCESS_TOKEN = env("EXPO_ACCESS_TOKEN", default="")
 
+# --- Interpreter requests (V2-022) ---
+# How long an interpreter has to answer an offer, and how long a request may wait before it fails.
+REQUEST_OFFER_EXPIRY_SECONDS = env.int("REQUEST_OFFER_EXPIRY_SECONDS", default=60)
+REQUEST_MAX_WAIT_SECONDS = env.int("REQUEST_MAX_WAIT_SECONDS", default=300)
+# Move the request queue forward every time the uptime monitor calls /api/health/. Switch it on when
+# no scheduler is available (Render free). Off by default.
+DISPATCH_REQUESTS_ON_HEALTH = env.bool("DISPATCH_REQUESTS_ON_HEALTH", default=False)
+# A waiting request is cancelled when the requester's app has not checked on it for this long (V2-009).
+# Placeholder until the product owner decides (REQUESTER_DISCONNECT_GRACE_WINDOW is TBD).
+REQUESTER_DISCONNECT_GRACE_WINDOW = timedelta(
+    seconds=env.int("REQUESTER_DISCONNECT_GRACE_WINDOW_SECONDS", default=120)
+)
+
 # --- Logging (recovery events are logged for audit; codes and passwords never are) ---
 LOGGING = {
     "version": 1,
@@ -212,6 +225,8 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         "VerificationStatusEnum": "apps.interpreters.models.VerificationStatus",
         "StaffRoleEnum": "apps.institutions.models.StaffRole",  # V2-006, so it is not confused with user roles
+        "ServiceRequestStatusEnum": "apps.service_requests.models.ServiceRequest.Status",  # V2-009
+        "SpecialisationEnum": "apps.interpreters.models.Specialisation",
     },
     # Serve the docs UI from our own static files. Some networks (e.g. campus Wi-Fi) block
     # cdn.jsdelivr.net, which leaves /api/docs/ as a blank page.

@@ -5,7 +5,8 @@ from django.db import models
 class AuditLog(models.Model):
     """A record of something an administrator or user did that the platform must be able to account for.
 
-    Administrator sign-ins (V2-064), institution lifecycle changes, and institution staff changes (V2-006).
+    Administrator sign-ins (V2-064), institution lifecycle changes, institution staff changes (V2-006),
+    and interpreter requests (V2-009).
     Add an `Event` when another action needs recording. Entries are written by `apps.audit.services.record`
     and are read-only in the admin site.
     """
@@ -23,6 +24,9 @@ class AuditLog(models.Model):
         STAFF_UPDATED = "staff_updated", "Institution staff account changed"
         STAFF_REVOKED = "staff_revoked", "Institution staff access revoked"
         STAFF_REINSTATED = "staff_reinstated", "Institution staff access reinstated"
+        REQUEST_CREATED = "request_created", "Interpreter request created"
+        REQUEST_OFFERED = "request_offered", "Interpreter request offered to an interpreter"
+        REQUEST_CANCELLED = "request_cancelled", "Interpreter request cancelled"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -44,6 +48,8 @@ class AuditLog(models.Model):
         db_index=True,
     )
     ip_address = models.GenericIPAddressField(null=True, blank=True)
+    # Extra facts about the action, e.g. {"request_id": 12, "reason": "REQUESTER_DISCONNECTED"}.
+    details = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:

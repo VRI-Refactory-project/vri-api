@@ -1,26 +1,22 @@
 from django.urls import path
-from .views import (
-    SessionRequestListCreateView,
-    SessionRequestDetailView,
-    SessionStatusView,
-)
 
-app_name = "service_requests"
+from apps.service_requests import views
 
 urlpatterns = [
     path(
         "",
-        SessionRequestListCreateView.as_view(),
-        name="session-request-list-create",
+        views.ServiceRequestListCreateView.as_view(),
+        name="service-request-list-create",
     ),
+    path("mine/", views.MyOpenRequestView.as_view(), name="service-request-mine"),
     path(
         "<int:pk>/",
-        SessionRequestDetailView.as_view(),
-        name="session-request-detail",
+        views.ServiceRequestDetailView.as_view(),
+        name="service-request-detail",
     ),
     path(
-        "<int:pk>/status/",
-        SessionStatusView.as_view(),
-        name="session-request-status",
+        "<int:pk>/cancel/",
+        views.ServiceRequestCancelView.as_view(),
+        name="service-request-cancel",
     ),
 ]

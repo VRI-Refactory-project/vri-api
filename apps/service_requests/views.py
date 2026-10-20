@@ -1,124 +1,130 @@
+from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
-from rest_framework import generics, permissions, status
-from rest_framework.exceptions import PermissionDenied
+from rest_framework import generics, status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from .models import SessionRequest
-from .serializers import (
-    SessionRequestCreateSerializer,
-    SessionRequestSerializer,
-    SessionStatusSerializer,
+from apps.core.permissions import IsDeafUser, IsInterpreter
+from apps.service_requests.models import OPEN_STATUSES, ServiceRequest
+from apps.service_requests.serializers import (
+    OfferedRequestSerializer,
+    ServiceRequestSerializer,
 )
-from .services import create_session_request, expire_stale_queued_requests
+from apps.service_requests.services import (
+    NotCancellable,
+    OpenRequestExists,
+    cancel_request,
+    create_request,
+    expire_stale_offers,
+    refresh_for_requester,
+)
 
 
-@extend_schema(tags=["Session requests"])
-class SessionRequestListCreateView(generics.ListCreateAPIView):
-    """V2-022 / V2-023: List all session requests for the authenticated user, or create a new request.
+class ServiceRequestListCreateView(generics.ListCreateAPIView):
+    """GET /api/v1/requests/ lists your requests. POST asks for an interpreter."""
 
-    When created, the request is immediately routed to a free interpreter or placed
-    in the QUEUED state.
-    """
-
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_serializer_class(self):
-        if self.request.method == "POST":
-            return SessionRequestCreateSerializer
-        return SessionRequestSerializer
+    serializer_class = ServiceRequestSerializer
+    permission_classes = [IsAuthenticated, IsDeafUser]
 
     def get_queryset(self):
-        # Requesters can only access their own session requests
-        return (
-            SessionRequest.objects.filter(requester=self.request.user)
-            .select_related("requester", "offered_interpreter", "accepted_interpreter")
-            .order_by("-created_at")
-        )
+        return self.request.user.service_requests.select_related(
+            "requester", "interpreter", "interpreter__user"
+        ).all()
 
-    @extend_schema(
-        summary="List my session requests",
-        description="Returns a list of all historical and active requests submitted by the current user.",
-        responses={200: SessionRequestSerializer(many=True)},
-    )
-    def get(self, request, *args, **kwargs):
-        expire_stale_queued_requests()
-        return super().get(request, *args, **kwargs)
+    def list(self, request, *args, **kwargs):
+        # Reading counts as "still here" and applies any timeout that is due.
+        for open_request in self.get_queryset().filter(status__in=OPEN_STATUSES):
+            refresh_for_requester(open_request)
+        return super().list(request, *args, **kwargs)
 
-    @extend_schema(
-        summary="Request an interpreter",
-        description=(
-            "V2-022 / V2-023: Creates a request and offers it to an available interpreter. "
-            "If no interpreter is available, it is automatically placed in QUEUED state (never rejected)."
-        ),
-        request=SessionRequestCreateSerializer,
-        responses={201: SessionRequestSerializer},
-    )
+    @extend_schema(responses={201: ServiceRequestSerializer, 409: None})
     def create(self, request, *args, **kwargs):
-        # Block creation attempts from interpreters (returns 403 Forbidden)
-        if getattr(request.user, "role", None) == "interpreter":
-            raise PermissionDenied("Interpreters cannot create session requests.")
-
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
-        # Unified creation & routing service call
-        session_request = create_session_request(
-            requester=request.user,
-            specialisation=serializer.validated_data.get("specialisation", "general"),
-            description=serializer.validated_data.get("description", ""),
-            is_emergency=serializer.validated_data.get("is_emergency", False),
-            request_key=serializer.validated_data.get("request_key"),
+        try:
+            service_request, created = create_request(
+                requester=request.user, request=request, **serializer.validated_data
+            )
+        except OpenRequestExists:
+            open_request = ServiceRequest.objects.filter(
+                requester=request.user, status__in=OPEN_STATUSES
+            ).first()
+            return Response(
+                {
+                    "detail": "You already have an open request.",
+                    "code": "open_request_exists",
+                    "open_request_id": open_request.pk if open_request else None,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(
+            ServiceRequestSerializer(service_request).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
-        response_serializer = SessionRequestSerializer(
-            session_request, context={"request": request}
-        )
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
+class MyOpenRequestView(APIView):
+    """GET /api/v1/requests/mine/: the request still looking for an interpreter, so the app can
+    pick it up again after being closed. 204 when there is none."""
+
+    permission_classes = [IsAuthenticated, IsDeafUser]
+
+    @extend_schema(responses={200: ServiceRequestSerializer, 204: None})
+    def get(self, request):
+        open_request = ServiceRequest.objects.filter(
+            requester=request.user, status__in=OPEN_STATUSES
+        ).first()
+        if open_request is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        open_request = refresh_for_requester(open_request)
+        if open_request.status not in OPEN_STATUSES:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(ServiceRequestSerializer(open_request).data)
 
 
-@extend_schema(tags=["Session requests"])
-class SessionRequestDetailView(generics.RetrieveAPIView):
-    """V2-023: Retrieve full details and status for a specific session request.
+class ServiceRequestDetailView(APIView):
+    """GET /api/v1/requests/<id>/: where the request is now. Asking also counts as "still here"."""
 
-    Automatically checks and expires timed-out queued requests before returning.
-    """
+    permission_classes = [IsAuthenticated, IsDeafUser]
 
-    serializer_class = SessionRequestSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        return SessionRequest.objects.filter(
-            requester=self.request.user
-        ).select_related("requester", "offered_interpreter", "accepted_interpreter")
-
-    @extend_schema(
-        summary="Get request detail",
-        description="Returns full session request details, including current status and 1-based queue position.",
-        responses={200: SessionRequestSerializer},
-    )
-    def get(self, request, *args, **kwargs):
-        expire_stale_queued_requests()
-        return super().get(request, *args, **kwargs)
+    @extend_schema(responses={200: ServiceRequestSerializer})
+    def get(self, request, pk):
+        found = get_object_or_404(ServiceRequest, pk=pk, requester=request.user)
+        found = refresh_for_requester(found)
+        return Response(ServiceRequestSerializer(found).data)
 
 
-@extend_schema(tags=["Session requests"])
-class SessionStatusView(generics.RetrieveAPIView):
-    """V2-023-MOB-02: Lightweight status polling endpoint for mobile clients to monitor queue position.
+class ServiceRequestCancelView(APIView):
+    """POST /api/v1/requests/<id>/cancel/"""
 
-    Minimizes payload size over low-bandwidth network connections.
-    """
+    permission_classes = [IsAuthenticated, IsDeafUser]
 
-    serializer_class = SessionStatusSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    @extend_schema(request=None, responses={200: ServiceRequestSerializer, 409: None})
+    def post(self, request, pk):
+        found = get_object_or_404(ServiceRequest, pk=pk, requester=request.user)
+        try:
+            cancelled = cancel_request(found)
+        except NotCancellable:
+            return Response(
+                {
+                    "detail": "This request can no longer be cancelled.",
+                    "code": "not_cancellable",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(ServiceRequestSerializer(cancelled).data)
 
-    def get_queryset(self):
-        return SessionRequest.objects.filter(requester=self.request.user)
 
-    @extend_schema(
-        summary="Poll request status",
-        description="Lightweight status check for polling during queue waiting state.",
-        responses={200: SessionStatusSerializer},
-    )
-    def get(self, request, *args, **kwargs):
-        expire_stale_queued_requests()
-        return super().get(request, *args, **kwargs)
+class InterpreterOffersView(APIView):
+    """GET /api/v1/interpreters/me/requests/: requests currently offered to the signed-in interpreter."""
+
+    permission_classes = [IsAuthenticated, IsInterpreter]
+
+    @extend_schema(responses={200: OfferedRequestSerializer(many=True)})
+    def get(self, request):
+        expire_stale_offers(interpreter_user=request.user)
+        offered = ServiceRequest.objects.filter(
+            status=ServiceRequest.Status.OFFERED, interpreter__user=request.user
+        ).select_related("requester")
+        return Response(OfferedRequestSerializer(offered, many=True).data)

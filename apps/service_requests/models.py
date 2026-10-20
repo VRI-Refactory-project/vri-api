@@ -1,129 +1,137 @@
 from django.conf import settings
 from django.db import models
-from apps.interpreters.models import Specialisation
+
+from apps.interpreters.models import InterpreterProfile, Specialisation
 
 
-class SessionRequestStatus(models.TextChoices):
-    CREATED = "CREATED", "Created"
-    QUEUED = "QUEUED", "Waiting for an interpreter"
-    OFFERED = "OFFERED", "Offered to interpreter"
-    ACCEPTED = "ACCEPTED", "Accepted"
-    DECLINED = "DECLINED", "Declined"
-    EXPIRED = "EXPIRED", "Expired"
-    CONNECTING = "CONNECTING", "Connecting"
-    ACTIVE = "ACTIVE", "Connected"
-    COMPLETED = "COMPLETED", "Session ended"
-    CANCELLED = "CANCELLED", "Request cancelled"
-    FAILED = "FAILED", "No interpreter available"
+class ServiceRequest(models.Model):
+    class Status(models.TextChoices):
+        CREATED = "CREATED", "Created"  # just made, not routed yet (only lasts during the create call)
+        PENDING = "PENDING", "Pending"  # waiting for an interpreter
+        OFFERED = "OFFERED", "Offered"  # sent to one interpreter, no answer yet
+        ASSIGNED = "ASSIGNED", "Assigned"  # an interpreter accepted
+        CANCELLED = "CANCELLED", "Cancelled"
+        FAILED = "FAILED", "Failed"  # nobody could take it in time
 
+    class CancelReason(models.TextChoices):
+        REQUESTER_DISCONNECTED = "REQUESTER_DISCONNECTED", "Requester disconnected"
 
-class SessionRequest(models.Model):
-    # --- Participants ---
+    class Priority(models.TextChoices):
+        NORMAL = "NORMAL", "Normal"
+        EMERGENCY = "EMERGENCY", "Emergency"
+
     requester = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="session_requests",
+        related_name="service_requests",
     )
-    requester_role = models.CharField(
-        max_length=20,
-        default="deaf_hoh",
-        help_text="Role at time of request (deaf_hoh or institution) for audit trail.",
-    )
-    institution = models.ForeignKey(
-        "institutions.InstitutionProfile",
+    # The interpreter this request is with: offered it (OFFERED) or accepted it (ASSIGNED).
+    interpreter = models.ForeignKey(
+        InterpreterProfile,
         on_delete=models.SET_NULL,
+        related_name="assigned_service_requests",
         null=True,
         blank=True,
-        related_name="institutional_requests",
-        help_text="Attributed institution when requested by institutional staff.",
     )
-    offered_interpreter = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="offered_requests",
-        help_text="Interpreter currently holding the routed offer.",
-    )
-    accepted_interpreter = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="accepted_requests",
-        help_text="Interpreter who accepted and handled the call.",
-    )
-
-    # --- Request Details ---
-    specialisation = models.CharField(
+    specialisation_required = models.CharField(
         max_length=20,
         choices=Specialisation.choices,
         default=Specialisation.GENERAL,
-        help_text="Required domain skill (medical, legal, general).",
     )
-    description = models.TextField(
-        blank=True,
-        default="",
-        help_text="Optional requester notes or context description.",
-    )
-    is_emergency = models.BooleanField(
-        default=False,
-        db_index=True,
-        help_text="V2-024 emergency priority flag.",
+    description = models.TextField(blank=True, default="")
+    priority = models.CharField(
+        max_length=10, choices=Priority.choices, default=Priority.NORMAL
     )
     status = models.CharField(
         max_length=20,
-        choices=SessionRequestStatus.choices,
-        default=SessionRequestStatus.CREATED,
+        choices=Status.choices,
+        default=Status.PENDING,
         db_index=True,
     )
-
-    # --- Routing & Idempotency Metadata ---
-    request_key = models.CharField(
-        max_length=64,
-        null=True,
-        blank=True,
-        help_text="Client-generated key to prevent duplicate bookings on retry.",
-    )
-    matched_by_fallback = models.BooleanField(
-        default=False,
-        help_text="True if matched to a general interpreter due to specialist unavailability.",
-    )
-
-    # --- Lifecycle Timestamps ---
-    created_at = models.DateTimeField(auto_now_add=True)
-    queued_at = models.DateTimeField(null=True, blank=True)
+    # Sent by the app so a retry after a dropped connection does not make a second request.
+    request_key = models.CharField(max_length=64, null=True, blank=True)
     offered_at = models.DateTimeField(null=True, blank=True)
-    accepted_at = models.DateTimeField(null=True, blank=True)
+    # True when a specialist was asked for and a general interpreter was offered instead.
+    matched_by_fallback = models.BooleanField(default=False)
+    assigned_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancel_reason = models.CharField(
+        max_length=30, choices=CancelReason.choices, blank=True, default=""
+    )
     failed_at = models.DateTimeField(null=True, blank=True)
+    failure_reason = models.CharField(max_length=100, blank=True, default="")
+    # Updated each time the requester's app asks for the status: proof they are still there.
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        # Emergency calls jump ahead in database queries; ties are broken by FIFO created_at ordering
-        ordering = ["-is_emergency", "created_at"]
-        indexes = [
-            models.Index(fields=["status", "is_emergency", "created_at"]),
-        ]
+        ordering = ["-created_at"]
         constraints = [
+            # A person can only have one open request at a time.
+            models.UniqueConstraint(
+                fields=["requester"],
+                condition=models.Q(status__in=["CREATED", "PENDING", "OFFERED"]),
+                name="one_open_request_per_requester",
+            ),
+            # An interpreter can only hold one offer at a time.
+            models.UniqueConstraint(
+                fields=["interpreter"],
+                condition=models.Q(status="OFFERED"),
+                name="one_offer_per_interpreter",
+            ),
+            # The same key from the same person is the same request.
             models.UniqueConstraint(
                 fields=["requester", "request_key"],
-                name="unique_requester_request_key",
                 condition=models.Q(request_key__isnull=False),
-            )
+                name="unique_request_key_per_requester",
+            ),
         ]
 
     def __str__(self):
-        return f"Request #{self.id} ({self.status}) - Emergency: {self.is_emergency}"
+        return f"Request {self.pk} ({self.status})"
 
-    @property
-    def is_queued(self) -> bool:
-        return self.status == SessionRequestStatus.QUEUED
 
-    @property
-    def is_terminal(self) -> bool:
-        return self.status in [
-            SessionRequestStatus.COMPLETED,
-            SessionRequestStatus.CANCELLED,
-            SessionRequestStatus.FAILED,
+# A request is "open" while it is still looking for an interpreter.
+OPEN_STATUSES = (
+    ServiceRequest.Status.CREATED,
+    ServiceRequest.Status.PENDING,
+    ServiceRequest.Status.OFFERED,
+)
+
+
+class RequestOffer(models.Model):
+    """Every time a request was offered to an interpreter, and what they did.
+
+    This is the record of declined offers. It also tells the router who has already been asked
+    about a request, and who was offered something longest ago.
+    """
+
+    class Outcome(models.TextChoices):
+        PENDING = "PENDING", "Waiting for an answer"
+        ACCEPTED = "ACCEPTED", "Accepted"
+        DECLINED = "DECLINED", "Declined"
+        EXPIRED = "EXPIRED", "Not answered in time"
+        WITHDRAWN = "WITHDRAWN", "Withdrawn"
+
+    service_request = models.ForeignKey(
+        ServiceRequest, on_delete=models.CASCADE, related_name="offers"
+    )
+    interpreter = models.ForeignKey(
+        InterpreterProfile, on_delete=models.CASCADE, related_name="request_offers"
+    )
+    offered_at = models.DateTimeField()
+    expires_at = models.DateTimeField()
+    outcome = models.CharField(
+        max_length=10, choices=Outcome.choices, default=Outcome.PENDING
+    )
+    responded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["offered_at", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["service_request", "interpreter"],
+                name="one_offer_per_request_and_interpreter",
+            ),
         ]
