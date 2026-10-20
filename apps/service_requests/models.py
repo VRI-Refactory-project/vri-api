@@ -6,10 +6,14 @@ from apps.interpreters.models import InterpreterProfile, Specialisation
 
 class ServiceRequest(models.Model):
     class Status(models.TextChoices):
+        CREATED = "CREATED", "Created"  # just made, not routed yet (only lasts during the create call)
         PENDING = "PENDING", "Pending"  # waiting for an interpreter
         OFFERED = "OFFERED", "Offered"  # sent to one interpreter, no answer yet
         ASSIGNED = "ASSIGNED", "Assigned"  # an interpreter accepted
         CANCELLED = "CANCELLED", "Cancelled"
+
+    class CancelReason(models.TextChoices):
+        REQUESTER_DISCONNECTED = "REQUESTER_DISCONNECTED", "Requester disconnected"
 
     class Priority(models.TextChoices):
         NORMAL = "NORMAL", "Normal"
@@ -50,6 +54,9 @@ class ServiceRequest(models.Model):
     matched_by_fallback = models.BooleanField(default=False)
     assigned_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancel_reason = models.CharField(
+        max_length=30, choices=CancelReason.choices, blank=True, default=""
+    )
     # Updated each time the requester's app asks for the status: proof they are still there.
     last_seen_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -61,7 +68,7 @@ class ServiceRequest(models.Model):
             # A person can only have one open request at a time.
             models.UniqueConstraint(
                 fields=["requester"],
-                condition=models.Q(status__in=["PENDING", "OFFERED"]),
+                condition=models.Q(status__in=["CREATED", "PENDING", "OFFERED"]),
                 name="one_open_request_per_requester",
             ),
             # An interpreter can only hold one offer at a time.
@@ -83,7 +90,11 @@ class ServiceRequest(models.Model):
 
 
 # A request is "open" while it is still looking for an interpreter.
-OPEN_STATUSES = (ServiceRequest.Status.PENDING, ServiceRequest.Status.OFFERED)
+OPEN_STATUSES = (
+    ServiceRequest.Status.CREATED,
+    ServiceRequest.Status.PENDING,
+    ServiceRequest.Status.OFFERED,
+)
 
 
 class RequestOffer(models.Model):

@@ -153,6 +153,16 @@ DEFAULT_FROM_EMAIL = env(
 EXPO_PUSH_ENABLED = env.bool("EXPO_PUSH_ENABLED", default=False)
 EXPO_ACCESS_TOKEN = env("EXPO_ACCESS_TOKEN", default="")
 
+# --- Interpreter requests (V2-009) ---
+# A waiting request is cancelled when the requester's app has not checked on it for this long.
+# Placeholder until the product owner decides (REQUESTER_DISCONNECT_GRACE_WINDOW is TBD).
+REQUESTER_DISCONNECT_GRACE_WINDOW = timedelta(
+    seconds=env.int("REQUESTER_DISCONNECT_GRACE_WINDOW_SECONDS", default=120)
+)
+# Secret the uptime monitor sends (X-Sweep-Token header) to POST /api/v1/requests/sweep/.
+# Empty turns the endpoint off.
+REQUEST_SWEEP_TOKEN = env("REQUEST_SWEEP_TOKEN", default="")
+
 # --- Logging (recovery events are logged for audit; codes and passwords never are) ---
 LOGGING = {
     "version": 1,
@@ -211,6 +221,8 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         "VerificationStatusEnum": "apps.interpreters.models.VerificationStatus",
         "StaffRoleEnum": "apps.institutions.models.StaffRole",  # V2-006, so it is not confused with user roles
+        "ServiceRequestStatusEnum": "apps.service_requests.models.ServiceRequest.Status",  # V2-009
+        "SpecialisationEnum": "apps.interpreters.models.Specialisation",
     },
     # Serve the docs UI from our own static files. Some networks (e.g. campus Wi-Fi) block
     # cdn.jsdelivr.net, which leaves /api/docs/ as a blank page.
