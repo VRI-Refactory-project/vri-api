@@ -95,7 +95,6 @@ class ServiceRequestAPITests(APITestCase):
         self.assertEqual(notification.data["screen"], "request-details")
         mock_push.assert_called_once_with(notification)
 
-
     def test_request_remains_pending_when_no_interpreter_is_available(self):
         self.interpreter.is_available = False
         self.interpreter.save(update_fields=["is_available"])
@@ -118,7 +117,6 @@ class ServiceRequestAPITests(APITestCase):
                 category=Notification.Category.INCOMING_REQUEST,
             ).exists()
         )
-
 
     def test_interpreter_cannot_create_service_request(self):
         self.client.force_authenticate(user=self.interpreter_user)
@@ -166,7 +164,6 @@ class ServiceRequestAPITests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
 
     def test_client_cannot_choose_interpreter_or_set_status(self):
         self.interpreter.is_available = False
