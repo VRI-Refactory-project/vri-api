@@ -1,23 +1,30 @@
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema
+from django.utils import timezone
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.permissions import IsDeafUser, IsInterpreter
-from apps.service_requests.models import OPEN_STATUSES, ServiceRequest
+from apps.service_requests.models import OPEN_STATUSES, RequestOffer, ServiceRequest
 from apps.service_requests.serializers import (
+    OFFER_STATUS_FOR_SCREEN,
+    InterpreterOfferSerializer,
     OfferedRequestSerializer,
+    OfferResponseSerializer,
+    OfferStatusSerializer,
     ServiceRequestSerializer,
 )
 from apps.service_requests.services import (
     NotCancellable,
+    OfferNotActive,
     OpenRequestExists,
     cancel_request,
     create_request,
     expire_stale_offers,
     refresh_for_requester,
+    respond_to_offer,
 )
 
 
@@ -128,3 +135,60 @@ class InterpreterOffersView(APIView):
             status=ServiceRequest.Status.OFFERED, interpreter__user=request.user
         ).select_related("requester")
         return Response(OfferedRequestSerializer(offered, many=True).data)
+
+
+class InterpreterOfferListView(APIView):
+    """GET /api/v1/interpreters/me/offers/: the offers waiting for the signed-in interpreter's answer
+    (V2-010). Expired offers are taken back first, so they never show."""
+
+    permission_classes = [IsAuthenticated, IsInterpreter]
+
+    @extend_schema(responses={200: InterpreterOfferSerializer(many=True)})
+    def get(self, request):
+        expire_stale_offers(interpreter_user=request.user)
+        offers = RequestOffer.objects.filter(
+            interpreter__user=request.user,
+            outcome=RequestOffer.Outcome.PENDING,
+            service_request__status=ServiceRequest.Status.OFFERED,
+            expires_at__gt=timezone.now(),
+        ).select_related("service_request__requester")
+        return Response(InterpreterOfferSerializer(offers, many=True).data)
+
+
+class InterpreterOfferRespondView(APIView):
+    """POST /api/v1/interpreters/me/offers/<id>/respond/ with {"action": "accept" | "decline"} (V2-010)."""
+
+    permission_classes = [IsAuthenticated, IsInterpreter]
+
+    @extend_schema(
+        request=OfferResponseSerializer,
+        responses={
+            200: OfferStatusSerializer,
+            409: OpenApiResponse(description="The offer expired, was withdrawn, or was already answered."),
+        },
+    )
+    def post(self, request, pk):
+        offer = get_object_or_404(RequestOffer, pk=pk, interpreter__user=request.user)
+        serializer = OfferResponseSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            offer = respond_to_offer(offer, serializer.validated_data["action"], request=request)
+        except OfferNotActive as error:
+            return Response(
+                {"detail": str(error), "code": "offer_not_active"},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response({"status": OFFER_STATUS_FOR_SCREEN[offer.outcome]})
+
+
+class InterpreterOfferStateView(APIView):
+    """GET /api/v1/interpreters/me/offers/<id>/state/: whether the offer is still waiting (V2-010)."""
+
+    permission_classes = [IsAuthenticated, IsInterpreter]
+
+    @extend_schema(responses={200: OfferStatusSerializer})
+    def get(self, request, pk):
+        offer = get_object_or_404(RequestOffer, pk=pk, interpreter__user=request.user)
+        expire_stale_offers(service_request=offer.service_request)
+        offer.refresh_from_db()
+        return Response({"status": OFFER_STATUS_FOR_SCREEN[offer.outcome]})
