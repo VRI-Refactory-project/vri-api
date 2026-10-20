@@ -10,6 +10,7 @@ class ServiceRequest(models.Model):
         OFFERED = "OFFERED", "Offered"  # sent to one interpreter, no answer yet
         ASSIGNED = "ASSIGNED", "Assigned"  # an interpreter accepted
         CANCELLED = "CANCELLED", "Cancelled"
+        FAILED = "FAILED", "Failed"  # nobody could take it in time
 
     class Priority(models.TextChoices):
         NORMAL = "NORMAL", "Normal"
@@ -50,6 +51,8 @@ class ServiceRequest(models.Model):
     matched_by_fallback = models.BooleanField(default=False)
     assigned_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
+    failed_at = models.DateTimeField(null=True, blank=True)
+    failure_reason = models.CharField(max_length=100, blank=True, default="")
     # Updated each time the requester's app asks for the status: proof they are still there.
     last_seen_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
