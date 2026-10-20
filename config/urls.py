@@ -8,6 +8,8 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from apps.service_requests.views import InterpreterOffersView
+
 
 def health(request):
     """Answer "ok" after a trivial database query.
@@ -25,6 +27,11 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     # API v1 Endpoints
     path("api/v1/", include("apps.accounts.urls")),
+    path(
+        "api/v1/interpreters/me/requests/",
+        InterpreterOffersView.as_view(),
+        name="interpreter-offers",
+    ),  # V2-022, requests offered to the signed-in interpreter
     path("api/v1/interpreters/", include("apps.interpreters.urls")),
     path(
         "api/v1/manage/interpreters/",

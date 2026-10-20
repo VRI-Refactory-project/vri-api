@@ -62,7 +62,7 @@ class ServiceRequestAPITests(APITestCase):
         )
 
     @patch("apps.service_requests.services.send_expo_push")
-    def test_request_is_assigned_and_notification_created(self, mock_push):
+    def test_request_is_offered_and_notification_created(self, mock_push):
         self.make_interpreter_available()
 
         with self.captureOnCommitCallbacks(execute=True):
@@ -76,16 +76,16 @@ class ServiceRequestAPITests(APITestCase):
             )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["status"], ServiceRequest.Status.ASSIGNED)
-        self.assertEqual(
-            response.data["interpreter_id"],
-            self.interpreter.pk,
-        )
+        # The request is offered, not assigned: the interpreter still has to accept (V2-023).
+        self.assertEqual(response.data["status"], ServiceRequest.Status.OFFERED)
+        # Who it was offered to is not shown to the requester until they accept.
+        self.assertIsNone(response.data["interpreter_id"])
 
         service_request = ServiceRequest.objects.get(pk=response.data["id"])
         self.assertEqual(service_request.requester, self.requester)
         self.assertEqual(service_request.interpreter, self.interpreter)
-        self.assertIsNotNone(service_request.assigned_at)
+        self.assertIsNotNone(service_request.offered_at)
+        self.assertIsNone(service_request.assigned_at)
 
         notification = Notification.objects.get(
             user=self.interpreter_user,
