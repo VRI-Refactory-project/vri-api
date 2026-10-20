@@ -3,6 +3,9 @@ from rest_framework import serializers
 from apps.interpreters.models import Specialisation
 from apps.service_requests.models import RequestOffer, ServiceRequest
 
+# The contexts a requester can choose. "Other" is an interpreter specialisation only.
+REQUEST_CONTEXTS = (Specialisation.GENERAL, Specialisation.MEDICAL, Specialisation.LEGAL)
+
 
 class ServiceRequestSerializer(serializers.ModelSerializer):
     """What the person who asked sees. Who an offer went to is not shown until they accept."""
@@ -24,6 +27,8 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
             "request_key",
             "status",
             "assigned_at",
+            "cancelled_at",
+            "cancel_reason",
             "created_at",
             "updated_at",
         )
@@ -34,6 +39,8 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
             "interpreter",
             "status",
             "assigned_at",
+            "cancelled_at",
+            "cancel_reason",
             "created_at",
             "updated_at",
         )
@@ -54,10 +61,8 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
         }
 
     def validate_specialisation_required(self, value):
-        if value not in Specialisation.values:
-            raise serializers.ValidationError(
-                "Select a valid interpreter specialisation."
-            )
+        if value not in REQUEST_CONTEXTS:
+            raise serializers.ValidationError("Choose General, Medical or Legal.")
         return value
 
 
