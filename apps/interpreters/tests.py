@@ -17,6 +17,43 @@ User = get_user_model()
 PASSWORD = "Sign-Connect-2026"
 
 
+class InterpreterProfileAccessTests(APITestCase):
+    def setUp(self):
+        self.interpreter = User.objects.create_user(
+            "0772000001",
+            PASSWORD,
+            full_name="Test Interpreter",
+            email="profile-interpreter@example.com",
+            role=User.Role.INTERPRETER,
+        )
+        self.deaf_user = User.objects.create_user(
+            "0772000002",
+            PASSWORD,
+            full_name="Test Deaf User",
+            email="profile-deaf@example.com",
+            role=User.Role.DEAF_HOH,
+        )
+        self.url = reverse("interpreters:interpreter-profile-detail")
+
+    def test_profile_requires_authentication(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 401)
+
+    def test_interpreter_can_retrieve_own_profile(self):
+        self.client.force_authenticate(user=self.interpreter)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200, response.content)
+
+    def test_non_interpreter_cannot_access_interpreter_profile(self):
+        self.client.force_authenticate(user=self.deaf_user)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 403, response.content)
+
+
 class CertificationUploadTests(APITestCase):
     def setUp(self):
         # Keep uploaded test files out of the project's certifications/ folder.
