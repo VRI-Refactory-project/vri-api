@@ -255,3 +255,58 @@ class AvailableInterpretersTests(TestCase):
     def test_empty_when_nobody_is_available(self):
         self.client.force_authenticate(user=self.deaf)
         self.assertEqual(self.client.get(self.URL).json(), [])
+
+
+class InterpreterPublicProfileTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.deaf = make_user(User.Role.DEAF_HOH, "0700000600")
+        self.client.force_authenticate(user=self.deaf)
+
+    def make_profile(self, phone, name, status=VerificationStatus.APPROVED, **extra):
+        user = make_user(User.Role.INTERPRETER, phone, full_name=name)
+        return InterpreterProfile.objects.create(
+            user=user, verification_status=status, sign_languages=["Ugandan Sign Language"], **extra
+        )
+
+    def url(self, profile):
+        return f"/api/v1/dashboard/deaf/interpreters/{profile.pk}/"
+
+    def test_only_deaf_users_can_open_a_profile(self):
+        profile = self.make_profile("0700000610", "Amina Okafor")
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self.client.get(self.url(profile)).status_code, 401)
+        self.client.force_authenticate(user=make_user(User.Role.INTERPRETER, "0700000611"))
+        self.assertEqual(self.client.get(self.url(profile)).status_code, 403)
+
+    def test_shows_public_details_and_no_contact_details(self):
+        profile = self.make_profile("0700000620", "Amina Okafor")
+
+        data = self.client.get(self.url(profile)).json()
+
+        self.assertEqual(data["name"], "Amina Okafor")
+        self.assertEqual(data["sign_languages"], ["Ugandan Sign Language"])
+        self.assertFalse(data["available_now"])
+        self.assertEqual(
+            set(data),
+            {"id", "name", "sign_languages", "specialisation", "photo_url", "available_now"},
+        )
+
+    def test_says_when_the_interpreter_is_available_now(self):
+        profile = self.make_profile("0700000630", "Amina Okafor", is_available=True)
+        now = timezone.now()
+        InterpreterAvailability.objects.create(
+            interpreter=profile, start_at=now - timedelta(hours=1), end_at=now + timedelta(hours=1)
+        )
+
+        self.assertTrue(self.client.get(self.url(profile)).json()["available_now"])
+
+    def test_an_interpreter_who_is_not_approved_cannot_be_opened(self):
+        profile = self.make_profile("0700000640", "Pending", status=VerificationStatus.INACTIVE)
+
+        self.assertEqual(self.client.get(self.url(profile)).status_code, 404)
+
+    def test_an_unknown_interpreter_is_not_found(self):
+        self.assertEqual(
+            self.client.get("/api/v1/dashboard/deaf/interpreters/99999/").status_code, 404
+        )
