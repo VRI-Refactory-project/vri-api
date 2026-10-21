@@ -10,6 +10,7 @@ There is no background worker (free hosting), so timeouts such as the requester-
 from datetime import timedelta
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import Case, IntegerField, Max, Q, Value, When
 from django.utils import timezone
@@ -21,6 +22,8 @@ from apps.interpreters.routing import pick_interpreter
 from apps.notifications.models import Notification
 from apps.notifications.services import send_expo_push
 from apps.service_requests.models import OPEN_STATUSES, RequestOffer, ServiceRequest
+
+User = get_user_model()
 
 
 class OpenRequestExists(Exception):
@@ -217,8 +220,11 @@ def offer_next(service_request, *, now=None):
     return offer
 
 
-def cancel_request(service_request):
-    """Cancel an open request. Cancelling twice is fine and returns the same result."""
+def cancel_request(service_request, *, request=None):
+    """The requester cancels their open request. Cancelling twice is fine and returns the same result.
+
+    ``request`` is the HTTP request, used only for the audit entry's IP address.
+    """
     now = timezone.now()
     with transaction.atomic():
         locked = ServiceRequest.objects.select_for_update().get(pk=service_request.pk)
@@ -228,10 +234,21 @@ def cancel_request(service_request):
             raise NotCancellable
         locked.status = ServiceRequest.Status.CANCELLED
         locked.cancelled_at = now
+        locked.cancel_reason = ServiceRequest.CancelReason.REQUESTER_CANCELLED
         locked.interpreter = None
         locked.save()
         locked.offers.filter(outcome=RequestOffer.Outcome.PENDING).update(
             outcome=RequestOffer.Outcome.WITHDRAWN, responded_at=now
+        )
+        audit.record(
+            AuditLog.Event.REQUEST_CANCELLED,
+            locked.requester,
+            request,
+            details={
+                "request_id": locked.pk,
+                "reason": ServiceRequest.CancelReason.REQUESTER_CANCELLED,
+                "priority": locked.priority,
+            },
         )
     return locked
 
@@ -434,8 +451,56 @@ def fail_overdue_requests(*, now=None, service_request=None):
             locked.failed_at = now
             locked.failure_reason = "no_interpreter_available"
             locked.save()
+            _report_failure(locked)
             failed += 1
     return failed
+
+
+def _notify(user, title, body, data):
+    notification = Notification.objects.create(
+        user=user,
+        title=title,
+        body=body,
+        category=Notification.Category.GENERAL,
+        data=data,
+    )
+    # Send the push only after the failure and notification are committed.
+    transaction.on_commit(lambda: send_expo_push(notification))
+
+
+def _report_failure(service_request):
+    """Tell the requester nobody could take their request, alert the platform admins when it was an
+    emergency, and record it (V2-024)."""
+    data = {
+        "request_id": service_request.pk,
+        "screen": "request-details",
+        "priority": service_request.priority,
+    }
+    _notify(
+        service_request.requester,
+        "No interpreter available",
+        "We couldn't find an interpreter in time. Please try again.",
+        data,
+    )
+    if service_request.priority == ServiceRequest.Priority.EMERGENCY:
+        admins = User.objects.filter(role=User.Role.ADMIN, is_active=True)
+        for admin in admins:
+            _notify(
+                admin,
+                "Emergency request not answered",
+                f"No interpreter took emergency request #{service_request.pk} in time. Please follow up.",
+                data,
+            )
+    audit.record(
+        AuditLog.Event.REQUEST_FAILED,
+        None,
+        target_user=service_request.requester,
+        details={
+            "request_id": service_request.pk,
+            "reason": service_request.failure_reason,
+            "priority": service_request.priority,
+        },
+    )
 
 
 def dispatch_pending(*, now=None):

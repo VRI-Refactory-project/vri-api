@@ -14,6 +14,7 @@ class ServiceRequest(models.Model):
         FAILED = "FAILED", "Failed"  # nobody could take it in time
 
     class CancelReason(models.TextChoices):
+        REQUESTER_CANCELLED = "REQUESTER_CANCELLED", "Requester cancelled"
         REQUESTER_DISCONNECTED = "REQUESTER_DISCONNECTED", "Requester disconnected"
 
     class Priority(models.TextChoices):

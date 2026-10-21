@@ -6,7 +6,7 @@ class AuditLog(models.Model):
     """A record of something an administrator or user did that the platform must be able to account for.
 
     Administrator sign-ins (V2-064), institution lifecycle changes, institution staff changes (V2-006),
-    and interpreter requests and offers (V2-009, V2-010).
+    and interpreter requests and offers (V2-009, V2-010, V2-024).
     Add an `Event` when another action needs recording. Entries are written by `apps.audit.services.record`
     and are read-only in the admin site.
     """
@@ -27,6 +27,7 @@ class AuditLog(models.Model):
         REQUEST_CREATED = "request_created", "Interpreter request created"
         REQUEST_OFFERED = "request_offered", "Interpreter request offered to an interpreter"
         REQUEST_CANCELLED = "request_cancelled", "Interpreter request cancelled"
+        REQUEST_FAILED = "request_failed", "Interpreter request failed (no interpreter in time)"
         OFFER_ACCEPTED = "offer_accepted", "Interpreter accepted a request"
         OFFER_DECLINED = "offer_declined", "Interpreter declined a request"
         OFFER_EXPIRED = "offer_expired", "Offer to an interpreter expired unanswered"
