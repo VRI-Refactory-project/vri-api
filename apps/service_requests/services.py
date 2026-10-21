@@ -144,6 +144,10 @@ def offer_next(service_request, *, now=None):
     now = now or timezone.now()
     check_transition(service_request.status, Status.OFFERED)
 
+    # An offer nobody answered in time must not keep its interpreter busy. Without this, an old
+    # request that nobody is checking on any more would block every new request from reaching them.
+    expire_stale_offers(now=now)
+
     already_asked = set(service_request.offers.values_list("interpreter_id", flat=True))
     holding_an_offer = set(
         ServiceRequest.objects.filter(

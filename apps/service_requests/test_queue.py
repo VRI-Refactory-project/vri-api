@@ -84,6 +84,19 @@ class OfferExpiryTests(APITestCase):
         self.assertEqual(expired, 0)
         self.assertEqual(request.status, ServiceRequest.Status.OFFERED)
 
+    def test_an_abandoned_offer_does_not_block_a_new_request(self):
+        only = make_interpreter()
+        abandoned = new_request()
+        # Nobody checks on this request again, and nobody refreshes it.
+        let_offer_run_out(abandoned)
+
+        fresh = new_request()
+
+        self.assertEqual(fresh.status, ServiceRequest.Status.OFFERED)
+        self.assertEqual(fresh.interpreter, only)
+        abandoned.refresh_from_db()
+        self.assertEqual(abandoned.status, ServiceRequest.Status.PENDING)
+
     def test_an_expired_offer_frees_the_interpreter_for_other_requests(self):
         only = make_interpreter()
         first = new_request()
