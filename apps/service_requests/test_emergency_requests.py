@@ -1,13 +1,20 @@
 """V2-024: who may request an interpreter, requester cancel, and what happens when nobody can take a request."""
 
+from datetime import timedelta
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.audit.models import AuditLog
 from apps.institutions.models import InstitutionProfile, InstitutionStaff, InstitutionStatus, StaffRole
+from apps.notifications.models import Notification
 from apps.service_requests.models import ServiceRequest
+from apps.service_requests.services import create_request, sweep
 from apps.service_requests.test_offers import make_user
 
 User = get_user_model()
@@ -186,3 +193,89 @@ class PriorityIsSetOnceTests(APITestCase):
 
         self.assertEqual(again.data["id"], self.created["id"])
         self.assertEqual(again.data["priority"], "EMERGENCY")
+
+
+@override_settings(REQUEST_MAX_WAIT_SECONDS=300)
+class NobodyTookTheRequestTests(APITestCase):
+    """When a request waits too long it fails: the requester is told, and for an emergency the platform
+    admins are alerted."""
+
+    def setUp(self):
+        self.deaf = make_user(User.Role.DEAF_HOH)
+        self.admin = make_user(User.Role.ADMIN)
+        self.former_admin = make_user(User.Role.ADMIN)
+        self.former_admin.is_active = False
+        self.former_admin.save(update_fields=["is_active"])
+
+    def overdue_request(self, priority=ServiceRequest.Priority.NORMAL):
+        service_request, _ = create_request(requester=self.deaf, priority=priority)
+        ServiceRequest.objects.filter(pk=service_request.pk).update(
+            created_at=timezone.now() - timedelta(minutes=6),
+            last_seen_at=timezone.now(),
+        )
+        return service_request
+
+    def test_the_requester_is_told(self):
+        service_request = self.overdue_request()
+
+        sweep()
+
+        note = Notification.objects.get(user=self.deaf)
+        self.assertEqual(note.title, "No interpreter available")
+        self.assertEqual(note.data["request_id"], service_request.pk)
+        self.assertEqual(note.data["screen"], "request-details")
+
+    def test_admins_are_not_alerted_for_a_normal_request(self):
+        self.overdue_request()
+
+        sweep()
+
+        self.assertFalse(Notification.objects.filter(user=self.admin).exists())
+
+    def test_active_admins_are_alerted_for_an_emergency(self):
+        service_request = self.overdue_request(ServiceRequest.Priority.EMERGENCY)
+
+        sweep()
+
+        alert = Notification.objects.get(user=self.admin)
+        self.assertEqual(alert.title, "Emergency request not answered")
+        self.assertIn(f"#{service_request.pk}", alert.body)
+        self.assertEqual(alert.data["priority"], "EMERGENCY")
+        self.assertFalse(Notification.objects.filter(user=self.former_admin).exists())
+
+    def test_the_failure_is_audited(self):
+        service_request = self.overdue_request(ServiceRequest.Priority.EMERGENCY)
+
+        sweep()
+
+        entry = AuditLog.objects.get(event=AuditLog.Event.REQUEST_FAILED)
+        self.assertIsNone(entry.user)
+        self.assertEqual(entry.target_user, self.deaf)
+        self.assertEqual(
+            entry.details,
+            {"request_id": service_request.pk, "reason": "no_interpreter_available", "priority": "EMERGENCY"},
+        )
+
+    def test_the_app_polling_also_reports_it_but_only_once(self):
+        service_request = self.overdue_request(ServiceRequest.Priority.EMERGENCY)
+        url = reverse("service-request-detail", kwargs={"pk": service_request.pk})
+        self.client.force_authenticate(self.deaf)
+
+        first = self.client.get(url)
+        self.client.get(url)
+        sweep()
+
+        self.assertEqual(first.data["status"], Status.FAILED)
+        self.assertEqual(Notification.objects.filter(user=self.deaf).count(), 1)
+        self.assertEqual(Notification.objects.filter(user=self.admin).count(), 1)
+        self.assertEqual(AuditLog.objects.filter(event=AuditLog.Event.REQUEST_FAILED).count(), 1)
+
+    @patch("apps.service_requests.services.send_expo_push")
+    def test_push_messages_go_out_after_the_failure_is_saved(self, mock_push):
+        self.overdue_request(ServiceRequest.Priority.EMERGENCY)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            sweep()
+
+        pushed_to = {call.args[0].user for call in mock_push.call_args_list}
+        self.assertEqual(pushed_to, {self.deaf, self.admin})
