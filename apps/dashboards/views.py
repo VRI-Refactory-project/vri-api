@@ -19,11 +19,13 @@ from apps.core.permissions import (
     IsDeafUser,
 )
 from apps.institutions.models import InstitutionProfile, InstitutionStatus
-from apps.interpreters.models import InterpreterProfile, VerificationStatus
+from apps.interpreters.models import InterpreterProfile, Specialisation, VerificationStatus
+from apps.interpreters.services import get_eligible_interpreters
 
 User = get_user_model()
 
 RECENT_SIGN_INS = 10
+AVAILABLE_INTERPRETERS_LIMIT = 12
 
 DeafDashboardSerializer = inline_serializer(
     "DeafDashboard",
@@ -85,6 +87,56 @@ class DeafDashboardView(APIView):
                 "sessions": [],
                 "chats": [],
             }
+        )
+
+
+class AvailableInterpretersView(APIView):
+    """Interpreters a Deaf user could be connected to right now (the dashboard's list).
+
+    Uses the same rule as routing, so the list matches who can actually be offered a request.
+    Only public details are returned: no email or phone number.
+    """
+
+    permission_classes = [IsDeafUser]
+
+    @extend_schema(
+        tags=["Dashboards"],
+        summary="Interpreters available now",
+        responses={
+            200: inline_serializer(
+                "AvailableInterpreter",
+                {
+                    "id": serializers.IntegerField(),
+                    "name": serializers.CharField(),
+                    "sign_languages": serializers.ListField(child=serializers.CharField()),
+                    "specialisation": serializers.CharField(),
+                    "photo_url": serializers.CharField(allow_null=True),
+                },
+                many=True,
+            )
+        },
+    )
+    def get(self, request):
+        profiles = (
+            get_eligible_interpreters()
+            .order_by("user__full_name")[:AVAILABLE_INTERPRETERS_LIMIT]
+        )
+        return Response(
+            [
+                {
+                    "id": profile.pk,
+                    "name": profile.user.full_name,
+                    "sign_languages": profile.sign_languages,
+                    "specialisation": (
+                        profile.specialisation_other
+                        if profile.specialisation == Specialisation.OTHER
+                        and profile.specialisation_other
+                        else profile.get_specialisation_display()
+                    ),
+                    "photo_url": None,
+                }
+                for profile in profiles
+            ]
         )
 
 

@@ -1,10 +1,17 @@
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.institutions.models import InstitutionProfile
-from apps.interpreters.models import InterpreterProfile, VerificationStatus
+from apps.interpreters.models import (
+    InterpreterAvailability,
+    InterpreterProfile,
+    VerificationStatus,
+)
 
 User = get_user_model()
 PASSWORD = "Sign-Connect-2026"
@@ -192,3 +199,59 @@ class InterpreterDashboardTests(TestCase):
         response = self.client.get(self.url)
 
         self.assertEqual(response.status_code, 403)
+
+
+class AvailableInterpretersTests(TestCase):
+    URL = "/api/v1/dashboard/deaf/available-interpreters/"
+
+    def setUp(self):
+        self.client = APIClient()
+        self.deaf = make_user(User.Role.DEAF_HOH, "0700000400")
+
+    def make_interpreter(self, phone, name, *, available=True, status=VerificationStatus.APPROVED):
+        user = make_user(User.Role.INTERPRETER, phone, full_name=name)
+        profile = InterpreterProfile.objects.create(
+            user=user,
+            verification_status=status,
+            is_available=available,
+            sign_languages=["Ugandan Sign Language"],
+        )
+        now = timezone.now()
+        # A saved period covering now, so the result does not depend on the weekday or the hour.
+        InterpreterAvailability.objects.create(
+            interpreter=profile,
+            start_at=now - timedelta(hours=1),
+            end_at=now + timedelta(hours=1),
+        )
+        return profile
+
+    def test_only_deaf_users_can_see_the_list(self):
+        self.assertEqual(self.client.get(self.URL).status_code, 401)
+        self.client.force_authenticate(user=make_user(User.Role.INTERPRETER, "0700000401"))
+        self.assertEqual(self.client.get(self.URL).status_code, 403)
+
+    def test_lists_interpreters_who_can_take_a_request_now(self):
+        self.make_interpreter("0700000410", "Amina Okafor")
+        self.make_interpreter("0700000411", "Switched Off", available=False)
+        self.make_interpreter("0700000412", "Not Approved", available=False, status=VerificationStatus.INACTIVE)
+        self.client.force_authenticate(user=self.deaf)
+
+        data = self.client.get(self.URL).json()
+
+        self.assertEqual([row["name"] for row in data], ["Amina Okafor"])
+        self.assertEqual(data[0]["sign_languages"], ["Ugandan Sign Language"])
+        self.assertEqual(data[0]["specialisation"], "General")
+
+    def test_does_not_expose_contact_details(self):
+        self.make_interpreter("0700000420", "Amina Okafor")
+        self.client.force_authenticate(user=self.deaf)
+
+        row = self.client.get(self.URL).json()[0]
+
+        self.assertEqual(
+            set(row), {"id", "name", "sign_languages", "specialisation", "photo_url"}
+        )
+
+    def test_empty_when_nobody_is_available(self):
+        self.client.force_authenticate(user=self.deaf)
+        self.assertEqual(self.client.get(self.URL).json(), [])
