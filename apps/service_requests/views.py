@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.permissions import IsDeafUser, IsInterpreter
+from apps.core.permissions import IsApprovedInstitution, IsDeafUser, IsInterpreter
 from apps.service_requests.models import OPEN_STATUSES, RequestOffer, ServiceRequest
 from apps.service_requests.serializers import (
     OFFER_STATUS_FOR_SCREEN,
@@ -28,11 +28,16 @@ from apps.service_requests.services import (
 )
 
 
+# Who may ask for an interpreter (V2-024): Deaf users, and staff of an approved institution.
+# Every other role gets 403; pending or rejected institutions get a 403 that says why.
+CAN_REQUEST = [IsAuthenticated, IsDeafUser | IsApprovedInstitution]
+
+
 class ServiceRequestListCreateView(generics.ListCreateAPIView):
     """GET /api/v1/requests/ lists your requests. POST asks for an interpreter."""
 
     serializer_class = ServiceRequestSerializer
-    permission_classes = [IsAuthenticated, IsDeafUser]
+    permission_classes = CAN_REQUEST
 
     def get_queryset(self):
         return self.request.user.service_requests.select_related(
@@ -75,7 +80,7 @@ class MyOpenRequestView(APIView):
     """GET /api/v1/requests/mine/: the request still looking for an interpreter, so the app can
     pick it up again after being closed. 204 when there is none."""
 
-    permission_classes = [IsAuthenticated, IsDeafUser]
+    permission_classes = CAN_REQUEST
 
     @extend_schema(responses={200: ServiceRequestSerializer, 204: None})
     def get(self, request):
@@ -93,7 +98,7 @@ class MyOpenRequestView(APIView):
 class ServiceRequestDetailView(APIView):
     """GET /api/v1/requests/<id>/: where the request is now. Asking also counts as "still here"."""
 
-    permission_classes = [IsAuthenticated, IsDeafUser]
+    permission_classes = CAN_REQUEST
 
     @extend_schema(responses={200: ServiceRequestSerializer})
     def get(self, request, pk):
@@ -105,7 +110,7 @@ class ServiceRequestDetailView(APIView):
 class ServiceRequestCancelView(APIView):
     """POST /api/v1/requests/<id>/cancel/"""
 
-    permission_classes = [IsAuthenticated, IsDeafUser]
+    permission_classes = CAN_REQUEST
 
     @extend_schema(request=None, responses={200: ServiceRequestSerializer, 409: None})
     def post(self, request, pk):
