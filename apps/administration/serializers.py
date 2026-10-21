@@ -40,24 +40,41 @@ class AdminProfileSerializer(serializers.ModelSerializer):
         )
 
     def validate_email(self, value):
-        user = self.context["request"].user
-        if User.objects.exclude(pk=user.pk).filter(email__iexact=value).exists():
-            raise serializers.ValidationError(
-                "An account with this email already exists."
-            )
+        request = self.context.get("request")
+        if request and hasattr(request, "user"):
+            user = request.user
+            if User.objects.exclude(pk=user.pk).filter(email__iexact=value).exists():
+                raise serializers.ValidationError(
+                    "An account with this email already exists."
+                )
         return value.lower()
 
     def update(self, instance, validated_data):
         user_data = validated_data.pop("user", {})
         user = instance.user
+
+        # 1. Safely handle full_name mapping
+        if "full_name" in user_data:
+            full_name_val = user_data.pop("full_name", "").strip()
+            if hasattr(user, "full_name") and not isinstance(
+                type(user).full_name, property
+            ):
+                user.full_name = full_name_val
+            else:
+                parts = full_name_val.split(" ", 1)
+                user.first_name = parts[0]
+                user.last_name = parts[1] if len(parts) > 1 else ""
+
+        # 2. Update remaining User fields (email, phone_number, profile_photo)
         for attr, value in user_data.items():
             setattr(user, attr, value)
-        if user_data:
-            user.save()
+        user.save()
 
+        # 3. Update AdminProfile fields (session_alerts, verification_alerts)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
+
         return instance
 
 

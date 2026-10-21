@@ -11,14 +11,15 @@ from .serializers import (
 
 
 class IsAdminUserPermission(permissions.BasePermission):
-    """Ensure the user is authenticated and has an admin role or is staff."""
+    """Ensure the user is authenticated and has an admin role or is staff/superuser."""
 
     def has_permission(self, request, view):
+        user_role = getattr(request.user, "role", None)
         return bool(
             request.user
             and request.user.is_authenticated
             and (
-                getattr(request.user, "role", None) == "ADMINISTRATOR"
+                user_role in ["ADMINISTRATOR", "SYSTEM_ADMIN", "ADMIN"]
                 or request.user.is_staff
                 or request.user.is_superuser
             )
