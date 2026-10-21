@@ -1,3 +1,5 @@
+import uuid
+
 from django.conf import settings
 from django.db import models
 
@@ -61,3 +63,30 @@ class UserProfile(models.Model):
 
     def __str__(self):
         return f"{self.user.email} ({self.preferred_name or self.user.get_full_name() or 'Deaf User'})"
+
+
+def generate_photo_token():
+    return uuid.uuid4().hex
+
+
+class ProfilePhoto(models.Model):
+    """One user's profile picture, kept in the database as a small JPEG.
+
+    The photo is served at a link that contains a random token, which changes on every upload. The
+    link works without signing in (an <img> tag cannot send a login token), but cannot be guessed.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="photo",
+    )
+    token = models.CharField(
+        max_length=32, unique=True, default=generate_photo_token, editable=False
+    )
+    image = models.BinaryField()
+    content_type = models.CharField(max_length=50, default="image/jpeg")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Photo of {self.user_id}"

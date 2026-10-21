@@ -3,6 +3,7 @@ from django.db import transaction
 from rest_framework import serializers
 
 from .models import UserProfile
+from .photos import photo_path
 
 User = get_user_model()
 
@@ -59,6 +60,10 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
     full_name = serializers.CharField(source="user.get_full_name", read_only=True)
+    profile_photo = serializers.SerializerMethodField()
+
+    def get_profile_photo(self, profile) -> str | None:
+        return photo_path(profile.user)
 
     class Meta:
         model = UserProfile
@@ -66,6 +71,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "id",
             "email",
             "full_name",
+            "profile_photo",
             "preferred_name",
             "contact_number",
             "location",

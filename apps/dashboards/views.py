@@ -6,6 +6,7 @@ by shared permission classes in apps/core/permissions.py.
 
 from django.contrib.auth import get_user_model
 from django.db.models import Count
+from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers
 from rest_framework.response import Response
@@ -21,6 +22,7 @@ from apps.core.permissions import (
 from apps.institutions.models import InstitutionProfile, InstitutionStatus
 from apps.interpreters.models import InterpreterProfile, Specialisation, VerificationStatus
 from apps.interpreters.services import get_eligible_interpreters
+from apps.users.photos import photo_path
 
 User = get_user_model()
 
@@ -90,6 +92,38 @@ class DeafDashboardView(APIView):
         )
 
 
+def interpreter_card(profile):
+    """The public details of an interpreter that a Deaf user may see. No email or phone number."""
+    specialisation = (
+        profile.specialisation_other
+        if profile.specialisation == Specialisation.OTHER and profile.specialisation_other
+        else profile.get_specialisation_display()
+    )
+    return {
+        "id": profile.pk,
+        "name": profile.user.full_name,
+        "sign_languages": profile.sign_languages,
+        "specialisation": specialisation,
+        "photo_url": photo_path(profile.user),
+    }
+
+
+AVAILABLE_INTERPRETER_FIELDS = {
+    "id": serializers.IntegerField(),
+    "name": serializers.CharField(),
+    "sign_languages": serializers.ListField(child=serializers.CharField()),
+    "specialisation": serializers.CharField(),
+    "photo_url": serializers.CharField(allow_null=True),
+}
+AvailableInterpreterListSerializer = inline_serializer(
+    "AvailableInterpreter", AVAILABLE_INTERPRETER_FIELDS, many=True
+)
+InterpreterPublicProfileSerializer = inline_serializer(
+    "InterpreterPublicProfile",
+    {**AVAILABLE_INTERPRETER_FIELDS, "available_now": serializers.BooleanField()},
+)
+
+
 class AvailableInterpretersView(APIView):
     """Interpreters a Deaf user could be connected to right now (the dashboard's list).
 
@@ -102,42 +136,41 @@ class AvailableInterpretersView(APIView):
     @extend_schema(
         tags=["Dashboards"],
         summary="Interpreters available now",
-        responses={
-            200: inline_serializer(
-                "AvailableInterpreter",
-                {
-                    "id": serializers.IntegerField(),
-                    "name": serializers.CharField(),
-                    "sign_languages": serializers.ListField(child=serializers.CharField()),
-                    "specialisation": serializers.CharField(),
-                    "photo_url": serializers.CharField(allow_null=True),
-                },
-                many=True,
-            )
-        },
+        responses={200: AvailableInterpreterListSerializer},
     )
     def get(self, request):
         profiles = (
             get_eligible_interpreters()
+            .select_related("user__photo")
+            .defer("user__photo__image")
             .order_by("user__full_name")[:AVAILABLE_INTERPRETERS_LIMIT]
         )
-        return Response(
-            [
-                {
-                    "id": profile.pk,
-                    "name": profile.user.full_name,
-                    "sign_languages": profile.sign_languages,
-                    "specialisation": (
-                        profile.specialisation_other
-                        if profile.specialisation == Specialisation.OTHER
-                        and profile.specialisation_other
-                        else profile.get_specialisation_display()
-                    ),
-                    "photo_url": None,
-                }
-                for profile in profiles
-            ]
+        return Response([interpreter_card(profile) for profile in profiles])
+
+
+class InterpreterPublicProfileView(APIView):
+    """One interpreter's public profile, for the "View profile" button on the dashboard.
+
+    Any approved, active interpreter can be opened, whether or not they are available right now.
+    """
+
+    permission_classes = [IsDeafUser]
+
+    @extend_schema(
+        tags=["Dashboards"],
+        summary="An interpreter's public profile",
+        responses={200: InterpreterPublicProfileSerializer},
+    )
+    def get(self, request, pk):
+        profile = get_object_or_404(
+            InterpreterProfile.objects.select_related("user__photo").defer("user__photo__image"),
+            pk=pk,
+            verification_status=VerificationStatus.APPROVED,
+            user__is_active=True,
         )
+        data = interpreter_card(profile)
+        data["available_now"] = get_eligible_interpreters().filter(pk=profile.pk).exists()
+        return Response(data)
 
 
 class AdminDashboardView(APIView):
