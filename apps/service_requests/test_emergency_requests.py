@@ -108,3 +108,81 @@ class WhoMayRequestTests(APITestCase):
         response = self.client.get(reverse("service-request-detail", kwargs={"pk": request_id}))
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class RequesterCancelTests(APITestCase):
+    """Only the requester may cancel, and only while the request is still waiting or offered."""
+
+    def setUp(self):
+        self.deaf = make_user(User.Role.DEAF_HOH)
+        self.client.force_authenticate(self.deaf)
+        response = self.client.post(reverse("service-request-list-create"), {"priority": "EMERGENCY"}, format="json")
+        self.request_id = response.data["id"]
+        self.cancel_url = reverse("service-request-cancel", kwargs={"pk": self.request_id})
+
+    def test_cancelling_records_why(self):
+        response = self.client.post(self.cancel_url)
+
+        self.assertEqual(response.data["status"], Status.CANCELLED)
+        self.assertEqual(response.data["cancel_reason"], ServiceRequest.CancelReason.REQUESTER_CANCELLED)
+
+    def test_cancelling_is_audited(self):
+        self.client.post(self.cancel_url)
+
+        entry = AuditLog.objects.get(event=AuditLog.Event.REQUEST_CANCELLED)
+        self.assertEqual(entry.user, self.deaf)
+        self.assertEqual(
+            entry.details,
+            {
+                "request_id": self.request_id,
+                "reason": ServiceRequest.CancelReason.REQUESTER_CANCELLED,
+                "priority": "EMERGENCY",
+            },
+        )
+
+    def test_cancelling_twice_is_audited_once(self):
+        self.client.post(self.cancel_url)
+        self.client.post(self.cancel_url)
+
+        self.assertEqual(AuditLog.objects.filter(event=AuditLog.Event.REQUEST_CANCELLED).count(), 1)
+
+    def test_someone_else_cannot_cancel_it(self):
+        self.client.force_authenticate(make_user(User.Role.DEAF_HOH))
+
+        response = self.client.post(self.cancel_url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(ServiceRequest.objects.get(pk=self.request_id).status, Status.PENDING)
+
+    def test_a_failed_request_cannot_be_cancelled(self):
+        ServiceRequest.objects.filter(pk=self.request_id).update(status=Status.FAILED)
+
+        response = self.client.post(self.cancel_url)
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "not_cancellable")
+
+
+class PriorityIsSetOnceTests(APITestCase):
+    """The emergency flag is chosen when the request is made and can never be changed afterwards."""
+
+    def setUp(self):
+        self.client.force_authenticate(make_user(User.Role.DEAF_HOH))
+        self.list_url = reverse("service-request-list-create")
+        self.created = self.client.post(
+            self.list_url, {"priority": "EMERGENCY", "request_key": "k1"}, format="json"
+        ).data
+        self.detail_url = reverse("service-request-detail", kwargs={"pk": self.created["id"]})
+
+    def test_a_request_cannot_be_edited(self):
+        for method in (self.client.patch, self.client.put):
+            with self.subTest(method=method.__name__):
+                response = method(self.detail_url, {"priority": "NORMAL"}, format="json")
+                self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+        self.assertEqual(ServiceRequest.objects.get(pk=self.created["id"]).priority, "EMERGENCY")
+
+    def test_a_retry_cannot_change_the_priority(self):
+        again = self.client.post(self.list_url, {"priority": "NORMAL", "request_key": "k1"}, format="json")
+
+        self.assertEqual(again.data["id"], self.created["id"])
+        self.assertEqual(again.data["priority"], "EMERGENCY")

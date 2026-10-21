@@ -213,8 +213,11 @@ def offer_next(service_request, *, now=None):
     return offer
 
 
-def cancel_request(service_request):
-    """Cancel an open request. Cancelling twice is fine and returns the same result."""
+def cancel_request(service_request, *, request=None):
+    """The requester cancels their open request. Cancelling twice is fine and returns the same result.
+
+    ``request`` is the HTTP request, used only for the audit entry's IP address.
+    """
     now = timezone.now()
     with transaction.atomic():
         locked = ServiceRequest.objects.select_for_update().get(pk=service_request.pk)
@@ -224,10 +227,21 @@ def cancel_request(service_request):
             raise NotCancellable
         locked.status = ServiceRequest.Status.CANCELLED
         locked.cancelled_at = now
+        locked.cancel_reason = ServiceRequest.CancelReason.REQUESTER_CANCELLED
         locked.interpreter = None
         locked.save()
         locked.offers.filter(outcome=RequestOffer.Outcome.PENDING).update(
             outcome=RequestOffer.Outcome.WITHDRAWN, responded_at=now
+        )
+        audit.record(
+            AuditLog.Event.REQUEST_CANCELLED,
+            locked.requester,
+            request,
+            details={
+                "request_id": locked.pk,
+                "reason": ServiceRequest.CancelReason.REQUESTER_CANCELLED,
+                "priority": locked.priority,
+            },
         )
     return locked
 

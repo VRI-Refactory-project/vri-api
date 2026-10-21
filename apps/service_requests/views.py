@@ -116,7 +116,7 @@ class ServiceRequestCancelView(APIView):
     def post(self, request, pk):
         found = get_object_or_404(ServiceRequest, pk=pk, requester=request.user)
         try:
-            cancelled = cancel_request(found)
+            cancelled = cancel_request(found, request=request)
         except NotCancellable:
             return Response(
                 {
