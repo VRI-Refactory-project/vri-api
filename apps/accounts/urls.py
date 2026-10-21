@@ -2,6 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from . import views
+from .logout import LogoutView
 
 # 1. Router Initialization
 router = DefaultRouter()
@@ -27,6 +28,7 @@ urlpatterns = [
     path("auth/roles/", views.roles, name="auth-roles"),
     path("auth/login/", views.LoginView.as_view(), name="auth-login"),
     path("auth/token/refresh/", views.RefreshView.as_view(), name="auth-token-refresh"),
+    path("auth/logout/", LogoutView.as_view(), name="auth-logout"),
     path("auth/me/", views.MeView.as_view(), name="auth-me"),
     path(
         "auth/me/access/<str:role>/",
