@@ -28,7 +28,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from apps.audit import services as audit
 from apps.audit.models import AuditLog
-from apps.core.permissions import ROLE_PERMISSIONS, IsAdminRole
+from apps.core.permissions import ROLE_PERMISSIONS, IsAdminRole, IsSignedOut
 from apps.institutions.serializers import InstitutionRegistrationSerializer
 from apps.interpreters.serializers import InterpreterRegistrationSerializer
 
@@ -229,9 +229,12 @@ class RoleAccessView(APIView):
 
 
 class BaseRegisterView(APIView):
-    """Creates an account for one role and signs the user in (returns the same payload as login)."""
+    """Creates an account for one role and signs the user in (returns the same payload as login).
 
-    permission_classes = [AllowAny]
+    Only for people who are signed out (IsSignedOut).
+    """
+
+    permission_classes = [IsSignedOut]
     authentication_classes = []
     throttle_scope = "register"
     serializer_class = None
