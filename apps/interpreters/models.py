@@ -50,6 +50,12 @@ class InterpreterProfile(models.Model):
         default="",
         help_text="Custom specialisation text when 'OTHER' is selected.",
     )
+    specialisations = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Everything the interpreter covers, from the specialisation library "
+        "(see specialisations.py). `specialisation` is the one used for routing.",
+    )
     sign_languages = models.JSONField(
         default=list,
         blank=True,
@@ -73,6 +79,19 @@ class InterpreterProfile(models.Model):
                 name="available_only_if_approved",
             ),
         ]
+
+    def all_specialisations(self):
+        """Everything this interpreter covers. Profiles saved before the library existed fall back
+        to their single specialisation."""
+        return list(self.specialisations) or [self.specialisation]
+
+    def has_specialisation(self, value):
+        return value in self.all_specialisations()
+
+    def specialisation_labels(self):
+        from .specialisations import label_for
+
+        return [label_for(v, self.specialisation_other) for v in self.all_specialisations()]
 
     def clean(self):
         super().clean()

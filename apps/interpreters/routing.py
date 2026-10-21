@@ -48,7 +48,9 @@ def pick_interpreter(context=None, *, exclude=(), last_offered=None, now=None):
         chosen = _longest_waiting(eligible, last_offered)
         return RoutingMatch(chosen, False) if chosen else None
 
-    chosen = _longest_waiting(eligible.filter(specialisation=wanted), last_offered)
+    # Filtered in Python because the specialisations are a JSON list.
+    specialists = [p for p in eligible if p.has_specialisation(wanted)]
+    chosen = _longest_waiting(specialists, last_offered)
     if chosen:
         return RoutingMatch(chosen, False)
 
