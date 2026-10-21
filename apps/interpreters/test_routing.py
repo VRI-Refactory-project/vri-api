@@ -135,3 +135,24 @@ class PickInterpreterTests(TestCase):
 
         self.assertEqual(match.interpreter, general)
         self.assertTrue(match.matched_by_fallback)
+
+
+class WorkingHoursAreLocalTimeTests(TestCase):
+    """Routing is given UTC times, but working hours (default Monday to Friday, 08:00 to 17:00) are
+    Kampala time, three hours ahead of UTC."""
+
+    def test_inside_local_working_hours_is_matched_even_though_utc_is_earlier(self):
+        profile = make_interpreter(free=False)
+        # Wednesday 08:05 in Kampala is 05:05 UTC.
+        wednesday_morning = datetime(2027, 1, 13, 5, 5, tzinfo=UTC)
+
+        match = pick_interpreter(None, now=wednesday_morning)
+
+        self.assertEqual(match.interpreter, profile)
+
+    def test_after_local_working_hours_is_not_matched_even_though_utc_is_earlier(self):
+        make_interpreter(free=False)
+        # Wednesday 18:00 in Kampala is 15:00 UTC, which would look like 15:00 if read as UTC.
+        wednesday_evening = datetime(2027, 1, 13, 15, 0, tzinfo=UTC)
+
+        self.assertIsNone(pick_interpreter(None, now=wednesday_evening))

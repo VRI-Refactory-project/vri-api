@@ -55,6 +55,10 @@ def unavailable_reason(interpreter, now=None):
     so they can never disagree.
     """
     now = now or timezone.localtime()  # uses TIME_ZONE (should be Africa/Kampala)
+    if timezone.is_aware(now):
+        # Routing passes a UTC time. Working hours are in local time, so read it as local time:
+        # 05:05 UTC is 08:05 in Kampala. Without this the hours were compared three hours early.
+        now = timezone.localtime(now)
 
     if interpreter.verification_status != VerificationStatus.APPROVED:
         return "not_approved"
