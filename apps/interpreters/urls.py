@@ -11,6 +11,7 @@ from .views import (
     InterpreterAvailabilityDetailView,
     InterpreterAvailabilityListCreateView,
     InterpreterProfileDetailView,
+    SpecialisationLibraryView,
     WeeklyScheduleView,
 )
 
@@ -20,6 +21,11 @@ router = DefaultRouter()
 router.register(r'availability', AvailabilityPeriodViewSet, basename='availability')
 
 urlpatterns = [
+    path(
+        "specialisations/",
+        SpecialisationLibraryView.as_view(),
+        name="specialisation-library",
+    ),
     path(
         "me/",
         InterpreterProfileDetailView.as_view(),

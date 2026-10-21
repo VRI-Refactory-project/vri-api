@@ -6,12 +6,12 @@ from rest_framework import serializers
 
 from apps.accounts.serializers import BaseRegistrationSerializer
 
+from . import specialisations as library
 from .models import (
     AvailabilityPeriod,
     CertificationDocument,
     InterpreterAvailability,
     InterpreterProfile,
-    Specialisation,
     VerificationDecision,
     VerificationStatus,
 )
@@ -47,7 +47,27 @@ class CertificationDocumentSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
+class SpecialisationListField(serializers.ListField):
+    """A list of values from the specialisation library. Duplicates are dropped."""
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("child", serializers.ChoiceField(choices=library.SPECIALISATION_LIBRARY))
+        kwargs.setdefault("allow_empty", False)
+        super().__init__(**kwargs)
+
+    def to_internal_value(self, data):
+        return library.clean_selection(super().to_internal_value(data))
+
+
+def check_other_text(selected, other_text):
+    if "OTHER" in selected and not (other_text or "").strip():
+        raise serializers.ValidationError(
+            {"specialisation_other": "Please specify your specialisation when 'Other' is selected."}
+        )
+
+
 class InterpreterProfileSerializer(serializers.ModelSerializer):
+    specialisations = SpecialisationListField(required=False)
     certifications = CertificationDocumentSerializer(many=True, read_only=True)
     full_name = serializers.CharField(source="user.full_name", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
@@ -61,6 +81,7 @@ class InterpreterProfileSerializer(serializers.ModelSerializer):
             "verification_status",
             "is_available",
             "specialisation",
+            "specialisations",
             "specialisation_other",
             "sign_languages",
             "working_hours_schedule",
@@ -80,25 +101,25 @@ class InterpreterProfileSerializer(serializers.ModelSerializer):
             )
         return value
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["specialisations"] = instance.all_specialisations()
+        return data
+
     def validate(self, attrs):
-        specialisation = attrs.get(
-            "specialisation",
-            getattr(self.instance, "specialisation", Specialisation.GENERAL),
-        )
+        # The old single `specialisation` field still works: it becomes a one-item list.
+        if "specialisations" not in attrs and "specialisation" in attrs:
+            attrs["specialisations"] = [attrs["specialisation"]]
+        if "specialisations" in attrs:
+            attrs["specialisation"] = library.primary_for(attrs["specialisations"])
+            selected = attrs["specialisations"]
+        else:
+            selected = self.instance.all_specialisations() if self.instance else []
         specialisation_other = attrs.get(
             "specialisation_other",
             getattr(self.instance, "specialisation_other", ""),
         )
-
-        # Enforce free-text entry if 'OTHER' is selected
-        if specialisation == Specialisation.OTHER and not specialisation_other.strip():
-            raise serializers.ValidationError(
-                {
-                    "specialisation_other": (
-                        "Please specify your specialisation when 'OTHER' is selected."
-                    )
-                }
-            )
+        check_other_text(selected, specialisation_other)
         return attrs
 
 
@@ -162,16 +183,34 @@ class InterpreterRegistrationSerializer(BaseRegistrationSerializer):
 
     role = get_user_model().Role.INTERPRETER
     email_required = True
+    # The sign-up form sends `specialisations` (a list from the library). The old single
+    # `specialisation` is still accepted.
+    specialisations = SpecialisationListField(required=False)
     specialisation = serializers.ChoiceField(
-        choices=Specialisation.choices,
+        choices=library.SPECIALISATION_LIBRARY,
         required=False,
-        default=Specialisation.GENERAL,
+        write_only=True,
+    )
+    specialisation_other = serializers.CharField(
+        max_length=100, required=False, allow_blank=True, write_only=True
     )
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        selected = attrs.get("specialisations")
+        if not selected:
+            selected = [attrs["specialisation"]] if attrs.get("specialisation") else ["GENERAL"]
+        check_other_text(selected, attrs.get("specialisation_other"))
+        attrs["specialisations"] = selected
+        return attrs
+
     def create_profile(self, user, validated_data):
+        selected = validated_data["specialisations"]
         InterpreterProfile.objects.create(
             user=user,
-            specialisation=validated_data["specialisation"],
+            specialisations=selected,
+            specialisation=library.primary_for(selected),
+            specialisation_other=(validated_data.get("specialisation_other") or "").strip(),
         )
 
 

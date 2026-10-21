@@ -20,7 +20,7 @@ from apps.core.permissions import (
     IsDeafUser,
 )
 from apps.institutions.models import InstitutionProfile, InstitutionStatus
-from apps.interpreters.models import InterpreterProfile, Specialisation, VerificationStatus
+from apps.interpreters.models import InterpreterProfile, VerificationStatus
 from apps.interpreters.services import get_eligible_interpreters
 from apps.users.photos import photo_path
 
@@ -94,11 +94,7 @@ class DeafDashboardView(APIView):
 
 def interpreter_card(profile):
     """The public details of an interpreter that a Deaf user may see. No email or phone number."""
-    specialisation = (
-        profile.specialisation_other
-        if profile.specialisation == Specialisation.OTHER and profile.specialisation_other
-        else profile.get_specialisation_display()
-    )
+    specialisation = ", ".join(profile.specialisation_labels())
     return {
         "id": profile.pk,
         "name": profile.user.full_name,

@@ -9,11 +9,12 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
+    inline_serializer,
     OpenApiParameter,
     OpenApiResponse,
     extend_schema,
 )
-from rest_framework import generics, permissions, viewsets
+from rest_framework import generics, permissions, serializers, viewsets
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
@@ -21,6 +22,7 @@ from rest_framework.views import APIView
 
 from apps.core.permissions import IsAdminRole, IsInterpreter
 
+from . import specialisations as library
 from . import verification
 from .availability import (
     monday_of,
@@ -92,8 +94,9 @@ class CertificationUploadView(generics.CreateAPIView):
         "Retrieve or update profile details for the authenticated interpreter "
         "(V2-068).\n\n"
         "**Fields supported:**\n"
-        "- `specialisation`: Dropdown choice (`GENERAL`, `MEDICAL`, `LEGAL`, `OTHER`).\n"
-        "- `specialisation_other`: Custom text required when `specialisation` is `OTHER`.\n"
+        "- `specialisations`: List of values from `GET /api/v1/interpreters/specialisations/`.\n"
+        "- `specialisation`: Legacy single value (becomes a one-item `specialisations`).\n"
+        "- `specialisation_other`: Custom text required when `OTHER` is selected.\n"
         "- `sign_languages`: List of sign language preferences.\n"
         "- `is_available`: Boolean status toggle requiring approved verification.\n"
         "- `working_hours_schedule`: JSON schedule definition."
@@ -564,3 +567,23 @@ class AvailabilityPeriodViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # Automatically attach the logged-in user
         serializer.save(interpreter=self.request.user)
+
+
+@extend_schema(
+    summary="List the specialisations an interpreter can choose from",
+    responses=inline_serializer(
+        "SpecialisationOption",
+        {"value": serializers.CharField(), "label": serializers.CharField()},
+        many=True,
+    ),
+)
+class SpecialisationLibraryView(APIView):
+    """Public: the sign-up form needs it before anyone is logged in."""
+
+    permission_classes = (permissions.AllowAny,)
+    authentication_classes = ()
+
+    def get(self, request):
+        return Response(
+            [{"value": v, "label": label} for v, label in library.SPECIALISATION_LIBRARY]
+        )

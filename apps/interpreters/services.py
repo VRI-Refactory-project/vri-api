@@ -69,9 +69,13 @@ def get_eligible_interpreters(
     if not specialisation_required:
         return eligible_queryset
 
-    specialists = eligible_queryset.filter(specialisation=specialisation_required)
+    # Filtered in Python because the specialisations are a JSON list.
+    specialist_ids = [
+        p.pk for p in eligible_queryset if p.has_specialisation(specialisation_required)
+    ]
+    specialists = eligible_queryset.filter(pk__in=specialist_ids)
 
-    if specialists.exists() or not allow_fallback:
+    if specialist_ids or not allow_fallback:
         return specialists
 
     return eligible_queryset
