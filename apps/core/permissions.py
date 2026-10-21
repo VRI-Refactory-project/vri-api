@@ -55,6 +55,35 @@ class IsAdminRole(HasRole):
     allowed_roles = (User.Role.ADMIN,)
 
 
+class IsSignedOut(BasePermission):
+    """For creating an account: refuses anyone already signed in (403, code already_signed_in).
+
+    Otherwise a signed-in person could make a second account and be switched to it, leaving the first
+    session running. Works on views without authentication classes too: the Bearer token is checked
+    here. A missing, expired or invalid token counts as signed out, so an old token left in a browser
+    never blocks a real sign-up.
+    """
+
+    def has_permission(self, request, view):
+        signed_in = request.user and request.user.is_authenticated
+        if not signed_in:
+            from rest_framework_simplejwt.authentication import JWTAuthentication
+            from rest_framework_simplejwt.exceptions import AuthenticationFailed, InvalidToken
+
+            try:
+                signed_in = JWTAuthentication().authenticate(request) is not None
+            except (InvalidToken, AuthenticationFailed):
+                signed_in = False
+        if signed_in:
+            raise PermissionDenied(
+                {
+                    "detail": "You're already signed in. Sign out before creating another account.",
+                    "code": "already_signed_in",
+                }
+            )
+        return True
+
+
 def user_staff_membership(user):
     """The signed-in user's active membership of an institution (V2-006), or None.
 

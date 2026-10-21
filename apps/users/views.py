@@ -5,6 +5,8 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core.permissions import IsSignedOut
+
 from .models import ProfilePhoto, UserProfile
 from .photos import PHOTO_URL_PREFIX, InvalidPhoto, process_upload
 from .serializers import UserProfileSerializer, UserRegistrationSerializer
@@ -19,7 +21,7 @@ from .serializers import UserProfileSerializer, UserRegistrationSerializer
     ),
 )
 class UserRegistrationView(generics.CreateAPIView):
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsSignedOut]
     serializer_class = UserRegistrationSerializer
 
     def create(self, request, *args, **kwargs):
