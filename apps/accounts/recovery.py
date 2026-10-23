@@ -5,11 +5,13 @@ Views stay thin; all the rules live here so they are easy to test and to extend 
 
 import logging
 import secrets
+import json
+import urllib.request
+import urllib.error
 from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
-from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import F, Sum
 from django.utils import timezone
@@ -184,28 +186,42 @@ def mask_email(email):
 
 def _send_code_email(user, code, purpose, target_user=None):
     minutes = int(RecoveryCode.LIFETIME.total_seconds() // 60)
+    
+    # --- BREVO SETTINGS ---
+    # 1. Put your Brevo API Key here (starts with xkeysib-)
+    BREVO_API_KEY = getattr(settings, 'BREVO_API_KEY', '') 
+    # 2. Put your Template ID here (numbers only, no quotes)
+    template_id = 2
+    # ----------------------
+
     if purpose == RecoveryCode.Purpose.EMAIL_VERIFY:
         subject = "Verify your SignConnect email"
-        body = (
-            f"Hello {user.full_name},\n\n"
-            f"Your SignConnect email verification code is: {code}\n\n"
-            f"It expires in {minutes} minutes and can be used once.\n"
-            "If you did not create a SignConnect account, ignore this email.\n"
-        )
     elif purpose == RecoveryCode.Purpose.SELF_RECOVERY:
         subject = "Your SignConnect recovery code"
-        body = (
-            f"Hello {user.full_name},\n\n"
-            f"Your SignConnect account recovery code is: {code}\n\n"
-            f"It expires in {minutes} minutes and can be used once.\n"
-            "If you did not ask to recover your account, ignore this email. Your account has not changed.\n"
-        )
     else:
         subject = "Confirm a SignConnect password reset"
-        body = (
-            f"Hello {user.full_name},\n\n"
-            f"You asked to reset the password/PIN for {target_user.full_name} ({target_user.phone_number}).\n"
-            f"Your confirmation code is: {code}\n\n"
-            f"It expires in {minutes} minutes. If you did not request this, tell the tech lead immediately.\n"
-        )
-    send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [user.email])
+
+    url = "https://api.brevo.com/v3/smtp/email"
+    
+    payload = {
+        "sender": {"name": "SignConnect", "email": settings.DEFAULT_FROM_EMAIL},
+        "to": [{"email": user.email, "name": user.full_name}],
+        "subject": subject,
+        "templateId": template_id,
+        "params": {
+            "code": code,
+            "minutes": minutes
+        }
+    }
+
+    req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'))
+    req.add_header('accept', 'application/json')
+    req.add_header('api-key', BREVO_API_KEY)
+    req.add_header('content-type', 'application/json')
+
+    try:
+        with urllib.request.urlopen(req) as response:
+            pass # Success
+    except urllib.error.HTTPError as e:
+        logger.error(f"Brevo API Error: {e.read().decode()}")
+        raise Exception("Failed to send email via Brevo")
