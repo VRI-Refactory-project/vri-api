@@ -7,6 +7,9 @@ class OrganisationType(models.TextChoices):
     HOSPITAL = "HOSPITAL", "Hospital / health facility"
     COURT = "COURT", "Court / legal"
     GOVERNMENT = "GOVERNMENT", "Government office"
+    SCHOOL = "SCHOOL", "School or Institution"
+    POLICE = "POLICE", "Police Station"
+    CHURCH = "CHURCH", "Church"
     OTHER = "OTHER", "Other"
 
 
