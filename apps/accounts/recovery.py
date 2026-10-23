@@ -3,11 +3,11 @@
 Views stay thin; all the rules live here so they are easy to test and to extend (e.g. SMS later).
 """
 
+import json
 import logging
 import secrets
-import json
-import urllib.request
 import urllib.error
+import urllib.request
 from datetime import timedelta
 
 from django.conf import settings
@@ -186,11 +186,9 @@ def mask_email(email):
 
 def _send_code_email(user, code, purpose, target_user=None):
     minutes = int(RecoveryCode.LIFETIME.total_seconds() // 60)
-    
+
     # --- BREVO SETTINGS ---
-    # 1. Put your Brevo API Key here (starts with xkeysib-)
-    BREVO_API_KEY = getattr(settings, 'BREVO_API_KEY', '') 
-    # 2. Put your Template ID here (numbers only, no quotes)
+    BREVO_API_KEY = getattr(settings, "BREVO_API_KEY", "")
     template_id = 2
     # ----------------------
 
@@ -202,7 +200,7 @@ def _send_code_email(user, code, purpose, target_user=None):
         subject = "Confirm a SignConnect password reset"
 
     url = "https://api.brevo.com/v3/smtp/email"
-    
+
     payload = {
         "sender": {"name": "SignConnect", "email": settings.DEFAULT_FROM_EMAIL},
         "to": [{"email": user.email, "name": user.full_name}],
@@ -210,18 +208,18 @@ def _send_code_email(user, code, purpose, target_user=None):
         "templateId": template_id,
         "params": {
             "code": code,
-            "minutes": minutes
-        }
+            "minutes": minutes,
+        },
     }
 
-    req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'))
-    req.add_header('accept', 'application/json')
-    req.add_header('api-key', BREVO_API_KEY)
-    req.add_header('content-type', 'application/json')
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"))
+    req.add_header("accept", "application/json")
+    req.add_header("api-key", BREVO_API_KEY)
+    req.add_header("content-type", "application/json")
 
     try:
-        with urllib.request.urlopen(req) as response:
-            pass # Success
+        with urllib.request.urlopen(req):
+            pass  # Success
     except urllib.error.HTTPError as e:
         logger.error(f"Brevo API Error: {e.read().decode()}")
-        raise Exception("Failed to send email via Brevo")
+        raise RuntimeError("Failed to send email via Brevo") from e
