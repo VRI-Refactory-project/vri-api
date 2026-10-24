@@ -175,13 +175,17 @@ class BaseRegistrationSerializer(serializers.Serializer):
 
 
 class DeafRegistrationSerializer(BaseRegistrationSerializer):
-    """V2-001 first step: name, phone number and a password/PIN. Email is optional.
-
-    Communication method, location and emergency contact belong to the profile that is completed
-    after sign-up (a DeafUserProfile does not exist yet), so they are not collected here.
-    """
+    """Registration for deaf and hard-of-hearing users."""
 
     role = User.Role.DEAF_HOH
+
+    def create_profile(self, user, validated_data):
+        from apps.users.models import UserProfile
+
+        UserProfile.objects.create(
+            user=user,
+            contact_number=str(user.phone_number),
+        )
 
 
 class LoginSerializer(serializers.Serializer):

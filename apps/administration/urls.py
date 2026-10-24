@@ -1,6 +1,10 @@
 from django.urls import path
 
-from .views import AdminChangePasswordView, AdminProfileDetailView
+from .views import (
+    AdminChangePasswordView,
+    AdminInstitutionListView,
+    AdminProfileDetailView,
+)
 
 app_name = "administration"
 
@@ -10,5 +14,10 @@ urlpatterns = [
         "change-password/",
         AdminChangePasswordView.as_view(),
         name="admin-change-password",
+    ),
+    path(
+        "institutions/",
+        AdminInstitutionListView.as_view(),
+        name="admin-institutions",
     ),
 ]
