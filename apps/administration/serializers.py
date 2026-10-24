@@ -3,6 +3,8 @@ from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from rest_framework import serializers
 
+from apps.institutions.models import InstitutionProfile
+
 from .models import AdminProfile
 
 User = get_user_model()
@@ -130,3 +132,34 @@ class AdminChangePasswordSerializer(serializers.Serializer):
         profile.password_last_changed = timezone.now()
         profile.save()
         return profile
+
+
+class AdminInstitutionSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(source="user.email", read_only=True)
+    contact_name = serializers.CharField(source="user.full_name", read_only=True)
+    email_verified = serializers.BooleanField(
+        source="user.email_verified", read_only=True
+    )
+    is_active = serializers.BooleanField(source="user.is_active", read_only=True)
+    organisation_type_display = serializers.CharField(
+        source="get_organisation_type_display", read_only=True
+    )
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+
+    class Meta:
+        model = InstitutionProfile
+        fields = [
+            "id",
+            "organisation_name",
+            "organisation_type",
+            "organisation_type_display",
+            "organisation_type_other",
+            "status",
+            "status_display",
+            "email",
+            "contact_name",
+            "email_verified",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]

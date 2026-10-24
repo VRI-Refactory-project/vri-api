@@ -3,9 +3,12 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.institutions.models import InstitutionProfile
+
 from .models import AdminProfile
 from .serializers import (
     AdminChangePasswordSerializer,
+    AdminInstitutionSerializer,
     AdminProfileSerializer,
 )
 
@@ -59,3 +62,13 @@ class AdminChangePasswordView(APIView):
             {"detail": "Password updated successfully."},
             status=status.HTTP_200_OK,
         )
+
+
+@extend_schema(
+    tags=["Administration Institutions"],
+    summary="List all institutions (admin only)",
+)
+class AdminInstitutionListView(generics.ListAPIView):
+    permission_classes = [IsAdminUserPermission]
+    serializer_class = AdminInstitutionSerializer
+    queryset = InstitutionProfile.objects.select_related("user").order_by("-created_at")
