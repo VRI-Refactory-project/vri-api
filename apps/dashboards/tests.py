@@ -240,7 +240,7 @@ class AvailableInterpretersTests(TestCase):
 
         self.assertEqual([row["name"] for row in data], ["Amina Okafor"])
         self.assertEqual(data[0]["sign_languages"], ["Ugandan Sign Language"])
-        self.assertEqual(data[0]["specialisation"], "General")
+        self.assertEqual(data[0]["specialisation"], "General / everyday")
 
     def test_does_not_expose_contact_details(self):
         self.make_interpreter("0700000420", "Amina Okafor")

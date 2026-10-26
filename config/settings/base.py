@@ -150,6 +150,8 @@ vars().update(EMAIL_CONFIG)
 DEFAULT_FROM_EMAIL = env(
     "DEFAULT_FROM_EMAIL", default="SignConnect <no-reply@signconnect.local>"
 )
+BREVO_API_KEY = env("BREVO_API_KEY", default="")
+
 # --- Expo Push Notifications ---
 EXPO_PUSH_ENABLED = env.bool("EXPO_PUSH_ENABLED", default=False)
 EXPO_ACCESS_TOKEN = env("EXPO_ACCESS_TOKEN", default="")
@@ -158,6 +160,10 @@ EXPO_ACCESS_TOKEN = env("EXPO_ACCESS_TOKEN", default="")
 # How long an interpreter has to answer an offer, and how long a request may wait before it fails.
 REQUEST_OFFER_EXPIRY_SECONDS = env.int("REQUEST_OFFER_EXPIRY_SECONDS", default=60)
 REQUEST_MAX_WAIT_SECONDS = env.int("REQUEST_MAX_WAIT_SECONDS", default=300)
+# Lead time (in seconds) before an offer expires to send an urgency reminder push notification (V2-037-BE-03)
+INTERPRETER_OFFER_REMINDER_LEAD_TIME = env.int(
+    "INTERPRETER_OFFER_REMINDER_LEAD_TIME", default=15
+)
 # Move the request queue forward every time the uptime monitor calls /api/health/. Switch it on when
 # no scheduler is available (Render free). Off by default.
 DISPATCH_REQUESTS_ON_HEALTH = env.bool("DISPATCH_REQUESTS_ON_HEALTH", default=False)

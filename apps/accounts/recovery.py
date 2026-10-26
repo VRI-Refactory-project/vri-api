@@ -9,6 +9,7 @@ import secrets
 import urllib.error
 import urllib.request
 from datetime import timedelta
+from django.core.mail import send_mail
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
@@ -187,11 +188,6 @@ def mask_email(email):
 def _send_code_email(user, code, purpose, target_user=None):
     minutes = int(RecoveryCode.LIFETIME.total_seconds() // 60)
 
-    # --- BREVO SETTINGS ---
-    BREVO_API_KEY = getattr(settings, "BREVO_API_KEY", "")
-    template_id = 2
-    # ----------------------
-
     if purpose == RecoveryCode.Purpose.EMAIL_VERIFY:
         subject = "Verify your SignConnect email"
     elif purpose == RecoveryCode.Purpose.SELF_RECOVERY:
@@ -199,27 +195,57 @@ def _send_code_email(user, code, purpose, target_user=None):
     else:
         subject = "Confirm a SignConnect password reset"
 
-    url = "https://api.brevo.com/v3/smtp/email"
+    brevo_api_key = getattr(settings, "BREVO_API_KEY", "")
 
+    # Local development and tests: use Django's configured email backend.
+    if not brevo_api_key:
+        body = (
+            f"Hello {user.full_name},\n\n"
+            f"Your SignConnect code is: {code}\n"
+            f"This code expires in {minutes} minutes."
+        )
+
+        if target_user is not None:
+            body += (
+                "\n\nThis code is for resetting the password of "
+                f"{target_user.full_name}."
+            )
+
+        send_mail(
+            subject,
+            body,
+            settings.DEFAULT_FROM_EMAIL,
+            [user.email],
+            fail_silently=False,
+        )
+        return
+
+    # Production: send through Brevo when an API key is configured.
     payload = {
-        "sender": {"name": "SignConnect", "email": settings.DEFAULT_FROM_EMAIL},
+        "sender": {
+            "name": "SignConnect",
+            "email": settings.DEFAULT_FROM_EMAIL,
+        },
         "to": [{"email": user.email, "name": user.full_name}],
         "subject": subject,
-        "templateId": template_id,
+        "templateId": 2,
         "params": {
             "code": code,
             "minutes": minutes,
         },
     }
 
-    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"))
+    req = urllib.request.Request(
+        "https://api.brevo.com/v3/smtp/email",
+        data=json.dumps(payload).encode("utf-8"),
+    )
     req.add_header("accept", "application/json")
-    req.add_header("api-key", BREVO_API_KEY)
+    req.add_header("api-key", brevo_api_key)
     req.add_header("content-type", "application/json")
 
     try:
-        with urllib.request.urlopen(req):
-            pass  # Success
-    except urllib.error.HTTPError as e:
-        logger.error(f"Brevo API Error: {e.read().decode()}")
-        raise RuntimeError("Failed to send email via Brevo") from e
+        with urllib.request.urlopen(req, timeout=10):
+            pass
+    except urllib.error.HTTPError as exc:
+        logger.error("Brevo API returned HTTP %s", exc.code)
+        raise RuntimeError("Failed to send email via Brevo") from exc

@@ -5,6 +5,7 @@ from urllib.request import Request, urlopen
 
 from django.conf import settings
 from django.utils import timezone
+from django.db import transaction
 
 from apps.notifications.models import Notification, PushDevice
 
@@ -89,7 +90,7 @@ def create_notification(
     category=Notification.Category.GENERAL,
     data=None,
 ):
-    """Save a notification and attempt push delivery."""
+    """Save a notification and send its push after the transaction commits."""
     notification = Notification.objects.create(
         user=user,
         title=title,
@@ -98,7 +99,7 @@ def create_notification(
         data=data or {},
     )
 
-    send_expo_push(notification)
+    transaction.on_commit(lambda: send_expo_push(notification))
     return notification
 
 

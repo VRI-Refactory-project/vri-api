@@ -61,7 +61,7 @@ class ServiceRequestAPITests(APITestCase):
             end_at=now + timedelta(hours=1),
         )
 
-    @patch("apps.service_requests.services.send_expo_push")
+    @patch("apps.notifications.services.send_expo_push")
     def test_request_is_offered_and_notification_created(self, mock_push):
         self.make_interpreter_available()
 
