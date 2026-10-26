@@ -20,4 +20,9 @@ urlpatterns = [
         views.InterpreterDashboardView.as_view(),
         name="dashboard-interpreter",
     ),
+    path(
+        "institution/",
+        views.InstitutionDashboardView.as_view(),
+        name="dashboard-institution",
+    ),
 ]

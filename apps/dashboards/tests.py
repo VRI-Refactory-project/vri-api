@@ -6,7 +6,12 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.institutions.models import InstitutionProfile
+from apps.institutions.models import (
+    InstitutionProfile,
+    InstitutionStaff,
+    InstitutionStatus,
+    StaffRole,
+)
 from apps.interpreters.models import (
     InterpreterAvailability,
     InterpreterProfile,
@@ -310,3 +315,83 @@ class InterpreterPublicProfileTests(TestCase):
         self.assertEqual(
             self.client.get("/api/v1/dashboard/deaf/interpreters/99999/").status_code, 404
         )
+
+
+class InstitutionDashboardTests(TestCase):
+    URL = "/api/v1/dashboard/institution/"
+
+    def setUp(self):
+        self.client = APIClient()
+
+        self.institution_user = make_user(
+            User.Role.INSTITUTION,
+            "0700000700",
+            full_name="Institution Admin",
+        )
+
+        self.institution = InstitutionProfile.objects.create(
+            user=self.institution_user,
+            organisation_name="Mulago Hospital",
+            organisation_type="HOSPITAL",
+            status=InstitutionStatus.PENDING,
+        )
+
+        InstitutionStaff.objects.create(
+            institution=self.institution,
+            user=self.institution_user,
+            role=StaffRole.ADMIN,
+            created_by=self.institution_user,
+        )
+
+    def test_institution_user_receives_dashboard_data(self):
+        self.client.force_authenticate(user=self.institution_user)
+
+        response = self.client.get(self.URL)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["institution"]["organisation_name"],
+            "Mulago Hospital",
+        )
+        self.assertEqual(
+            response.data["institution"]["status"],
+            InstitutionStatus.PENDING,
+        )
+        self.assertEqual(
+            response.data["institutional_role"],
+            StaffRole.ADMIN,
+        )
+        self.assertEqual(response.data["staff_summary"]["total"], 1)
+        self.assertEqual(response.data["staff_summary"]["active"], 1)
+        self.assertEqual(response.data["staff_summary"]["revoked"], 0)
+
+    def test_unauthenticated_user_cannot_access_dashboard(self):
+        response = self.client.get(self.URL)
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_other_roles_cannot_access_dashboard(self):
+        for index, role in enumerate(
+            [
+                User.Role.DEAF_HOH,
+                User.Role.INTERPRETER,
+                User.Role.ADMIN,
+            ]
+        ):
+            user = make_user(role, f"070000071{index}0")
+            self.client.force_authenticate(user=user)
+
+            response = self.client.get(self.URL)
+
+            self.assertEqual(response.status_code, 403, role)
+
+    def test_institution_user_without_membership_is_denied(self):
+        user = make_user(
+            User.Role.INSTITUTION,
+            "0700000799",
+        )
+        self.client.force_authenticate(user=user)
+
+        response = self.client.get(self.URL)
+
+        self.assertEqual(response.status_code, 403)

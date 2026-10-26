@@ -9,6 +9,7 @@ from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -16,8 +17,10 @@ from apps.accounts.serializers import UserSerializer
 from apps.audit.models import AuditLog
 from apps.core.permissions import (
     CanAccessInterpreterDashboard,
+    HasInstitutionalRole,
     IsAdminRole,
     IsDeafUser,
+    user_staff_membership,
 )
 from apps.institutions.models import InstitutionProfile, InstitutionStatus
 from apps.interpreters.models import InterpreterProfile, VerificationStatus
@@ -67,6 +70,31 @@ InterpreterDashboardSerializer = inline_serializer(
         "is_available": serializers.BooleanField(),
         "specialisation": serializers.CharField(allow_null=True),
         "working_hours_schedule": serializers.DictField(),
+    },
+)
+
+InstitutionDashboardSerializer = inline_serializer(
+    "InstitutionDashboard",
+    {
+        "user": UserSerializer(),
+        "institution": inline_serializer(
+            "DashboardInstitution",
+            {
+                "id": serializers.IntegerField(),
+                "organisation_name": serializers.CharField(),
+                "organisation_type": serializers.CharField(),
+                "status": serializers.CharField(),
+            },
+        ),
+        "institutional_role": serializers.CharField(),
+        "staff_summary": inline_serializer(
+            "InstitutionStaffSummary",
+            {
+                "total": serializers.IntegerField(),
+                "active": serializers.IntegerField(),
+                "revoked": serializers.IntegerField(),
+            },
+        ),
     },
 )
 
@@ -239,5 +267,50 @@ class InterpreterDashboardView(APIView):
                 "is_available": profile.is_available,
                 "specialisation": profile.specialisation,
                 "working_hours_schedule": profile.working_hours_schedule,
+            }
+        )
+
+
+class InstitutionDashboardView(APIView):
+    """Dashboard data for the signed-in institution's staff member."""
+
+    permission_classes = [HasInstitutionalRole]
+
+    @extend_schema(
+        tags=["Dashboards"],
+        summary="Institutional dashboard",
+        responses={200: InstitutionDashboardSerializer},
+    )
+    def get(self, request):
+        staff_membership = user_staff_membership(request.user)
+
+        if staff_membership is None:
+            raise PermissionDenied(
+                "Your account is not linked to an institution."
+            )
+
+        institution = staff_membership.institution
+        staff_members = institution.staff.all()
+
+        return Response(
+            {
+                "user": UserSerializer(request.user).data,
+                "institution": {
+                    "id": institution.id,
+                    "organisation_name": institution.organisation_name,
+                    "organisation_type": institution.organisation_type,
+                    "status": institution.status,
+                },
+                "institutional_role": staff_membership.role,
+                "staff_summary": {
+                    "total": staff_members.count(),
+                    "active": staff_members.filter(
+                        is_active=True,
+                        revoked_at__isnull=True,
+                    ).count(),
+                    "revoked": staff_members.filter(
+                        revoked_at__isnull=False,
+                    ).count(),
+                },
             }
         )
