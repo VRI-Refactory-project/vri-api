@@ -2,6 +2,7 @@ from django.core import mail
 from django.core.cache import cache
 from django.test import override_settings
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import User
@@ -174,8 +175,23 @@ class InstitutionApprovalTests(APITestCase):
             "Mulago Hospital",
         )
 
+    def test_admin_cannot_approve_institution_with_unverified_email(self):
+        self.institution_user.email_verified_at = None
+        self.institution_user.save(update_fields=["email_verified_at"])
+
+        response = self.client.post(
+            reverse("institution-approve", args=[self.profile.pk])
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.status, InstitutionStatus.PENDING)
+
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_admin_can_approve_and_notification_is_sent(self):
+        self.institution_user.email_verified_at = timezone.now()
+        self.institution_user.save(update_fields=["email_verified_at"])
+
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
                 reverse("institution-approve", args=[self.profile.pk])

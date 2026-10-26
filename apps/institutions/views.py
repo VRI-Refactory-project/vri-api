@@ -124,6 +124,18 @@ class InstitutionDecisionView(APIView):
                     }
                 )
 
+            if (
+                self.decision == InstitutionStatus.APPROVED
+                and not profile.user.email_verified
+            ):
+                raise ValidationError(
+                    {
+                        "email": [
+                            "The administrator's email must be verified before the institution can be approved."
+                        ]
+                    }
+                )
+
             profile.status = self.decision
             profile.updated_at = timezone.now()
             profile.save(update_fields=["status", "updated_at"])
