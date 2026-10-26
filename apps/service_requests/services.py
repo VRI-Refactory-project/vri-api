@@ -20,10 +20,64 @@ from apps.audit.models import AuditLog
 from apps.interpreters.models import InterpreterProfile, Specialisation
 from apps.interpreters.routing import pick_interpreter
 from apps.notifications.models import Notification
-from apps.notifications.services import send_expo_push
+from apps.notifications.services import create_notification, send_expo_push
 from apps.service_requests.models import OPEN_STATUSES, RequestOffer, ServiceRequest
 
 User = get_user_model()
+
+
+def send_due_offer_reminders() -> int:
+    """Send reminders for pending offers nearing expiration."""
+    now = timezone.now()
+    lead_time = getattr(
+        settings, "INTERPRETER_OFFER_REMINDER_LEAD_TIME", 15
+    )
+    reminder_threshold = now + timedelta(seconds=lead_time)
+
+    candidate_ids = list(
+        RequestOffer.objects.filter(
+            outcome=RequestOffer.Outcome.PENDING,
+            expires_at__gt=now,
+            expires_at__lte=reminder_threshold,
+            reminder_sent_at__isnull=True,
+        ).values_list("pk", flat=True)
+    )
+
+    sent_count = 0
+
+    for offer_id in candidate_ids:
+        with transaction.atomic():
+            offer = (
+                RequestOffer.objects.select_for_update(skip_locked=True)
+                .filter(
+                    pk=offer_id,
+                    outcome=RequestOffer.Outcome.PENDING,
+                    expires_at__gt=timezone.now(),
+                    reminder_sent_at__isnull=True,
+                )
+                .first()
+            )
+
+            if offer is None:
+                continue
+
+            # Save the reminder notification before marking the offer.
+            create_notification(
+                user=offer.interpreter.user,
+                title="Offer Expiring Soon!",
+                body="You have a pending service request offer expiring shortly.",
+                category="offer_reminder",
+                data={
+                    "request_id": str(offer.service_request_id),
+                    "offer_id": str(offer.id),
+                },
+            )
+
+            offer.reminder_sent_at = timezone.now()
+            offer.save(update_fields=["reminder_sent_at"])
+            sent_count += 1
+
+    return sent_count
 
 
 class OpenRequestExists(Exception):
@@ -185,7 +239,7 @@ def offer_next(service_request, *, now=None):
                 offered_at=now,
                 expires_at=now + timedelta(seconds=offer_expiry_seconds()),
             )
-            notification = Notification.objects.create(
+            create_notification(
                 user=match.interpreter.user,
                 title="New interpreting request",
                 body=(
@@ -211,7 +265,6 @@ def offer_next(service_request, *, now=None):
                 },
             )
             # Send the push only after the offer and notification are committed.
-            transaction.on_commit(lambda: send_expo_push(notification))
     except IntegrityError:
         # Another request took this interpreter a moment ago. This one stays pending.
         service_request.refresh_from_db()
@@ -547,6 +600,7 @@ def sweep(*, now=None):
     `dispatch_requests` command or the health check."""
     now = now or timezone.now()
     expired = expire_stale_offers(now=now)
+    send_due_offer_reminders()
     # Requests that have waited too long fail first: the person has almost certainly given up, so
     # an interpreter should not be asked to take one.
     failed = fail_overdue_requests(now=now)

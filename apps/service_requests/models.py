@@ -127,6 +127,7 @@ class RequestOffer(models.Model):
         max_length=10, choices=Outcome.choices, default=Outcome.PENDING
     )
     responded_at = models.DateTimeField(null=True, blank=True)
+    reminder_sent_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["offered_at", "id"]
