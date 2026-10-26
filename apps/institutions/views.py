@@ -203,46 +203,42 @@ class MyInstitutionView(RetrieveAPIView):
 
 
 class InstitutionalAccountUpdateAPIView(APIView):
-    """
-    Endpoint for institutional managers to update their organization's account details.
-    """
+    """Allow administrators of approved institutions to update organisation details."""
 
-    permission_classes = [IsAuthenticated, HasInstitutionalRole]
+    permission_classes = [IsAuthenticated, IsInstitutionAdmin]
 
     def get_object(self, request):
-        return get_object_or_404(
-            InstitutionProfile.objects.filter(
-                user=request.user,
-                status=InstitutionStatus.APPROVED,
-            )
-        )
+        institution = user_institution(request.user)
+        if institution is None:
+            from rest_framework.exceptions import NotFound
+
+            raise NotFound("No institution is associated with this account.")
+        return institution
 
     def get(self, request, *args, **kwargs):
-        """Retrieve the current account settings profile configuration."""
+        """Retrieve the current institution's editable account details."""
         institution = self.get_object(request)
         serializer = InstitutionProfileUpdateSerializer(institution)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def patch(self, request, *args, **kwargs):
-        """Partially update account configuration properties dynamically."""
+        """Partially update the current institution's organisation details."""
         institution = self.get_object(request)
-
-        # Pass partial=True so the frontend can send only the fields that changed
         serializer = InstitutionProfileUpdateSerializer(
-            institution, data=request.data, partial=True
+            institution,
+            data=request.data,
+            partial=True,
         )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
 
-        if serializer.is_valid():
-            serializer.save()
-            return Response(
-                {
-                    "message": "Institutional settings updated successfully.",
-                    "updated_data": serializer.data,
-                },
-                status=status.HTTP_200_OK,
-            )
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "message": "Institutional settings updated successfully.",
+                "updated_data": serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class InstitutionalDashboardView(APIView):
