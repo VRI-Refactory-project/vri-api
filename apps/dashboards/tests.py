@@ -395,3 +395,59 @@ class InstitutionDashboardTests(TestCase):
         response = self.client.get(self.URL)
 
         self.assertEqual(response.status_code, 403)
+
+    def test_staff_member_can_access_institution_dashboard(self):
+        staff_user = make_user(
+            User.Role.INSTITUTION,
+            "0700000801",
+            full_name="Institution Staff",
+        )
+        InstitutionStaff.objects.create(
+            institution=self.institution,
+            user=staff_user,
+            role=StaffRole.STAFF,
+            created_by=self.institution_user,
+        )
+        self.client.force_authenticate(user=staff_user)
+
+        response = self.client.get(self.URL)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["institutional_role"],
+            StaffRole.STAFF,
+        )
+        self.assertEqual(
+            response.data["institution"]["id"],
+            self.institution.id,
+        )
+
+    def test_revoked_membership_cannot_access_institution_dashboard(self):
+        membership = self.institution_user.institution_staff
+        membership.revoked_at = timezone.now()
+        membership.save(update_fields=["revoked_at"])
+
+        self.client.force_authenticate(user=self.institution_user)
+        response = self.client.get(self.URL)
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_inactive_staff_membership_is_not_counted_as_active(self):
+        staff_user = make_user(
+            User.Role.INSTITUTION,
+            "0700000802",
+            full_name="Inactive Institution Staff",
+        )
+        InstitutionStaff.objects.create(
+            institution=self.institution,
+            user=staff_user,
+            role=StaffRole.STAFF,
+            is_active=False,
+            created_by=self.institution_user,
+        )
+
+        self.client.force_authenticate(user=self.institution_user)
+        response = self.client.get(self.URL)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["staff_summary"]["active"], 1)
