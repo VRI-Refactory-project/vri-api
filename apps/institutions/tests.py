@@ -8,7 +8,12 @@ from rest_framework.test import APITestCase
 from apps.accounts.models import User
 from apps.audit.models import AuditLog
 
-from .models import InstitutionProfile, InstitutionStatus
+from .models import (
+    InstitutionProfile,
+    InstitutionStaff,
+    InstitutionStatus,
+    StaffRole,
+)
 
 PASSWORD = "Sign-Connect-2026"
 
@@ -253,3 +258,121 @@ class InstitutionApprovalTests(APITestCase):
 
         self.profile.refresh_from_db()
         self.assertEqual(self.profile.status, InstitutionStatus.APPROVED)
+
+
+class InstitutionAccountUpdateTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+
+        self.admin_user = User.objects.create_user(
+            phone_number="+256772555101",
+            password=PASSWORD,
+            full_name="Institution Admin",
+            email="institution-admin@example.com",
+            role=User.Role.INSTITUTION,
+        )
+        self.institution = InstitutionProfile.objects.create(
+            user=self.admin_user,
+            organisation_name="Mulago Hospital",
+            organisation_type="HOSPITAL",
+            status=InstitutionStatus.APPROVED,
+        )
+        InstitutionStaff.objects.create(
+            institution=self.institution,
+            user=self.admin_user,
+            role=StaffRole.ADMIN,
+        )
+        self.url = reverse("institution-account-update")
+        self.client.force_authenticate(user=self.admin_user)
+
+    def test_admin_can_retrieve_account_details(self):
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["organisation_name"], "Mulago Hospital"
+        )
+        self.assertEqual(response.data["organisation_type"], "HOSPITAL")
+        self.assertNotIn("status", response.data)
+
+    def test_admin_can_update_organisation_details(self):
+        response = self.client.patch(
+            self.url,
+            {
+                "organisation_name": "Updated Hospital",
+                "organisation_type": "OTHER",
+                "organisation_type_other": "Specialist medical centre",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.institution.refresh_from_db()
+        self.assertEqual(
+            self.institution.organisation_name, "Updated Hospital"
+        )
+        self.assertEqual(self.institution.organisation_type, "OTHER")
+        self.assertEqual(
+            self.institution.organisation_type_other,
+            "Specialist medical centre",
+        )
+
+    def test_blank_organisation_name_is_rejected(self):
+        response = self.client.patch(
+            self.url, {"organisation_name": "   "}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.institution.refresh_from_db()
+        self.assertEqual(
+            self.institution.organisation_name, "Mulago Hospital"
+        )
+
+    def test_other_type_requires_a_description(self):
+        response = self.client.patch(
+            self.url,
+            {
+                "organisation_type": "OTHER",
+                "organisation_type_other": "   ",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("organisation_type_other", response.data)
+
+    def test_approval_status_cannot_be_changed_through_update(self):
+        response = self.client.patch(
+            self.url, {"status": "REJECTED"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.institution.refresh_from_db()
+        self.assertEqual(self.institution.status, InstitutionStatus.APPROVED)
+
+    def test_ordinary_staff_cannot_update_account(self):
+        staff_user = User.objects.create_user(
+            phone_number="+256772555102",
+            password=PASSWORD,
+            full_name="Institution Staff",
+            email="institution-staff@example.com",
+            role=User.Role.INSTITUTION,
+        )
+        InstitutionStaff.objects.create(
+            institution=self.institution,
+            user=staff_user,
+            role=StaffRole.STAFF,
+        )
+        self.client.force_authenticate(user=staff_user)
+
+        response = self.client.patch(
+            self.url,
+            {"organisation_name": "Unauthorised Change"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.institution.refresh_from_db()
+        self.assertEqual(
+            self.institution.organisation_name, "Mulago Hospital"
+        )

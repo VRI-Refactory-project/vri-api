@@ -67,20 +67,57 @@ class InstitutionSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+
 class InstitutionProfileUpdateSerializer(serializers.ModelSerializer):
+    """Update editable organisation details without exposing approval status."""
+
     class Meta:
         model = InstitutionProfile
         fields = [
-            "name",
-            "contact_email",
-            "contact_phone",
-            "billing_address",
-            "timezone",
+            "organisation_name",
+            "organisation_type",
+            "organisation_type_other",
         ]
         extra_kwargs = {
-            "name": {"required": False},
-            "contact_email": {"required": False},
+            "organisation_name": {"required": False},
+            "organisation_type": {"required": False},
+            "organisation_type_other": {"required": False},
         }
+
+    def validate_organisation_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError(
+                "Organisation name cannot be blank."
+            )
+        return value
+
+    def validate(self, attrs):
+        # For partial updates, consider the existing values too.
+        organisation_type = attrs.get(
+            "organisation_type",
+            self.instance.organisation_type if self.instance else None,
+        )
+        other = attrs.get(
+            "organisation_type_other",
+            self.instance.organisation_type_other if self.instance else "",
+        )
+
+        if organisation_type == OrganisationType.OTHER:
+            other = (other or "").strip()
+            if not other:
+                raise serializers.ValidationError(
+                    {
+                        "organisation_type_other": (
+                            "Tell us what kind of institution this is."
+                        )
+                    }
+                )
+            attrs["organisation_type_other"] = other
+        else:
+            attrs["organisation_type_other"] = ""
+
+        return attrs
 
 
 # --- V2-006: staff accounts -------------------------------------------------------------------------
