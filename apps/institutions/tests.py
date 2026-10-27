@@ -1,4 +1,5 @@
 from django.core import mail
+from unittest.mock import patch
 from django.core.cache import cache
 from django.test import override_settings
 from django.urls import reverse
@@ -233,6 +234,37 @@ class InstitutionApprovalTests(APITestCase):
         self.profile.refresh_from_db()
         self.assertEqual(self.profile.status, InstitutionStatus.REJECTED)
         self.assertEqual(len(mail.outbox), 1)
+
+    def test_approval_succeeds_when_notification_email_fails(self):
+        self.institution_user.email_verified_at = timezone.now()
+        self.institution_user.save(update_fields=["email_verified_at"])
+
+        with patch(
+            "apps.institutions.views.send_mail",
+            side_effect=OSError("SMTP server unavailable"),
+        ):
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.client.post(
+                    reverse("institution-approve", args=[self.profile.pk])
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.status, InstitutionStatus.APPROVED)
+
+    def test_rejection_succeeds_when_notification_email_fails(self):
+        with patch(
+            "apps.institutions.views.send_mail",
+            side_effect=OSError("SMTP server unavailable"),
+        ):
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.client.post(
+                    reverse("institution-reject", args=[self.profile.pk])
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.status, InstitutionStatus.REJECTED)
 
     def test_non_admin_cannot_approve_application(self):
         self.client.force_authenticate(user=self.institution_user)
