@@ -1,0 +1,33 @@
+name: Deploy Backend to DigitalOcean
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Diagnose SSH key
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER_NAME: ${{ secrets.DEPLOY_USER }}
+        run: |
+          printf '%s\n' "$KEY" > key
+          chmod 600 key
+          echo "Lines in key: $(wc -l < key)"
+          echo "Host length: ${#HOST}  User length: ${#USER_NAME}"
+          echo "Fingerprint from secret:"
+          ssh-keygen -y -P "" -f key | ssh-keygen -lf -
+          rm -f key
+
+      - name: Deploy backend over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: sudo /usr/local/sbin/deploy-signconnect-backend
