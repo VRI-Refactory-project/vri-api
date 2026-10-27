@@ -19,6 +19,7 @@ from rest_framework.exceptions import ValidationError
 from apps.accounts import recovery
 from apps.audit import services as audit
 from apps.audit.models import AuditLog
+from apps.core.emailing import branded_html
 
 from .models import InstitutionStaff, StaffRole
 
@@ -165,4 +166,5 @@ def _send_login_details(membership, admin, temporary_password):
         body,
         settings.DEFAULT_FROM_EMAIL,
         [user.email],
+        html_message=branded_html(body, highlight=temporary_password),
     )

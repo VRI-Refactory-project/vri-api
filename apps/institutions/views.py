@@ -16,6 +16,7 @@ from rest_framework.views import APIView
 
 from apps.audit import services as audit
 from apps.audit.models import AuditLog
+from apps.core.emailing import branded_html
 from apps.core.permissions import (
     HasInstitutionalRole,
     IsAdminRole,
@@ -80,6 +81,7 @@ def notify_institution(profile, decision):
             getattr(settings, "DEFAULT_FROM_EMAIL", None),
             [profile.user.email],
             fail_silently=False,
+            html_message=branded_html(message),
         )
     except Exception:
         logger.exception(
