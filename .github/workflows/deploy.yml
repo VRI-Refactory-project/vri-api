@@ -10,7 +10,19 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
+      - name: Verify deploy key fingerprint
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -eu
+          KEY_FILE="$(mktemp)"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          ssh-keygen -y -f "$KEY_FILE" | ssh-keygen -lf -
+
       - name: Deploy backend over SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
