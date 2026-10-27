@@ -10,10 +10,10 @@ import urllib.error
 import urllib.request
 from datetime import timedelta
 from email.utils import parseaddr
-from django.core.mail import send_mail
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
+from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import F, Sum
 from django.utils import timezone
@@ -215,9 +215,7 @@ def _code_email_parts(user, code, purpose, target_user, minutes):
             f"({target_user.phone_number}). Enter this code to confirm."
         )
         safety = "Did not request this? Tell the tech lead immediately."
-    text = (
-        f"Hello {user.full_name},\n\n{intro}\n\nYour code: {code}\n\n{expires}\n\n{safety}\n"
-    )
+    text = f"Hello {user.full_name},\n\n{intro}\n\nYour code: {code}\n\n{expires}\n\n{safety}\n"
     html = code_email_html(
         heading=heading,
         greeting=f"Hello {user.full_name},",
@@ -250,7 +248,15 @@ def _send_code_email(user, code, purpose, target_user=None):
 
     # Production: send through Brevo's API when a key is configured. The design lives in
     # apps/core/emailing.py, so it is versioned with the code (no template in the Brevo dashboard).
+    #
+    # DEFAULT_FROM_EMAIL may look like "Sign Connect <a@b.com>". Brevo's sender.email must be
+    # the plain address only, so split it into a name and an address first.
     sender_name, sender_email = parseaddr(settings.DEFAULT_FROM_EMAIL)
+    if not sender_email:
+        # Fail loudly with a clear reason instead of sending Brevo a request it will reject.
+        logger.error("DEFAULT_FROM_EMAIL has no valid email address in it")
+        raise RuntimeError("DEFAULT_FROM_EMAIL is not a valid sender address")
+
     payload = {
         "sender": {"name": sender_name or "SignConnect", "email": sender_email},
         "to": [{"email": user.email, "name": user.full_name}],
