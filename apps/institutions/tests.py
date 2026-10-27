@@ -1,5 +1,6 @@
-from django.core import mail
 from unittest.mock import patch
+
+from django.core import mail
 from django.core.cache import cache
 from django.test import override_settings
 from django.urls import reverse
@@ -461,7 +462,7 @@ class InstitutionDeletionTests(APITestCase):
             institution=self.profile,
             user=self.institution_user,
             role=StaffRole.ADMIN,
-            is_active=True
+            is_active=True,
         )
 
         self.client.force_authenticate(user=self.admin)
@@ -482,7 +483,7 @@ class InstitutionDeletionTests(APITestCase):
             institution=self.profile,
             user=self.institution_user,
             role=StaffRole.ADMIN,
-            is_active=False  # 👈 Inactive account
+            is_active=False,
         )
 
         self.client.force_authenticate(user=self.admin)
@@ -515,4 +516,3 @@ class InstitutionDeletionTests(APITestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("status", response.data)
-

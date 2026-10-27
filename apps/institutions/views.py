@@ -405,8 +405,8 @@ class StaffReinstateView(InstitutionStaffMixin, APIView):
         )
         return Response(StaffSerializer(membership).data)
 
-
     # --- V2-046: Delete Institution (Platform Administrators Only) --------------------------------------
+
 
 class DeleteInstitutionView(APIView):
     """
@@ -421,9 +421,15 @@ class DeleteInstitutionView(APIView):
         summary="Delete an institution that is no longer in use",
         request=None,
         responses={
-            200: OpenApiResponse(description="Institution successfully deleted."),
-            400: OpenApiResponse(description="Cannot delete institution because it is currently in use."),
-            404: OpenApiResponse(description="Institution not found.")
+            200: OpenApiResponse(
+                description="Institution successfully deleted."
+            ),
+            400: OpenApiResponse(
+                description="Cannot delete institution because it is currently in use."
+            ),
+            404: OpenApiResponse(
+                description="Institution not found."
+            ),
         },
     )
     def delete(self, request, pk):
@@ -432,7 +438,7 @@ class DeleteInstitutionView(APIView):
             # 3. LOOKUP: Finds the specific institution profile or returns a 404 error if it doesn't exist
             profile = get_object_or_404(
                 InstitutionProfile.objects.select_for_update(),
-                pk=pk
+                pk=pk,
             )
 
             # 4. REDUNDANCY CHECK: Prevents deleting it again if it's already deleted
@@ -464,15 +470,17 @@ class DeleteInstitutionView(APIView):
             else:
                 logger.info(
                     "Institution soft-deleted by platform admin; institution_id=%s, admin_id=%s",
-                    profile.pk, request.user.pk
+                    profile.pk, request.user.pk,
                 )
 
         # 8. RESPONSE: Sends back a success JSON message to your frontend delete button
         return Response(
             {
                 "success": True,
-                "message": f"Institution '{profile.organisation_name}' has been successfully deleted."
+                "message": (
+                    f"Institution '{profile.organisation_name}' "
+                    "has been successfully deleted."
+                ),
             },
             status=status.HTTP_200_OK,
         )
-
