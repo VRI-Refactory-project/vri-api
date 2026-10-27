@@ -67,7 +67,6 @@ class InstitutionSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-
 class InstitutionProfileUpdateSerializer(serializers.ModelSerializer):
     """Update editable organisation details without exposing approval status."""
 
