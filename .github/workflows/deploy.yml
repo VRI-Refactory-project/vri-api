@@ -1,4 +1,3 @@
-
 name: Deploy Backend to DigitalOcean
 
 on:
@@ -10,18 +9,20 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Verify deploy key fingerprint
+      - name: Diagnose SSH key
         env:
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER_NAME: ${{ secrets.DEPLOY_USER }}
         run: |
-          set -eu
-          KEY_FILE="$(mktemp)"
-          trap 'rm -f "$KEY_FILE"' EXIT
-          printf '%s\n' "$DEPLOY_SSH_KEY" > "$KEY_FILE"
-          chmod 600 "$KEY_FILE"
-          ssh-keygen -y -f "$KEY_FILE" | ssh-keygen -lf -
+          printf '%s\n' "$KEY" > key
+          chmod 600 key
+          echo "Lines in key: $(wc -l < key)"
+          echo "Host length: ${#HOST}  User length: ${#USER_NAME}"
+          echo "Fingerprint from secret:"
+          ssh-keygen -y -P "" -f key | ssh-keygen -lf -
+          rm -f key
 
       - name: Deploy backend over SSH
         uses: appleboy/ssh-action@v1.2.0
