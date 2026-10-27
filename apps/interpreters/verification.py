@@ -11,6 +11,8 @@ from django.core.mail import send_mail
 from django.db import transaction
 from rest_framework.exceptions import ValidationError
 
+from apps.core.emailing import branded_html
+
 from .models import InterpreterProfile, VerificationDecision, VerificationStatus
 
 logger = logging.getLogger("apps.interpreters.verification")
@@ -135,7 +137,13 @@ def notify_interpreter(decision):
             "If you have questions, reply to this email or contact SignConnect support.\n"
         )
     try:
-        send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [user.email])
+        send_mail(
+            subject,
+            body,
+            settings.DEFAULT_FROM_EMAIL,
+            [user.email],
+            html_message=branded_html(body),
+        )
     except Exception:  # SMTP down, bad address, ...
         logger.exception(
             "interpreter_verification_email_failed interpreter=%s action=%s",

@@ -9,6 +9,7 @@ import secrets
 import urllib.error
 import urllib.request
 from datetime import timedelta
+from email.utils import parseaddr
 from django.core.mail import send_mail
 
 from django.conf import settings
@@ -20,6 +21,8 @@ from rest_framework_simplejwt.token_blacklist.models import (
     BlacklistedToken,
     OutstandingToken,
 )
+
+from apps.core.emailing import code_email_html
 
 from .models import RecoveryCode
 
@@ -185,54 +188,75 @@ def mask_email(email):
     return f"{name[:2]}{'*' * max(len(name) - 2, 1)}@{domain}"
 
 
-def _send_code_email(user, code, purpose, target_user=None):
-    minutes = int(RecoveryCode.LIFETIME.total_seconds() // 60)
-
+def _code_email_parts(user, code, purpose, target_user, minutes):
+    """The subject, plain-text body and HTML body for a one-time-code email."""
+    expires = f"This code expires in {minutes} minutes and works once."
     if purpose == RecoveryCode.Purpose.EMAIL_VERIFY:
         subject = "Verify your SignConnect email"
+        heading = "Verify your email address"
+        intro = "Enter this code in SignConnect to confirm that this email address is yours."
+        safety = (
+            "Did not create a SignConnect account? You can ignore this email. "
+            "Nothing will happen unless the code is entered."
+        )
     elif purpose == RecoveryCode.Purpose.SELF_RECOVERY:
         subject = "Your SignConnect recovery code"
+        heading = "Recover your account"
+        intro = "Use this code to get back into your SignConnect account."
+        safety = (
+            "Did not ask to recover your account? Ignore this email. Your account has not "
+            "changed. Never share this code with anyone, including SignConnect staff."
+        )
     else:
         subject = "Confirm a SignConnect password reset"
+        heading = "Confirm a password reset"
+        intro = (
+            f"You asked to reset the password/PIN for {target_user.full_name} "
+            f"({target_user.phone_number}). Enter this code to confirm."
+        )
+        safety = "Did not request this? Tell the tech lead immediately."
+    text = (
+        f"Hello {user.full_name},\n\n{intro}\n\nYour code: {code}\n\n{expires}\n\n{safety}\n"
+    )
+    html = code_email_html(
+        heading=heading,
+        greeting=f"Hello {user.full_name},",
+        intro=intro,
+        code=code,
+        expires_text=expires,
+        safety_note=safety,
+        preheader=f"Your SignConnect code is {code}. {expires}",
+    )
+    return subject, text, html
+
+
+def _send_code_email(user, code, purpose, target_user=None):
+    minutes = int(RecoveryCode.LIFETIME.total_seconds() // 60)
+    subject, text, html = _code_email_parts(user, code, purpose, target_user, minutes)
 
     brevo_api_key = getattr(settings, "BREVO_API_KEY", "")
 
     # Local development and tests: use Django's configured email backend.
     if not brevo_api_key:
-        body = (
-            f"Hello {user.full_name},\n\n"
-            f"Your SignConnect code is: {code}\n"
-            f"This code expires in {minutes} minutes."
-        )
-
-        if target_user is not None:
-            body += (
-                "\n\nThis code is for resetting the password of "
-                f"{target_user.full_name}."
-            )
-
         send_mail(
             subject,
-            body,
+            text,
             settings.DEFAULT_FROM_EMAIL,
             [user.email],
             fail_silently=False,
+            html_message=html,
         )
         return
 
-    # Production: send through Brevo when an API key is configured.
+    # Production: send through Brevo's API when a key is configured. The design lives in
+    # apps/core/emailing.py, so it is versioned with the code (no template in the Brevo dashboard).
+    sender_name, sender_email = parseaddr(settings.DEFAULT_FROM_EMAIL)
     payload = {
-        "sender": {
-            "name": "SignConnect",
-            "email": settings.DEFAULT_FROM_EMAIL,
-        },
+        "sender": {"name": sender_name or "SignConnect", "email": sender_email},
         "to": [{"email": user.email, "name": user.full_name}],
         "subject": subject,
-        "templateId": 2,
-        "params": {
-            "code": code,
-            "minutes": minutes,
-        },
+        "htmlContent": html,
+        "textContent": text,
     }
 
     req = urllib.request.Request(
@@ -247,5 +271,11 @@ def _send_code_email(user, code, purpose, target_user=None):
         with urllib.request.urlopen(req, timeout=10):
             pass
     except urllib.error.HTTPError as exc:
-        logger.error("Brevo API returned HTTP %s", exc.code)
+        # Brevo explains the failure in the response body (for example an unrecognised IP or
+        # an unvalidated sender). Log it, but never the key or the code.
+        detail = exc.read().decode("utf-8", "replace")[:300]
+        logger.error("Brevo API returned HTTP %s: %s", exc.code, detail)
+        raise RuntimeError("Failed to send email via Brevo") from exc
+    except urllib.error.URLError as exc:
+        logger.error("Could not reach Brevo: %s", exc.reason)
         raise RuntimeError("Failed to send email via Brevo") from exc
