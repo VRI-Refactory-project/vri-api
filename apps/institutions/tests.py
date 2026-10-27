@@ -1,4 +1,5 @@
 from django.core import mail
+from unittest.mock import patch
 from django.core.cache import cache
 from django.test import override_settings
 from django.urls import reverse
@@ -233,6 +234,7 @@ class InstitutionApprovalTests(APITestCase):
         self.profile.refresh_from_db()
         self.assertEqual(self.profile.status, InstitutionStatus.REJECTED)
         self.assertEqual(len(mail.outbox), 1)
+
 
     def test_non_admin_cannot_approve_application(self):
         self.client.force_authenticate(user=self.institution_user)
