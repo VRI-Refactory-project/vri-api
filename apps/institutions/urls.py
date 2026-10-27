@@ -3,6 +3,7 @@ from django.urls import path
 from . import views
 from .views import (
     ApproveInstitutionView,
+    DeactivateInstitutionView,
     InstitutionalAccountUpdateAPIView,
     PendingInstitutionListView,
     RejectInstitutionView,
@@ -17,6 +18,16 @@ urlpatterns = [
     ),
     path(
         "<int:pk>/reject/", RejectInstitutionView.as_view(), name="institution-reject"
+    ),
+    path(
+        "<int:pk>/deactivate/",
+        DeactivateInstitutionView.as_view(),
+        name="institution-deactivate",
+    ),
+    path(
+    "<int:pk>/deactivate/",
+    DeactivateInstitutionView.as_view(),
+    name="institution-deactivate",
     ),
     path(
         "api/institution/account/",

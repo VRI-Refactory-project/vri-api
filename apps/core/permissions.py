@@ -136,6 +136,16 @@ class IsApprovedInstitution(BasePermission):
                     "code": "institution_rejected",
                 }
             )
+        if institution.status == InstitutionStatus.DEACTIVATED:
+            raise PermissionDenied(
+                {
+                    "detail": (
+                        "Your institution has been deactivated. "
+                        "Please contact the SignConnect team."
+                    ),
+                    "code": "institution_deactivated",
+                }
+            )
         return institution.status == InstitutionStatus.APPROVED
 
 

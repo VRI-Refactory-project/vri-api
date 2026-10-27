@@ -16,6 +16,7 @@ from rest_framework.views import APIView
 
 from apps.audit import services as audit
 from apps.audit.models import AuditLog
+from apps.accounts import recovery
 from apps.core.permissions import (
     HasInstitutionalRole,
     IsAdminRole,
@@ -176,6 +177,94 @@ class RejectInstitutionView(InstitutionDecisionView):
     )
     def post(self, request, pk):
         return super().post(request, pk)
+
+
+class DeactivateInstitutionView(APIView):
+    """Deactivate an institution and revoke access for all its staff."""
+
+    permission_classes = [IsAdminRole]
+
+    @extend_schema(
+        tags=["Institutions"],
+        summary="Deactivate an institution and revoke all staff access",
+        request=None,
+        responses={
+            200: InstitutionApplicationSerializer,
+            401: OpenApiResponse(description="Authentication required."),
+            403: OpenApiResponse(description="Platform administrator access required."),
+            404: OpenApiResponse(description="Institution not found."),
+        },
+    )
+    def post(self, request, pk):
+        with transaction.atomic():
+            profile = get_object_or_404(
+                InstitutionProfile.objects.select_for_update().select_related("user"),
+                pk=pk,
+            )
+
+            # A repeated request must not revoke access a second time or duplicate the audit event.
+            if profile.status == InstitutionStatus.DEACTIVATED:
+                return Response(
+                    InstitutionApplicationSerializer(profile).data,
+                    status=status.HTTP_200_OK,
+                )
+
+            now = timezone.now()
+            profile.status = InstitutionStatus.DEACTIVATED
+            profile.save(update_fields=["status", "updated_at"])
+
+            memberships = (
+                InstitutionStaff.objects.select_for_update()
+                .filter(institution=profile)
+                .select_related("user")
+            )
+
+
+            revoked_count = 0
+
+            for membership in memberships:
+                user = membership.user
+
+                # Preserve the original revocation details when already revoked.
+                if membership.revoked_at is None:
+                    membership.revoked_at = now
+                    membership.revoked_by = request.user
+                    revoked_count += 1
+
+                membership.is_active = False
+                membership.save(
+                    update_fields=[
+                        "revoked_at",
+                        "revoked_by",
+                        "is_active",
+                        "updated_at",
+                    ]
+                )
+
+                # Deactivate the account and invalidate refresh tokens.
+                if user.is_active:
+                    user.is_active = False
+                    user.save(update_fields=["is_active"])
+
+                recovery.sign_out_everywhere(user)
+
+
+            audit.record(
+                AuditLog.Event.INSTITUTION_DEACTIVATED,
+                request.user,
+                request,
+                target_user=profile.user,
+                details={
+                    "institution_id": profile.pk,
+                    "organisation_name": profile.organisation_name,
+                    "staff_revoked": revoked_count,
+                },
+            )
+
+        return Response(
+            InstitutionApplicationSerializer(profile).data,
+            status=status.HTTP_200_OK,
+        )
 
 
 # --- V2-006: staff accounts (institution administrators only) & My Institution ---

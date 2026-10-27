@@ -17,6 +17,7 @@ class InstitutionStatus(models.TextChoices):
     PENDING = "PENDING", "Pending approval"
     APPROVED = "APPROVED", "Approved"
     REJECTED = "REJECTED", "Rejected"
+    DEACTIVATED = "DEACTIVATED", "Deactivated"
 
 
 class InstitutionProfile(models.Model):
