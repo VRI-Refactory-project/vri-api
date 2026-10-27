@@ -408,3 +408,111 @@ class InstitutionAccountUpdateTests(APITestCase):
         self.assertEqual(
             self.institution.organisation_name, "Mulago Hospital"
         )
+
+
+class InstitutionDeletionTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+
+        # 1. Setup global platform admin user
+        self.admin = User.objects.create_user(
+            phone_number="+256772555001",
+            password=PASSWORD,
+            full_name="Platform Admin",
+            email="admin@example.com",
+            role=User.Role.ADMIN,
+        )
+
+        # 2. Setup standard institutional user
+        self.institution_user = User.objects.create_user(
+            phone_number="+256772555002",
+            password=PASSWORD,
+            full_name="Grace Namutebi",
+            email="grace@mulago.example",
+            role=User.Role.INSTITUTION,
+        )
+
+        # 3. Create an institution instance
+        self.profile = InstitutionProfile.objects.create(
+            user=self.institution_user,
+            organisation_name="Mulago Hospital",
+            organisation_type="HOSPITAL",
+            status=InstitutionStatus.APPROVED,
+        )
+
+    def test_platform_admin_can_soft_delete_unused_institution(self):
+        """A platform admin should be able to successfully delete an institution with no active staff."""
+        self.client.force_authenticate(user=self.admin)
+
+        url = reverse("institution-delete", args=[self.profile.pk])
+        response = self.client.delete(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+
+        # Verify the soft delete status was applied
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.status, InstitutionStatus.DELETED)
+
+    def test_cannot_delete_institution_with_active_staff(self):
+        """The endpoint must block deletion if the institution has an active staff membership."""
+        # Attach an active staff member to the institution profile
+        InstitutionStaff.objects.create(
+            institution=self.profile,
+            user=self.institution_user,
+            role=StaffRole.ADMIN,
+            is_active=True
+        )
+
+        self.client.force_authenticate(user=self.admin)
+        url = reverse("institution-delete", args=[self.profile.pk])
+        response = self.client.delete(url)
+
+        # Should fail validation because active staff exists
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("institution", response.data)
+
+        # Verify the database status remains unchanged
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.status, InstitutionStatus.APPROVED)
+
+    def test_can_delete_institution_if_all_staff_are_inactive(self):
+        """If staff profiles exist but are flagged as inactive, deletion should proceed."""
+        InstitutionStaff.objects.create(
+            institution=self.profile,
+            user=self.institution_user,
+            role=StaffRole.ADMIN,
+            is_active=False  # 👈 Inactive account
+        )
+
+        self.client.force_authenticate(user=self.admin)
+        url = reverse("institution-delete", args=[self.profile.pk])
+        response = self.client.delete(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.status, InstitutionStatus.DELETED)
+
+    def test_non_admin_users_are_forbidden_from_deleting(self):
+        """Regular institution users must be blocked from triggering deletions."""
+        self.client.force_authenticate(user=self.institution_user)
+
+        url = reverse("institution-delete", args=[self.profile.pk])
+        response = self.client.delete(url)
+
+        self.assertEqual(response.status_code, 403)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.status, InstitutionStatus.APPROVED)
+
+    def test_cannot_delete_an_already_deleted_institution(self):
+        """Running a deletion on a profile already soft-deleted should yield a bad request error."""
+        self.profile.status = InstitutionStatus.DELETED
+        self.profile.save()
+
+        self.client.force_authenticate(user=self.admin)
+        url = reverse("institution-delete", args=[self.profile.pk])
+        response = self.client.delete(url)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("status", response.data)
+

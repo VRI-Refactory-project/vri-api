@@ -404,3 +404,75 @@ class StaffReinstateView(InstitutionStaffMixin, APIView):
             self.get_membership(pk), request.user, request
         )
         return Response(StaffSerializer(membership).data)
+
+
+    # --- V2-046: Delete Institution (Platform Administrators Only) --------------------------------------
+
+class DeleteInstitutionView(APIView):
+    """
+    Allows a platform administrator to soft-delete an institution that is no longer in use.
+    An institution is 'in use' if it has any active staff members.
+    """
+    # 1. SECURITY: Restricts this endpoint so ONLY system platform administrators can hit it.
+    permission_classes = [IsAdminRole]
+
+    @extend_schema(
+        tags=["Institutions"],
+        summary="Delete an institution that is no longer in use",
+        request=None,
+        responses={
+            200: OpenApiResponse(description="Institution successfully deleted."),
+            400: OpenApiResponse(description="Cannot delete institution because it is currently in use."),
+            404: OpenApiResponse(description="Institution not found.")
+        },
+    )
+    def delete(self, request, pk):
+        # 2. ISOLATION: transaction.atomic() locks the database row while processing so data stays safe
+        with transaction.atomic():
+            # 3. LOOKUP: Finds the specific institution profile or returns a 404 error if it doesn't exist
+            profile = get_object_or_404(
+                InstitutionProfile.objects.select_for_update(),
+                pk=pk
+            )
+
+            # 4. REDUNDANCY CHECK: Prevents deleting it again if it's already deleted
+            if profile.status == InstitutionStatus.DELETED:
+                raise ValidationError(
+                    {"status": ["This institution has already been deleted."]}
+                )
+
+            # 5. BUSINESS LOGIC: Checks if the institution is "in use"
+            # It queries the related staff model. If there are staff rows where is_active=True, it blocks the delete.
+            active_staff_exists = profile.staff.filter(is_active=True).exists()
+            if active_staff_exists:
+                raise ValidationError(
+                    {
+                        "institution": [
+                            "Cannot delete: This institution is currently in use by active staff accounts."
+                        ]
+                    }
+                )
+
+            # 6. SOFT DELETE EXECUTION: Changes status to DELETED instead of destroying database data
+            profile.status = InstitutionStatus.DELETED
+            profile.updated_at = timezone.now()
+            profile.save(update_fields=["status", "updated_at"])
+
+            # 7. AUDIT TRACKING: Records who performed the deletion for system history log files
+            if hasattr(AuditLog.Event, 'INSTITUTION_DELETED'):
+                audit.record(AuditLog.Event.INSTITUTION_DELETED, request.user, request)
+            else:
+                logger.info(
+                    "Institution soft-deleted by platform admin; institution_id=%s, admin_id=%s",
+                    profile.pk, request.user.pk
+                )
+
+        # 8. RESPONSE: Sends back a success JSON message to your frontend delete button
+        return Response(
+            {
+                "success": True,
+                "message": f"Institution '{profile.organisation_name}' has been successfully deleted."
+            },
+            status=status.HTTP_200_OK,
+        )
+
