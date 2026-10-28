@@ -163,7 +163,7 @@ class StaffCreateSerializer(BaseRegistrationSerializer):
 
     role = (
         User.Role.INSTITUTION
-    )  # the account's platform role; the institution role is the "role" field below
+    )  # Platform role; the institution role is the "role" field below
     email_required = True
     job_title = serializers.CharField(
         max_length=100, required=False, allow_blank=True, default=""
