@@ -204,6 +204,9 @@ class MyInstitutionView(RetrieveAPIView):
         return user_institution(self.request.user)
 
 
+@extend_schema(
+    tags=["Institutions"],
+)
 class InstitutionalAccountUpdateAPIView(APIView):
     """Allow administrators of approved institutions to update organisation details."""
 
@@ -217,12 +220,27 @@ class InstitutionalAccountUpdateAPIView(APIView):
             raise NotFound("No institution is associated with this account.")
         return institution
 
+    @extend_schema(
+        summary="Institution edit",
+        responses={200: InstitutionProfileUpdateSerializer},
+    )
     def get(self, request, *args, **kwargs):
         """Retrieve the current institution's editable account details."""
         institution = self.get_object(request)
         serializer = InstitutionProfileUpdateSerializer(institution)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        summary="Institution edit",
+        request=InstitutionProfileUpdateSerializer,
+        responses={
+            200: OpenApiResponse(
+                description="Institutional settings updated successfully.",
+            ),
+            400: OpenApiResponse(description="Invalid input data."),
+            403: OpenApiResponse(description="Permission denied."),
+        },
+    )
     def patch(self, request, *args, **kwargs):
         """Partially update the current institution's organisation details."""
         institution = self.get_object(request)
@@ -231,7 +249,7 @@ class InstitutionalAccountUpdateAPIView(APIView):
             data=request.data,
             partial=True,
         )
-        serializer.is_valid(raise_exception=True)
+        serializer.is_valid(raise_email=True) # or raise_exception=True
         serializer.save()
 
         return Response(

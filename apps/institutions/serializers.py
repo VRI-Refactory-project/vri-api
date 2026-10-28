@@ -203,9 +203,7 @@ class StaffCreateSerializer(BaseRegistrationSerializer):
 
 
 class StaffUpdateSerializer(serializers.Serializer):
-    """What an institution administrator may change. Phone and email are the person's sign-in details,
-    so only the person themselves changes those."""
-
+    """What an institution administrator may change."""
     full_name = serializers.CharField(max_length=150, required=False)
     job_title = serializers.CharField(max_length=100, required=False, allow_blank=True)
     role = serializers.ChoiceField(choices=StaffRole.choices, required=False)
@@ -215,3 +213,20 @@ class StaffUpdateSerializer(serializers.Serializer):
         if not value:
             raise serializers.ValidationError("Enter the person's full name.")
         return value
+
+    def update(self, instance, validated_data):
+        # 1. Update the User model properties if provided
+        user_instance = instance.user
+        if "full_name" in validated_data:
+            user_instance.full_name = validated_data["full_name"]
+            user_instance.save()
+
+        # 2. Update the InstitutionStaff model fields
+        if "job_title" in validated_data:
+            instance.job_title = validated_data["job_title"].strip()
+        if "role" in validated_data:
+            instance.role = validated_data["role"]
+
+        instance.save()
+        return instance
+

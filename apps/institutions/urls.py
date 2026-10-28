@@ -10,6 +10,7 @@ from .views import (
 )
 
 urlpatterns = [
+    # Admin / Management routes
     path("pending/", PendingInstitutionListView.as_view(), name="institution-pending"),
     path(
         "<int:pk>/approve/",
@@ -24,13 +25,16 @@ urlpatterns = [
         DeleteInstitutionView.as_view(),
         name="institution-delete",
     ),
-    path(
-        "api/institution/account/",
-        InstitutionalAccountUpdateAPIView.as_view(),
-        name="institution-account-update",
-    ),
+    
+    # Institution Administrator routes (Self-service)
     path("me/", views.MyInstitutionView.as_view(), name="institution-me"),
-    # V2-006: staff accounts, managed by the institution's administrators
+    path(
+        "me/account/", 
+        InstitutionalAccountUpdateAPIView.as_view(), 
+        name="institution-account-update"
+    ),
+    
+    # Staff management routes
     path("me/staff/", views.StaffListCreateView.as_view(), name="institution-staff"),
     path(
         "me/staff/<int:pk>/",
