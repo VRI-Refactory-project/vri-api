@@ -249,7 +249,7 @@ class InstitutionalAccountUpdateAPIView(APIView):
             data=request.data,
             partial=True,
         )
-        serializer.is_valid(raise_email=True) # or raise_exception=True
+        serializer.is_valid(raise_email=True)  # or raise_exception=True
         serializer.save()
 
         return Response(
@@ -422,7 +422,6 @@ class StaffReinstateView(InstitutionStaffMixin, APIView):
             self.get_membership(pk), request.user, request
         )
         return Response(StaffSerializer(membership).data)
-
 
     # --- V2-046: Delete Institution (Platform Administrators Only) --------------------------------------
 
