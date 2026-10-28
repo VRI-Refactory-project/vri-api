@@ -56,3 +56,36 @@ class CodeEmailTests(SimpleTestCase):
         html = self._html(greeting="Hello <b>Amina</b>,")
         self.assertNotIn("<b>Amina</b>", html)
         self.assertIn("&lt;b&gt;Amina&lt;/b&gt;", html)
+
+
+class BrandingTests(SimpleTestCase):
+    def test_only_palette_colours_are_used(self):
+        import re
+
+        from .emailing import branded_html, code_email_html
+
+        palette = {"#382c77", "#f5f4fb", "#ffffff", "#cbd5e1", "#1e293b", "#64748b"}
+        html = code_email_html("H", "Hello,", "Intro.", "123456", "Expires.", "Careful.")
+        html += branded_html("Hello,\n\nYour code: 123456", highlight="123456")
+        used = {c.lower() for c in re.findall(r"#[0-9a-fA-F]{6}\b", html)}
+        self.assertEqual(used - palette, set())
+
+    def test_header_shows_the_logo_when_a_url_is_set(self):
+        from django.test import override_settings
+
+        from .emailing import branded_html
+
+        with override_settings(EMAIL_LOGO_URL="https://example.com/email-logo.png"):
+            html = branded_html("Hello,")
+        self.assertIn('src="https://example.com/email-logo.png"', html)
+        self.assertIn('alt="SignConnect"', html)
+
+    def test_header_falls_back_to_the_name_without_a_logo_url(self):
+        from django.test import override_settings
+
+        from .emailing import branded_html
+
+        with override_settings(EMAIL_LOGO_URL=""):
+            html = branded_html("Hello,")
+        self.assertNotIn("<img", html)
+        self.assertIn(">SignConnect</td>", html)

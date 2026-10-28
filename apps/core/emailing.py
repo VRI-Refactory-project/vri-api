@@ -15,17 +15,47 @@ Two helpers:
 
 from html import escape
 
-BRAND_PURPLE = "#382c77"
-BRAND_DARK = "#2a2058"
-ACCENT = "#f2b84b"
-TEXT = "#1b1533"
-MUTED = "#6b6785"
-BORDER = "#e5e1f0"
-PAGE_BG = "#f4f2fa"
-CODE_BG = "#f8f6ff"
-FONT = "-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+# The SignConnect palette, the same values as the web app (vri-web/src/all-css.css).
+BRAND_PURPLE = "#382c77"  # --color-primary
+PAGE_BG = "#f5f4fb"  # --color-bg-page
+WHITE = "#ffffff"  # --color-bg-form
+BORDER = "#cbd5e1"  # --color-border
+TEXT = "#1e293b"  # --color-text-main
+MUTED = "#64748b"  # --color-text-muted
+FONT = "Manrope,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 
 TAGLINE = "Video relay interpreting for Deaf and hard-of-hearing people in Uganda"
+
+
+def _logo_url():
+    """Public https address of the white SignConnect wordmark (setting EMAIL_LOGO_URL).
+
+    Email apps cannot show images that are not on the internet, so the file is served from the
+    web app (vri-web/public/email-logo.png). When the setting is empty the header shows the
+    name as text instead.
+    """
+    try:
+        from django.conf import settings
+
+        return getattr(settings, "EMAIL_LOGO_URL", "") or ""
+    except Exception:  # settings not configured (for example in a plain script)
+        return ""
+
+
+def _header():
+    url = _logo_url()
+    if url:
+        inner = (
+            f'<img src="{escape(url, quote=True)}" alt="SignConnect" width="190" height="32" '
+            'style="display:block;border:0;outline:none;text-decoration:none;height:auto;'
+            'max-width:190px;">'
+        )
+    else:
+        inner = "SignConnect"
+    return (
+        f'<tr><td style="background:{BRAND_PURPLE};padding:22px 28px;color:{WHITE};'
+        f'font-size:20px;font-weight:700;letter-spacing:0.3px;">{inner}</td></tr>'
+    )
 
 
 def _paragraph(text):
@@ -81,11 +111,9 @@ def _shell(inner, preheader=""):
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         f'style="background:{PAGE_BG};padding:24px 12px;"><tr><td align="center">'
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'style="max-width:560px;background:#ffffff;border:1px solid {BORDER};border-radius:12px;'
+        f'style="max-width:560px;background:{WHITE};border:1px solid {BORDER};border-radius:12px;'
         'overflow:hidden;">'
-        f'<tr><td style="background:{BRAND_PURPLE};padding:22px 28px;color:#ffffff;'
-        'font-size:20px;font-weight:700;letter-spacing:0.3px;">SignConnect</td></tr>'
-        f'<tr><td style="height:4px;background:{ACCENT};font-size:0;line-height:0;">&nbsp;</td></tr>'
+        f"{_header()}"
         f"{inner}"
         f'<tr><td style="padding:16px 28px 24px;border-top:1px solid {BORDER};'
         f'font-size:12px;line-height:1.5;color:{MUTED};">{escape(TAGLINE)}.<br>'
@@ -113,7 +141,7 @@ def code_email_html(heading, greeting, intro, code, expires_text, safety_note, p
         f"{_paragraph(greeting)}{_paragraph(intro)}"
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         f'style="margin:6px 0 10px;"><tr><td align="center" '
-        f'style="background:{CODE_BG};border:1px solid {BORDER};border-radius:10px;'
+        f'style="background:{PAGE_BG};border:1px solid {BORDER};border-radius:10px;'
         f'padding:20px 12px;">'
         f'<div style="font-size:12px;letter-spacing:1px;text-transform:uppercase;'
         f'color:{MUTED};margin-bottom:8px;">Your code</div>'
@@ -123,8 +151,8 @@ def code_email_html(heading, greeting, intro, code, expires_text, safety_note, p
         f'<p style="margin:0 0 22px;font-size:13px;line-height:1.5;color:{MUTED};'
         f'text-align:center;">{escape(expires_text)}</p>'
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'style="margin:0 0 20px;"><tr><td style="border-left:4px solid {ACCENT};'
-        f'background:#fffaf0;padding:12px 14px;font-size:13px;line-height:1.55;color:{TEXT};">'
+        f'style="margin:0 0 20px;"><tr><td style="border-left:4px solid {BRAND_PURPLE};'
+        f'background:{PAGE_BG};padding:12px 14px;font-size:13px;line-height:1.55;color:{TEXT};">'
         f"{escape(safety_note)}</td></tr></table>"
         f'<p style="margin:0 0 8px;font-size:15px;line-height:1.6;color:{TEXT};">'
         "Kind regards,<br>The SignConnect team</p></td></tr>"
