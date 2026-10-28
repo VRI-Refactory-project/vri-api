@@ -37,4 +37,3 @@ class LogoutView(APIView):
         response.delete_cookie('active_platform_user')
 
         return response
-

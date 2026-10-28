@@ -612,11 +612,11 @@ class RoutingAvailabilityViewSet(viewsets.ReadOnlyModelViewSet):
 
 class LogoutView(APIView):
     """
-    Clears the device lock cookie when a user explicitly logs out, 
-    allowing other account types (Deaf, Interpreter, Institution, Admin) 
+    Clears the device lock cookie when a user explicitly logs out,
+    allowing other account types (Deaf, Interpreter, Institution, Admin)
     to safely use the machine.
     """
-    permission_classes = [AllowAny] # Allow any request to clear the cookie
+    permission_classes = [AllowAny]  # Allow any request to clear the cookie
     authentication_classes = []
 
     @extend_schema(
