@@ -25,15 +25,13 @@ urlpatterns = [
         DeleteInstitutionView.as_view(),
         name="institution-delete",
     ),
-    
     # Institution Administrator routes (Self-service)
     path("me/", views.MyInstitutionView.as_view(), name="institution-me"),
     path(
-        "me/account/", 
-        InstitutionalAccountUpdateAPIView.as_view(), 
+        "me/account/",
+        InstitutionalAccountUpdateAPIView.as_view(),
         name="institution-account-update"
     ),
-    
     # Staff management routes
     path("me/staff/", views.StaffListCreateView.as_view(), name="institution-staff"),
     path(
