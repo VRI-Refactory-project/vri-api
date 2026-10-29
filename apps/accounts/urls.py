@@ -90,4 +90,9 @@ urlpatterns = [
     ),
     # Unified API ViewSet Endpoints
     path("api/", include(router.urls)),
+    path(
+        "auth/email/availability/",
+        views.EmailAvailabilityView.as_view(),
+        name="auth-email-availability",
+    ),
 ]
