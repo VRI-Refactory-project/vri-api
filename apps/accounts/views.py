@@ -1,5 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import update_last_login
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import validate_email
 from django.db import connection
 from django.db.utils import OperationalError
 from django.shortcuts import get_object_or_404
@@ -12,6 +14,7 @@ from drf_spectacular.utils import (
     extend_schema,
     inline_serializer,
 )
+
 from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import (
     api_view,
@@ -81,8 +84,6 @@ def client_ip(request):
     return BaseThrottle().get_ident(request)
 
 
-User = get_user_model()
-
 HealthSerializer = inline_serializer(
     "Health",
     {"status": serializers.CharField(), "database": serializers.CharField()},
@@ -97,6 +98,11 @@ RoleOptionSerializer = inline_serializer(
 RoleAccessSerializer = inline_serializer(
     "RoleAccess",
     {"role": serializers.CharField(), "detail": serializers.CharField()},
+)
+
+EmailAvailableSerializer = inline_serializer(
+    "EmailAvailable",
+    {"available": serializers.BooleanField()},
 )
 
 
@@ -226,6 +232,43 @@ class RoleAccessView(APIView):
 
 
 # --- Registration (V2-001 deaf user, V2-003 interpreter) -----------------------------------------
+
+
+@extend_schema(
+    tags=["Auth"],
+    summary="Check if an email is available for registration",
+    parameters=[OpenApiParameter("email", OpenApiTypes.STR, OpenApiParameter.QUERY)],
+    responses={
+        200: EmailAvailableSerializer,
+        400: OpenApiResponse(description="Missing or invalid email."),
+    },
+)
+class EmailAvailabilityView(APIView):
+    """Check whether an email can be used for registration."""
+
+    permission_classes = [IsSignedOut]
+    authentication_classes = []
+    throttle_scope = "register"
+
+    def get(self, request):
+        email = request.query_params.get("email", "").strip()
+
+        if not email:
+            return Response(
+                {"available": False, "detail": "Enter your email address."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            validate_email(email)
+        except DjangoValidationError:
+            return Response(
+                {"available": False, "detail": "Enter a valid email address."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        exists = User.objects.filter(email__iexact=email).exists()
+        return Response({"available": not exists})
 
 
 class BaseRegisterView(APIView):
@@ -541,6 +584,9 @@ class AdminResetConfirmView(AdminResetBase):
         )
 
 
+# --- Availability ---------------------------------------------------------------------------------
+
+
 class BaseAvailabilityViewSet(viewsets.ModelViewSet):
     serializer_class = BaseAvailabilitySerializer
     permission_classes = [IsAuthenticated]
@@ -571,6 +617,9 @@ class RoutingAvailabilityViewSet(viewsets.ReadOnlyModelViewSet):
     """
 
     serializer_class = AvailabilityPeriodSerializer
+    # Explicit permission so this never falls back to a global default that might be open.
+    # Switch to IsAdminRole if only the request router should call it.
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         queryset = AvailabilityPeriod.objects.filter(is_active=True).select_related(
