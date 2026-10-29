@@ -30,5 +30,10 @@ class LogoutView(APIView):
             try:
                 RefreshToken(token).blacklist()
             except TokenError:
-                pass  # expired, already blacklisted or not a token: nothing left to revoke
-        return Response({"detail": "Signed out."}, status=status.HTTP_200_OK)
+                pass
+
+        response = Response({"detail": "Signed out."}, status=status.HTTP_200_OK)
+
+        response.delete_cookie('active_platform_user')
+
+        return response

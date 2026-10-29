@@ -178,7 +178,21 @@ class LoginView(APIView):
         )  # when the user last signed in, shown in the admin site
         if user.role == User.Role.ADMIN:
             audit.record(AuditLog.Event.ADMIN_SIGN_IN, user, request)
-        return Response(TokenPairSerializer.for_user(user), status=status.HTTP_200_OK)
+        # --- NEW CODE ADDED HERE TO LOCK THE BROWSER ---
+        # Get the token payload
+        token_data = TokenPairSerializer.for_user(user)
+        # Create the response
+        response = Response(token_data, status=status.HTTP_200_OK)
+
+        # Set a cookie locking this browser to this specific User ID
+        # It expires automatically when the browser closes
+        response.set_cookie(
+            'active_platform_user',
+            str(user.id),
+            samesite='Lax',
+            httponly=True
+        )
+        return response
 
 
 @extend_schema(tags=["Auth"], summary="Get a new access token from a refresh token")
@@ -643,3 +657,24 @@ class RoutingAvailabilityViewSet(viewsets.ReadOnlyModelViewSet):
                 )
 
         return queryset
+
+
+class LogoutView(APIView):
+    """
+    Clears the device lock cookie when a user explicitly logs out,
+    allowing other account types (Deaf, Interpreter, Institution, Admin)
+    to safely use the machine.
+    """
+    permission_classes = [AllowAny]  # Allow any request to clear the cookie
+    authentication_classes = []
+
+    @extend_schema(
+        tags=["Auth"],
+        summary="Sign out and release device lock",
+        responses={200: DetailSerializer},
+    )
+    def post(self, request):
+        response = Response({"detail": "Successfully logged out."}, status=status.HTTP_200_OK)
+        # This deletes the cookie blocking the computer
+        response.delete_cookie('active_platform_user')
+        return response
