@@ -3,9 +3,12 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.test import TestCase
+from django.urls import reverse
 from django.utils import timezone
-from rest_framework.test import APIClient
+from rest_framework.test import APIClient, APITestCase
+from rest_framework_simplejwt.tokens import RefreshToken
 
+from apps.audit.models import AuditLog
 from apps.institutions.models import (
     InstitutionProfile,
     InstitutionStaff,
@@ -213,7 +216,9 @@ class AvailableInterpretersTests(TestCase):
         self.client = APIClient()
         self.deaf = make_user(User.Role.DEAF_HOH, "0700000400")
 
-    def make_interpreter(self, phone, name, *, available=True, status=VerificationStatus.APPROVED):
+    def make_interpreter(
+        self, phone, name, *, available=True, status=VerificationStatus.APPROVED
+    ):
         user = make_user(User.Role.INTERPRETER, phone, full_name=name)
         profile = InterpreterProfile.objects.create(
             user=user,
@@ -232,13 +237,20 @@ class AvailableInterpretersTests(TestCase):
 
     def test_only_deaf_users_can_see_the_list(self):
         self.assertEqual(self.client.get(self.URL).status_code, 401)
-        self.client.force_authenticate(user=make_user(User.Role.INTERPRETER, "0700000401"))
+        self.client.force_authenticate(
+            user=make_user(User.Role.INTERPRETER, "0700000401")
+        )
         self.assertEqual(self.client.get(self.URL).status_code, 403)
 
     def test_lists_interpreters_who_can_take_a_request_now(self):
         self.make_interpreter("0700000410", "Amina Okafor")
         self.make_interpreter("0700000411", "Switched Off", available=False)
-        self.make_interpreter("0700000412", "Not Approved", available=False, status=VerificationStatus.INACTIVE)
+        self.make_interpreter(
+            "0700000412",
+            "Not Approved",
+            available=False,
+            status=VerificationStatus.INACTIVE,
+        )
         self.client.force_authenticate(user=self.deaf)
 
         data = self.client.get(self.URL).json()
@@ -271,7 +283,10 @@ class InterpreterPublicProfileTests(TestCase):
     def make_profile(self, phone, name, status=VerificationStatus.APPROVED, **extra):
         user = make_user(User.Role.INTERPRETER, phone, full_name=name)
         return InterpreterProfile.objects.create(
-            user=user, verification_status=status, sign_languages=["Ugandan Sign Language"], **extra
+            user=user,
+            verification_status=status,
+            sign_languages=["Ugandan Sign Language"],
+            **extra,
         )
 
     def url(self, profile):
@@ -281,7 +296,9 @@ class InterpreterPublicProfileTests(TestCase):
         profile = self.make_profile("0700000610", "Amina Okafor")
         self.client.force_authenticate(user=None)
         self.assertEqual(self.client.get(self.url(profile)).status_code, 401)
-        self.client.force_authenticate(user=make_user(User.Role.INTERPRETER, "0700000611"))
+        self.client.force_authenticate(
+            user=make_user(User.Role.INTERPRETER, "0700000611")
+        )
         self.assertEqual(self.client.get(self.url(profile)).status_code, 403)
 
     def test_shows_public_details_and_no_contact_details(self):
@@ -294,26 +311,38 @@ class InterpreterPublicProfileTests(TestCase):
         self.assertFalse(data["available_now"])
         self.assertEqual(
             set(data),
-            {"id", "name", "sign_languages", "specialisation", "photo_url", "available_now"},
+            {
+                "id",
+                "name",
+                "sign_languages",
+                "specialisation",
+                "photo_url",
+                "available_now",
+            },
         )
 
     def test_says_when_the_interpreter_is_available_now(self):
         profile = self.make_profile("0700000630", "Amina Okafor", is_available=True)
         now = timezone.now()
         InterpreterAvailability.objects.create(
-            interpreter=profile, start_at=now - timedelta(hours=1), end_at=now + timedelta(hours=1)
+            interpreter=profile,
+            start_at=now - timedelta(hours=1),
+            end_at=now + timedelta(hours=1),
         )
 
         self.assertTrue(self.client.get(self.url(profile)).json()["available_now"])
 
     def test_an_interpreter_who_is_not_approved_cannot_be_opened(self):
-        profile = self.make_profile("0700000640", "Pending", status=VerificationStatus.INACTIVE)
+        profile = self.make_profile(
+            "0700000640", "Pending", status=VerificationStatus.INACTIVE
+        )
 
         self.assertEqual(self.client.get(self.url(profile)).status_code, 404)
 
     def test_an_unknown_interpreter_is_not_found(self):
         self.assertEqual(
-            self.client.get("/api/v1/dashboard/deaf/interpreters/99999/").status_code, 404
+            self.client.get("/api/v1/dashboard/deaf/interpreters/99999/").status_code,
+            404,
         )
 
 
@@ -451,3 +480,67 @@ class InstitutionDashboardTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["staff_summary"]["active"], 1)
+
+
+class AdminLogoutViewTests(APITestCase):
+    def setUp(self):
+        # Create an administrative test user with the required phone_number field
+        self.admin_user = User.objects.create_user(
+            phone_number="+256772123456",  # Added required field with clean formatting
+            email="admin@signconnect.local",
+            password="SecurePassword123!",
+            role="admin",
+        )
+        # Generate valid simplejwt tokens for testing
+        self.refresh = RefreshToken.for_user(self.admin_user)
+        self.access_token = str(self.refresh.access_token)
+
+        # URL configuration name from your urls.py
+        self.url = reverse("dashboard-admin-logout")
+
+        # Authenticate requests using the Bearer token standard
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.access_token}")
+
+    def test_successful_logout(self):
+        """Verifies a valid refresh token blacklists safely and logs the audit event."""
+        payload = {"refresh": str(self.refresh)}
+        response = self.client.post(self.url, payload, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["detail"], "Successfully logged out.")
+
+        # Ensure the AuditLog object was cleanly tracked
+        audit_exists = AuditLog.objects.filter(
+            user=self.admin_user, event="ADMIN_SIGN_OUT"
+        ).exists()
+        self.assertTrue(audit_exists)
+
+        # Attempt to use the blacklisted refresh token to verify it fails
+        with self.assertRaises(Exception):
+            # A blacklisted token fails validation when trying to check or refresh it
+            self.refresh.check_blacklist()
+
+    def test_logout_missing_refresh_token(self):
+        """Verifies validation catches missing payload keys before attempting operations."""
+        payload = {}  # Empty payload
+        response = self.client.post(self.url, payload, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("refresh", response.data)
+
+    def test_logout_invalid_refresh_token(self):
+        """Verifies bad token structures gracefully hit the TokenError catch block."""
+        payload = {"refresh": "completely-invalid-token-string"}
+        response = self.client.post(self.url, payload, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["error"], "Invalid or expired token.")
+
+    def test_unauthenticated_user_cannot_logout(self):
+        """Verifies endpoint is completely blocked by IsAuthenticated security rules."""
+        self.client.credentials()  # Wipe out current authorization headers
+
+        payload = {"refresh": str(self.refresh)}
+        response = self.client.post(self.url, payload, format="json")
+
+        self.assertEqual(response.status_code, 401)

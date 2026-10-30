@@ -10,8 +10,11 @@ from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.serializers import UserSerializer
 from apps.audit.models import AuditLog
@@ -187,13 +190,17 @@ class InterpreterPublicProfileView(APIView):
     )
     def get(self, request, pk):
         profile = get_object_or_404(
-            InterpreterProfile.objects.select_related("user__photo").defer("user__photo__image"),
+            InterpreterProfile.objects.select_related("user__photo").defer(
+                "user__photo__image"
+            ),
             pk=pk,
             verification_status=VerificationStatus.APPROVED,
             user__is_active=True,
         )
         data = interpreter_card(profile)
-        data["available_now"] = get_eligible_interpreters().filter(pk=profile.pk).exists()
+        data["available_now"] = (
+            get_eligible_interpreters().filter(pk=profile.pk).exists()
+        )
         return Response(data)
 
 
@@ -285,9 +292,7 @@ class InstitutionDashboardView(APIView):
         staff_membership = user_staff_membership(request.user)
 
         if staff_membership is None:
-            raise PermissionDenied(
-                "Your account is not linked to an institution."
-            )
+            raise PermissionDenied("Your account is not linked to an institution.")
 
         institution = staff_membership.institution
         staff_members = institution.staff.all()
@@ -314,3 +319,55 @@ class InstitutionDashboardView(APIView):
                 },
             }
         )
+
+
+class AdminLogoutSerializer(serializers.Serializer):
+    refresh = serializers.CharField(
+        required=True,
+        help_text="The refresh token string received during authentication login.",
+    )
+
+
+class AdminLogoutView(APIView):
+    """
+    Logs out an administrator by blacklisting their refresh token and tracking it.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Dashboards"],
+        summary="Administrator logout",
+        request=AdminLogoutSerializer,
+        responses={
+            200: inline_serializer(
+                "LogoutSuccess", {"detail": serializers.CharField()}
+            ),
+            400: inline_serializer("LogoutFailed", {"error": serializers.CharField()}),
+        },
+    )
+    def post(self, request):
+        # Passes request data to the serializer for standard validation
+        serializer = AdminLogoutSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+
+        refresh_token = serializer.validated_data["refresh"]
+
+        try:
+            # Blacklist the token so it can't forge new access tokens
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+
+            # 1. Check if the user role is lowercase "admin" before logging
+            if request.user.role == "admin":
+                AuditLog.objects.create(
+                    user=request.user,
+                    event="ADMIN_SIGN_OUT",
+                    ip_address=request.META.get("REMOTE_ADDR"),
+                )
+
+            return Response({"detail": "Successfully logged out."}, status=200)
+
+        except TokenError:
+            return Response({"error": "Invalid or expired token."}, status=400)
