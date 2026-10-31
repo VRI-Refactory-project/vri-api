@@ -95,4 +95,9 @@ urlpatterns = [
         views.EmailAvailabilityView.as_view(),
         name="auth-email-availability",
     ),
+    path(
+        "auth/phone/availability/",
+        views.PhoneAvailabilityView.as_view(),
+        name="auth-phone-availability",
+    ),
 ]

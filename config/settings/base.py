@@ -185,7 +185,6 @@ LOGGING = {
 CORS_ALLOW_ALL_ORIGINS = env("CORS_ALLOW_ALL_ORIGINS")
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 
-# --- Django REST Framework ---
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -203,6 +202,7 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "login": "10/minute",
         "register": "20/hour",
+        "availability_check": "60/minute",
         "recovery_request": "5/hour",
         "recovery_confirm": "10/minute",
         "email_verify_resend": "5/hour",
