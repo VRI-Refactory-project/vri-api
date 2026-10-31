@@ -51,6 +51,7 @@ from .serializers import (
     EmailVerifyConfirmSerializer,
     LoginSerializer,
     PasswordChangeSerializer,
+    PlusPhoneNumberField,
     RecoveryConfirmSerializer,
     RecoveryRequestSerializer,
     TokenPairSerializer,
@@ -262,7 +263,7 @@ class EmailAvailabilityView(APIView):
 
     permission_classes = [IsSignedOut]
     authentication_classes = []
-    throttle_scope = "register"
+    throttle_scope = "availability_check"
 
     def get(self, request):
         email = request.query_params.get("email", "").strip()
@@ -285,6 +286,43 @@ class EmailAvailabilityView(APIView):
         return Response({"available": not exists})
 
 
+@extend_schema(
+    tags=["Auth"],
+    summary="Check if a phone number is available for registration",
+    parameters=[OpenApiParameter("phone", OpenApiTypes.STR, OpenApiParameter.QUERY)],
+    responses={
+        200: EmailAvailableSerializer,
+        400: OpenApiResponse(description="Missing or invalid phone number."),
+    },
+)
+class PhoneAvailabilityView(APIView):
+    """Check whether a phone number can be used for registration."""
+
+    permission_classes = [IsSignedOut]
+    authentication_classes = []
+    throttle_scope = "availability_check"
+
+    def get(self, request):
+        raw = request.query_params.get("phone", "").strip()
+
+        if not raw:
+            return Response(
+                {"available": False, "detail": "Enter your phone number."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            phone = PlusPhoneNumberField().run_validation(raw)
+        except serializers.ValidationError:
+            return Response(
+                {"available": False, "detail": "Enter a valid phone number."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        exists = User.objects.filter(phone_number=phone).exists()
+        return Response({"available": not exists})
+
+
 class BaseRegisterView(APIView):
     """Creates an account for one role and signs the user in (returns the same payload as login).
 
@@ -293,7 +331,7 @@ class BaseRegisterView(APIView):
 
     permission_classes = [IsSignedOut]
     authentication_classes = []
-    throttle_scope = "register"
+    throttle_scope = "availability_check"
     serializer_class = None
 
     def post(self, request):
