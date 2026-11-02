@@ -174,6 +174,18 @@ class LoginView(APIView):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data["user"]
+        active_browser_user = request.COOKIES.get("active_platform_user")
+
+        if active_browser_user and active_browser_user != str(user.id):
+            return Response(
+                {
+                    "detail": (
+                        "Another user profile is currently active in this browser. "
+                        "Please log out first."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
         update_last_login(
             None, user
         )  # when the user last signed in, shown in the admin site
