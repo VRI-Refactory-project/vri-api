@@ -68,6 +68,7 @@ class StaffTestCase(APITestCase):
         self.sign_in_as(self.admin)
 
     def sign_in_as(self, user):
+        self.client.cookies["active_platform_user"] = str(user.pk)
         self.client.credentials(
             HTTP_AUTHORIZATION=f"Bearer {TokenPairSerializer.for_user(user)['access']}"
         )
@@ -79,6 +80,7 @@ class StaffTestCase(APITestCase):
 
     def login(self, identifier, password):
         self.client.credentials()
+        self.client.cookies.pop("active_platform_user", None)
         return self.client.post(
             reverse("auth-login"),
             {"identifier": identifier, "password": password},
