@@ -46,6 +46,8 @@ class RecoveryTestCase(APITestCase):
         )
 
     def login(self, password, identifier="0772123456"):
+        self.client.credentials()
+        self.client.cookies.pop("active_platform_user", None)
         return self.client.post(
             reverse("auth-login"),
             {"identifier": identifier, "password": password},

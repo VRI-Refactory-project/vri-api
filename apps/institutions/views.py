@@ -21,6 +21,7 @@ from apps.core.permissions import (
     HasInstitutionalRole,
     IsAdminRole,
     IsApprovedInstitution,
+    IsInstitutionAccountAdmin,
     IsInstitutionAdmin,
     user_institution,
 )
@@ -210,7 +211,7 @@ class MyInstitutionView(RetrieveAPIView):
 class InstitutionalAccountUpdateAPIView(APIView):
     """Allow administrators of approved institutions to update organisation details."""
 
-    permission_classes = [IsAuthenticated, IsInstitutionAdmin]
+    permission_classes = [IsAuthenticated, IsInstitutionAccountAdmin]
 
     def get_object(self, request):
         institution = user_institution(request.user)
@@ -249,7 +250,7 @@ class InstitutionalAccountUpdateAPIView(APIView):
             data=request.data,
             partial=True,
         )
-        serializer.is_valid(raise_email=True)  # or raise_exception=True
+        serializer.is_valid(raise_exception=True)
         serializer.save()
 
         return Response(
