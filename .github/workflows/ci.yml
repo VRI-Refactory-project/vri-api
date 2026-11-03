@@ -24,6 +24,15 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
@@ -41,3 +50,14 @@ jobs:
 
       - name: Lint with Flake8
         run: flake8 . --max-line-length=120 --exclude=.venv,migrations
+
+      - name: Run tests
+        env:
+          SECRET_KEY: ci-only-not-a-real-secret-at-least-32-characters
+          POSTGRES_DB: vri_uganda_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: secure_dev_password_only
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          REDIS_URL: redis://localhost:6379/0
+        run: python manage.py test
