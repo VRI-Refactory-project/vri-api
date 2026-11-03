@@ -177,6 +177,11 @@ REQUESTER_DISCONNECT_GRACE_WINDOW = timedelta(
     seconds=env.int("REQUESTER_DISCONNECT_GRACE_WINDOW_SECONDS", default=120)
 )
 
+# LiveKit (V2-011). The key and secret must match livekit.yaml.
+LIVEKIT_URL = env("LIVEKIT_URL", default="ws://localhost:7880")
+LIVEKIT_API_KEY = env("LIVEKIT_API_KEY", default="")
+LIVEKIT_API_SECRET = env("LIVEKIT_API_SECRET", default="")
+
 # --- Logging (recovery events are logged for audit; codes and passwords never are) ---
 LOGGING = {
     "version": 1,
@@ -188,6 +193,7 @@ LOGGING = {
 # --- CORS (React web dashboard + React Native app) ---
 CORS_ALLOW_ALL_ORIGINS = env("CORS_ALLOW_ALL_ORIGINS")
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
+CORS_ALLOW_CREDENTIALS = env.bool("CORS_ALLOW_CREDENTIALS", default=True)
 
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",

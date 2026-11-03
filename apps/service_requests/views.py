@@ -1,3 +1,5 @@
+from django.conf import settings
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiResponse, extend_schema
@@ -7,9 +9,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.permissions import IsApprovedInstitution, IsDeafUser, IsInterpreter
+from apps.service_requests.call_tokens import create_call_token, room_name
 from apps.service_requests.models import OPEN_STATUSES, RequestOffer, ServiceRequest
 from apps.service_requests.serializers import (
     OFFER_STATUS_FOR_SCREEN,
+    CallTokenSerializer,
     InterpreterOfferSerializer,
     OfferedRequestSerializer,
     OfferResponseSerializer,
@@ -126,6 +130,39 @@ class ServiceRequestCancelView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
         return Response(ServiceRequestSerializer(cancelled).data)
+
+
+class ServiceRequestCallTokenView(APIView):
+    """POST /api/v1/requests/<id>/call-token/: lets a session's participant join its call."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(request=None, responses={200: CallTokenSerializer, 404: None, 409: None})
+    def post(self, request, pk):
+        # Anyone who is not on this session gets 404, so they cannot tell it exists.
+        found = get_object_or_404(
+            ServiceRequest,
+            Q(requester=request.user) | Q(interpreter__user=request.user),
+            pk=pk,
+        )
+        # An interpreter who was only offered the session also matches above.
+        if found.status != ServiceRequest.Status.ASSIGNED:
+            return Response(
+                {
+                    "detail": "This session is not ready to join.",
+                    "code": "session_not_ready",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(
+            CallTokenSerializer(
+                {
+                    "token": create_call_token(found, request.user),
+                    "url": settings.LIVEKIT_URL,
+                    "room": room_name(found),
+                }
+            ).data
+        )
 
 
 class InterpreterOffersView(APIView):

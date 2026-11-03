@@ -201,3 +201,22 @@ class CanAccessInterpreterDashboard(BasePermission):
             user=user,
             verification_status=VerificationStatus.APPROVED,
         ).exists()
+
+
+class IsInstitutionAccountAdmin(BasePermission):
+    """Allow an institution's administrator to manage its own profile,
+    regardless of approval status, provided it has not been deleted.
+    """
+
+    def has_permission(self, request, view):
+        membership = user_staff_membership(request.user)
+
+        if membership is None:
+            return False
+
+        from apps.institutions.models import InstitutionStatus, StaffRole
+
+        if membership.role != StaffRole.ADMIN:
+            return False
+
+        return membership.institution.status != InstitutionStatus.DELETED

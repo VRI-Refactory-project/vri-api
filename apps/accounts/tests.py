@@ -133,6 +133,11 @@ class LoginApiTests(APITestCase):
     def setUp(self):
         cache.clear()  # reset login rate limit between tests
         self.user = make_user(email="sarah@example.com", role=User.Role.INTERPRETER)
+        self.user_b = make_user(
+            phone="0701234567",
+            email="institution@example.com",
+            role=User.Role.INSTITUTION,
+        )
         self.url = reverse("auth-login")
 
     def login(self, identifier, password=PASSWORD):
@@ -147,6 +152,62 @@ class LoginApiTests(APITestCase):
         self.assertIn("refresh", response.data)
         self.assertEqual(response.data["user"]["role"], "interpreter")
         self.assertEqual(response.data["user"]["phone_number"], "+256772123456")
+
+    def test_login_sets_active_browser_cookie(self):
+        """A successful login should lock the browser to that user."""
+        response = self.login("0772123456")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("active_platform_user", response.cookies)
+        self.assertEqual(
+            response.cookies["active_platform_user"].value,
+            str(self.user.id),
+        )
+        self.assertTrue(
+            response.cookies["active_platform_user"]["httponly"]
+        )
+
+    def test_same_user_can_login_again_in_same_browser(self):
+        """The browser owner should be allowed to sign in again."""
+        first_response = self.login("0772123456")
+        self.assertEqual(first_response.status_code, 200)
+
+        second_response = self.login("0772123456")
+        self.assertEqual(second_response.status_code, 200)
+
+    def test_different_user_is_blocked_from_same_browser(self):
+        """A different user must not overwrite the active browser owner."""
+        first_response = self.login("0772123456")
+        self.assertEqual(first_response.status_code, 200)
+
+        response = self.login("0701234567")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn(
+            "Another user profile is currently active",
+            response.data["detail"],
+        )
+        self.assertEqual(
+            self.client.cookies["active_platform_user"].value,
+            str(self.user.id),
+        )
+
+    def test_different_user_can_login_without_active_browser_cookie(self):
+        """A browser without an active owner should accept another user."""
+        response = self.client.post(
+            self.url,
+            {
+                "identifier": "0701234567",
+                "password": PASSWORD,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.cookies["active_platform_user"].value,
+            str(self.user_b.id),
+        )
 
     def test_login_with_international_phone_and_email(self):
         self.assertEqual(self.login("+256772123456").status_code, 200)
