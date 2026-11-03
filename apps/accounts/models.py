@@ -126,10 +126,10 @@ class RecoveryCode(models.Model):
     - admin_reset: sent to an ADMIN to confirm they want to reset another user's password/PIN
       (for users without an email). `target_user` is the account being reset.
 
-    Only a hash of the code is stored. A code is usable once, for 15 minutes, with 5 wrong tries.
+    Only a hash of the code is stored. A code is usable once, for 60 seconds, with 5 wrong tries.
     """
 
-    LIFETIME = timedelta(minutes=15)
+    LIFETIME = timedelta(seconds=60)
     MAX_ATTEMPTS = 5
 
     class Purpose(models.TextChoices):

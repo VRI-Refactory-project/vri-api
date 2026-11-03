@@ -188,9 +188,9 @@ def mask_email(email):
     return f"{name[:2]}{'*' * max(len(name) - 2, 1)}@{domain}"
 
 
-def _code_email_parts(user, code, purpose, target_user, minutes):
+def _code_email_parts(user, code, purpose, target_user, seconds):
     """The subject, plain-text body and HTML body for a one-time-code email."""
-    expires = f"This code expires in {minutes} minutes and works once."
+    expires = f"This code expires in {seconds} seconds and works once."
     if purpose == RecoveryCode.Purpose.EMAIL_VERIFY:
         subject = "Verify your SignConnect email"
         heading = "Verify your email address"
@@ -229,8 +229,8 @@ def _code_email_parts(user, code, purpose, target_user, minutes):
 
 
 def _send_code_email(user, code, purpose, target_user=None):
-    minutes = int(RecoveryCode.LIFETIME.total_seconds() // 60)
-    subject, text, html = _code_email_parts(user, code, purpose, target_user, minutes)
+    seconds = int(RecoveryCode.LIFETIME.total_seconds())
+    subject, text, html = _code_email_parts(user, code, purpose, target_user, seconds)
 
     brevo_api_key = getattr(settings, "BREVO_API_KEY", "")
 

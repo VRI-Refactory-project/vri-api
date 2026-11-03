@@ -18,13 +18,13 @@ FROM = "SignConnect <no-reply@signconnect.example>"
 
 class CodeEmailPartsTests(SimpleTestCase):
     def parts(self, purpose, target=None):
-        return recovery._code_email_parts(USER, "482910", purpose, target, 15)
+        return recovery._code_email_parts(USER, "482910", purpose, target, 60)
 
     def test_verification_email(self):
         subject, text, html = self.parts(RecoveryCode.Purpose.EMAIL_VERIFY)
         self.assertEqual(subject, "Verify your SignConnect email")
         self.assertIn("482910", text)
-        self.assertIn("expires in 15 minutes", text)
+        self.assertIn("expires in 60 seconds", text)
         self.assertIn(">482910</div>", html)
         self.assertIn("Verify your email address", html)
 
@@ -81,3 +81,8 @@ class BrevoSendingTests(SimpleTestCase):
         self.assertIn("unrecognised IP", logs.output[0])
         self.assertNotIn("482910", logs.output[0])
         self.assertNotIn("test-key", logs.output[0])
+
+
+class CodeLifetimeTests(SimpleTestCase):
+    def test_codes_last_at_most_60_seconds(self):
+        self.assertLessEqual(RecoveryCode.LIFETIME.total_seconds(), 60)
