@@ -84,5 +84,9 @@ urlpatterns = [
         "api/v1/requests/",
         include("apps.service_requests.urls"),
     ),
+    path(
+        "api/v1/realtime/",
+        include("apps.realtime.urls"),
+    ),  # V2-011, WebSocket tickets
 
 ]
