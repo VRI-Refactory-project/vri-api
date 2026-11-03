@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from .models import (
@@ -70,6 +71,8 @@ class CertificationUploadTests(APITestCase):
             email="interpreter@example.com",
             role=User.Role.INTERPRETER,
         )
+        self.user.email_verified_at = timezone.now()
+        self.user.save(update_fields=["email_verified_at"])
         self.url = reverse("interpreters:certification-upload")
 
     def pdf(self):
@@ -93,7 +96,7 @@ class CertificationUploadTests(APITestCase):
             self.url,
             {
                 "document": self.pdf(),
-                "certificate_type": "Sign Language Interpreter",
+                "certificate_type": "Other",
                 "issuing_organisation": "UNAD",
             },
             format="multipart",
@@ -102,7 +105,7 @@ class CertificationUploadTests(APITestCase):
         self.assertEqual(response.status_code, 201, response.content)
         self.assertEqual(
             response.json()["certificate_type"],
-            "Sign Language Interpreter",
+            "Other",
         )
 
         cert = CertificationDocument.objects.get()
@@ -142,6 +145,54 @@ class CertificationUploadTests(APITestCase):
             format="multipart",
         )
 
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("document", response.json())
+
+    def post(self, document, certificate_type="Other"):
+        return self.client.post(
+            self.url,
+            {
+                "document": document,
+                "certificate_type": certificate_type,
+                "issuing_organisation": "UNAD",
+            },
+            format="multipart",
+        )
+
+    def test_upload_needs_a_verified_email(self):
+        self.user.email_verified_at = None
+        self.user.save(update_fields=["email_verified_at"])
+        self.client.force_authenticate(self.user)
+        response = self.post(self.pdf())
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(CertificationDocument.objects.exists())
+
+    def test_only_interpreters_can_upload(self):
+        deaf = User.objects.create_user(
+            "0772999999", PASSWORD, full_name="Deaf User", role=User.Role.DEAF_HOH
+        )
+        self.client.force_authenticate(deaf)
+        self.assertEqual(self.post(self.pdf()).status_code, 403)
+
+    def test_certificate_type_must_be_from_the_list(self):
+        self.client.force_authenticate(self.user)
+        response = self.post(self.pdf(), certificate_type="Made up certificate")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("certificate_type", response.json())
+
+    def test_rejects_a_renamed_file(self):
+        self.client.force_authenticate(self.user)
+        fake = SimpleUploadedFile("cert.pdf", b"MZ not a pdf", content_type="application/pdf")
+        response = self.post(fake)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("document", response.json())
+
+    def test_rejects_a_file_over_10_mb(self):
+        self.client.force_authenticate(self.user)
+        big = SimpleUploadedFile(
+            "cert.pdf", b"%PDF-" + b"0" * (10 * 1024 * 1024), content_type="application/pdf"
+        )
+        response = self.post(big)
         self.assertEqual(response.status_code, 400)
         self.assertIn("document", response.json())
 

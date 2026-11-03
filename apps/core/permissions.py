@@ -41,6 +41,16 @@ class IsInterpreter(HasRole):
     allowed_roles = (User.Role.INTERPRETER,)
 
 
+class HasVerifiedEmail(BasePermission):
+    """Signed-in users who have confirmed their email with the emailed code."""
+
+    message = "Verify your email address before continuing."
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated and user.email_verified)
+
+
 class IsInstitution(HasRole):
     allowed_roles = (User.Role.INSTITUTION,)
 

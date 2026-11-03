@@ -61,6 +61,10 @@ def decide(profile_id, action, admin, reason=""):
                     )
                 }
             )
+        if action == Action.APPROVE and not profile.user.email_verified:
+            raise ValidationError(
+                {"detail": "This interpreter has not verified their email address yet."}
+            )
         if action == Action.APPROVE and not profile.certifications.exists():
             raise ValidationError(
                 {"detail": "This interpreter has not uploaded a certificate yet."}

@@ -1,3 +1,5 @@
+import os
+
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.urls import reverse
@@ -17,7 +19,41 @@ from .models import (
 )
 
 
+# The certificate types the sign-up form offers. Keep in step with CERTIFICATE_TYPES in
+# vri-web/src/pages/registration/certificateValidation.ts.
+CERTIFICATE_TYPES = (
+    "Uganda Sign Language interpreter certificate",
+    "Diploma in sign language interpretation",
+    "Degree in sign language interpretation",
+    "Other",
+)
+MAX_CERTIFICATE_BYTES = 10 * 1024 * 1024
+# The first bytes of each allowed file type, so a renamed file (virus.exe -> cert.pdf) is refused.
+FILE_SIGNATURES = {
+    "pdf": (b"%PDF-",),
+    "jpg": (b"\xff\xd8\xff",),
+    "jpeg": (b"\xff\xd8\xff",),
+    "png": (b"\x89PNG\r\n\x1a\n",),
+}
+
+
 class CertificationDocumentSerializer(serializers.ModelSerializer):
+    certificate_type = serializers.ChoiceField(choices=CERTIFICATE_TYPES)
+
+    def validate_document(self, upload):
+        extension = os.path.splitext(upload.name)[1].lstrip(".").lower()
+        if extension not in FILE_SIGNATURES:
+            raise serializers.ValidationError("Upload a PDF, JPG or PNG file.")
+        if upload.size > MAX_CERTIFICATE_BYTES:
+            raise serializers.ValidationError("The file is larger than 10 MB.")
+        head = upload.read(8)
+        upload.seek(0)
+        if not head.startswith(FILE_SIGNATURES[extension]):
+            raise serializers.ValidationError(
+                "This file does not look like a real " + extension.upper() + " file."
+            )
+        return upload
+
     class Meta:
         model = CertificationDocument
         fields = (
@@ -30,7 +66,6 @@ class CertificationDocumentSerializer(serializers.ModelSerializer):
             "rejection_reason",
         )
         extra_kwargs = {
-            "certificate_type": {"required": True, "allow_blank": False},
             "issuing_organisation": {"required": True, "allow_blank": False},
         }
         read_only_fields = (
@@ -63,6 +98,11 @@ def check_other_text(selected, other_text):
     if "OTHER" in selected and not (other_text or "").strip():
         raise serializers.ValidationError(
             {"specialisation_other": "Please specify your specialisation when 'Other' is selected."}
+        )
+    text = (other_text or "").strip()
+    if "OTHER" in selected and not any(ch.isalpha() for ch in text):
+        raise serializers.ValidationError(
+            {"specialisation_other": "Use letters to describe your specialisation."}
         )
 
 
