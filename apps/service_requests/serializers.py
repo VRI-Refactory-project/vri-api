@@ -149,3 +149,11 @@ class OfferResponseSerializer(serializers.Serializer):
 
 class OfferStatusSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=sorted(set(OFFER_STATUS_FOR_SCREEN.values())))
+
+
+class CallTokenSerializer(serializers.Serializer):
+    """What an app needs to join a session's call."""
+
+    token = serializers.CharField(help_text="LiveKit access token for this person and room.")
+    url = serializers.CharField(help_text="LiveKit server address to connect to.")
+    room = serializers.CharField(help_text="The session's room name.")
