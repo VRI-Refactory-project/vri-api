@@ -19,6 +19,7 @@ DEBUG = env("DJANGO_DEBUG")
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
 INSTALLED_APPS = [
+    "daphne",  # must be first: makes runserver serve WebSockets too (V2-011)
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -26,6 +27,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     # Third-party
+    "channels",
     "rest_framework",
     "drf_spectacular",
     "drf_spectacular_sidecar",  # Swagger UI / ReDoc files served by us, not a CDN
@@ -181,6 +183,19 @@ REQUESTER_DISCONNECT_GRACE_WINDOW = timedelta(
 LIVEKIT_URL = env("LIVEKIT_URL", default="ws://localhost:7880")
 LIVEKIT_API_KEY = env("LIVEKIT_API_KEY", default="")
 LIVEKIT_API_SECRET = env("LIVEKIT_API_SECRET", default="")
+
+# --- Real-time (V2-011): Django Channels ---
+# Redis lets every server process reach the same WebSocket groups. Without REDIS_URL (tests, CI)
+# an in-memory layer is used, which only works inside one process.
+if env("REDIS_URL", default=""):
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [env("REDIS_URL")]},
+        }
+    }
+else:
+    CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 
 # --- Logging (recovery events are logged for audit; codes and passwords never are) ---
 LOGGING = {
