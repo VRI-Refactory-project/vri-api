@@ -1,5 +1,6 @@
 from django.core.cache import cache
 from django.test import override_settings
+from django.utils import timezone
 from django.urls import reverse
 from rest_framework.test import APITestCase
 
@@ -153,6 +154,33 @@ class RegistrationEndpointTests(APITestCase):
         self.assertEqual(res.status_code, 201)
         self.assertEqual(InterpreterProfile.objects.get().specialisation, "GENERAL")
 
+    def test_name_with_digits_or_markup_is_rejected(self):
+        for bad in ("12345", "<b>Amina</b>", "A", "Amina 2"):
+            res = self.client.post(
+                reverse("auth-register-deaf"),
+                self.deaf(full_name=bad),
+                format="json",
+            )
+            self.assertEqual(res.status_code, 400, bad)
+            self.assertIn("full_name", res.data)
+
+    def test_name_extra_spaces_are_tidied(self):
+        res = self.client.post(
+            reverse("auth-register-deaf"),
+            self.deaf(full_name="  Anne-Marie   O'Neil "),
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(User.objects.get().full_name, "Anne-Marie O'Neil")
+
+    def test_other_specialisation_text_must_contain_letters(self):
+        res = self.client.post(
+            reverse("auth-register-interpreter"),
+            self.interpreter(specialisations=["OTHER"], specialisation_other="123"),
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+
     def test_interpreter_email_is_required(self):
         data = self.interpreter()
         del data["email"]
@@ -185,13 +213,19 @@ class RegistrationEndpointTests(APITestCase):
                 reverse("auth-register-interpreter"), self.interpreter(), format="json"
             )
             self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {res.data['access']}")
+            # Certificates are only accepted after the email is confirmed.
+            blocked = self.client.post(
+                reverse("interpreters:certification-upload"), {}, format="multipart"
+            )
+            self.assertEqual(blocked.status_code, 403)
+            User.objects.update(email_verified_at=timezone.now())
             up = self.client.post(
                 reverse("interpreters:certification-upload"),
                 {
                     "document": SimpleUploadedFile(
                         "c.pdf", b"%PDF-1.4 x", content_type="application/pdf"
                     ),
-                    "certificate_type": "Sign language interpreter certificate",
+                    "certificate_type": "Other",
                     "issuing_organisation": "Uganda National Association of the Deaf",
                 },
                 format="multipart",

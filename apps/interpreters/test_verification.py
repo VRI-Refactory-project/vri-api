@@ -37,6 +37,8 @@ def make_interpreter(
         email=f"i{phone}@example.com",
         role=User.Role.INTERPRETER,
     )
+    user.email_verified_at = timezone.now()
+    user.save(update_fields=["email_verified_at"])
     return InterpreterProfile.objects.create(
         user=user, verification_status=status, **profile_fields
     )
@@ -285,6 +287,14 @@ class ApproveRejectApiTests(DecisionApiMixin, APITestCase):
         self.profile.is_available = True
         self.profile.save()
         self.assertIn(self.profile, get_eligible_interpreters(now=WORKING_HOURS))
+
+    def test_approve_needs_a_verified_email(self):
+        self.profile.user.email_verified_at = None
+        self.profile.user.save(update_fields=["email_verified_at"])
+        response = self.act("approve", self.profile)
+        self.assertEqual(response.status_code, 400)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.verification_status, VerificationStatus.INACTIVE)
 
     def test_approve_needs_a_certificate(self):
         no_cert = make_interpreter("0772000012")

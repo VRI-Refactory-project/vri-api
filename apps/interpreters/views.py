@@ -20,7 +20,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.permissions import IsAdminRole, IsInterpreter
+from apps.core.permissions import HasVerifiedEmail, IsAdminRole, IsInterpreter
 
 from . import specialisations as library
 from . import verification
@@ -71,7 +71,8 @@ User = get_user_model()
     ),
 )
 class CertificationUploadView(generics.CreateAPIView):
-    permission_classes = (permissions.IsAuthenticated,)
+    # Email first: certificates are only accepted once the interpreter has confirmed their email.
+    permission_classes = (permissions.IsAuthenticated, IsInterpreter, HasVerifiedEmail)
     parser_classes = (MultiPartParser, FormParser)
     serializer_class = CertificationDocumentSerializer
 
