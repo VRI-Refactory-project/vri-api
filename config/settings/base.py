@@ -177,6 +177,11 @@ REQUESTER_DISCONNECT_GRACE_WINDOW = timedelta(
     seconds=env.int("REQUESTER_DISCONNECT_GRACE_WINDOW_SECONDS", default=120)
 )
 
+# LiveKit (V2-011). The key and secret must match livekit.yaml.
+LIVEKIT_URL = env("LIVEKIT_URL", default="ws://localhost:7880")
+LIVEKIT_API_KEY = env("LIVEKIT_API_KEY", default="")
+LIVEKIT_API_SECRET = env("LIVEKIT_API_SECRET", default="")
+
 # --- Logging (recovery events are logged for audit; codes and passwords never are) ---
 LOGGING = {
     "version": 1,
