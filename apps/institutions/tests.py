@@ -1,13 +1,16 @@
+import tempfile
 from unittest.mock import patch
 
 from django.core import mail
 from django.core.cache import cache
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import User
+from apps.accounts.serializers import TokenPairSerializer
 from apps.audit.models import AuditLog
 
 from .models import (
@@ -516,3 +519,145 @@ class InstitutionDeletionTests(APITestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("status", response.data)
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class InstitutionDocumentUploadTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+
+        self.temp_media = tempfile.TemporaryDirectory()
+        self.settings = override_settings(MEDIA_ROOT=self.temp_media.name)
+        self.settings.enable()
+        self.addCleanup(self.settings.disable)
+        self.addCleanup(self.temp_media.cleanup)
+
+        self.admin = User.objects.create_user(
+            "0700000200",
+            PASSWORD,
+            full_name="Grace Namutebi",
+            role=User.Role.INSTITUTION,
+            email="grace@mulago.example",
+        )
+
+        self.institution = InstitutionProfile.objects.create(
+            user=self.admin,
+            organisation_name="Mulago Hospital",
+            organisation_type="HOSPITAL",
+        )
+
+        InstitutionStaff.objects.create(
+            institution=self.institution,
+            user=self.admin,
+            role=StaffRole.ADMIN,
+        )
+
+        self.sign_in_as(self.admin)
+
+    def sign_in_as(self, user):
+        self.client.cookies["active_platform_user"] = str(user.pk)
+        self.client.credentials(
+            HTTP_AUTHORIZATION=(
+                f"Bearer {TokenPairSerializer.for_user(user)['access']}"
+            )
+        )
+
+    def upload_url(self):
+        return reverse("institution-document-upload")
+
+    def test_verified_institution_admin_can_upload_pdf(self):
+        self.admin.email_verified_at = timezone.now()
+        self.admin.save(update_fields=["email_verified_at"])
+
+        document = SimpleUploadedFile(
+            "institution.pdf",
+            b"%PDF-1.4\nInstitution verification document\n%%EOF",
+            content_type="application/pdf",
+        )
+
+        response = self.client.post(
+            self.upload_url(),
+            {"document": document},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+
+        self.institution.refresh_from_db()
+        self.assertTrue(self.institution.verification_document)
+        self.assertTrue(
+            self.institution.verification_document.name.startswith(
+                "institution_documents/"
+            )
+        )
+
+    def test_unverified_admin_cannot_upload_document(self):
+        document = SimpleUploadedFile(
+            "institution.pdf",
+            b"%PDF-1.4\nInstitution verification document\n%%EOF",
+            content_type="application/pdf",
+        )
+
+        response = self.client.post(
+            self.upload_url(),
+            {"document": document},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.institution.refresh_from_db()
+        self.assertFalse(self.institution.verification_document)
+
+    def test_non_pdf_document_is_rejected(self):
+        self.admin.email_verified_at = timezone.now()
+        self.admin.save(update_fields=["email_verified_at"])
+
+        document = SimpleUploadedFile(
+            "institution.txt",
+            b"This is not a PDF",
+            content_type="text/plain",
+        )
+
+        response = self.client.post(
+            self.upload_url(),
+            {"document": document},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+
+    def test_file_larger_than_5_mb_is_rejected(self):
+        self.admin.email_verified_at = timezone.now()
+        self.admin.save(update_fields=["email_verified_at"])
+
+        document = SimpleUploadedFile(
+            "institution.pdf",
+            b"%PDF-" + (b"A" * (5 * 1024 * 1024)),
+            content_type="application/pdf",
+        )
+
+        response = self.client.post(
+            self.upload_url(),
+            {"document": document},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+
+    def test_invalid_pdf_signature_is_rejected(self):
+        self.admin.email_verified_at = timezone.now()
+        self.admin.save(update_fields=["email_verified_at"])
+
+        document = SimpleUploadedFile(
+            "institution.pdf",
+            b"This is not really a PDF",
+            content_type="application/pdf",
+        )
+
+        response = self.client.post(
+            self.upload_url(),
+            {"document": document},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)

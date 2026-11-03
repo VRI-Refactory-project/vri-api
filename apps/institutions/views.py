@@ -29,6 +29,7 @@ from apps.core.permissions import (
 from . import staff
 from .models import InstitutionProfile, InstitutionStaff, InstitutionStatus
 from .serializers import (
+    InstitutionDocumentUploadSerializer,
     InstitutionProfileUpdateSerializer,
     InstitutionSerializer,
     StaffCreateSerializer,
@@ -501,5 +502,37 @@ class DeleteInstitutionView(APIView):
                     "has been successfully deleted."
                 ),
             },
+            status=status.HTTP_200_OK,
+        )
+
+
+class InstitutionDocumentUploadView(APIView):
+    permission_classes = [IsInstitutionAccountAdmin]
+
+    @extend_schema(
+        tags=["Institutions"],
+        summary="Upload institution verification document",
+        request=InstitutionDocumentUploadSerializer,
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    def post(self, request):
+        institution = get_object_or_404(
+            InstitutionProfile,
+            user=request.user,
+        )
+
+        if not request.user.email_verified:
+            raise ValidationError(
+                {"detail": "Verify your email before uploading your document."}
+            )
+
+        serializer = InstitutionDocumentUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        institution.verification_document = serializer.validated_data["document"]
+        institution.save(update_fields=["verification_document", "updated_at"])
+
+        return Response(
+            {"detail": "Institution document uploaded successfully."},
             status=status.HTTP_200_OK,
         )

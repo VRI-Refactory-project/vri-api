@@ -5,6 +5,7 @@ from .views import (
     ApproveInstitutionView,
     DeleteInstitutionView,
     InstitutionalAccountUpdateAPIView,
+    InstitutionDocumentUploadView,
     PendingInstitutionListView,
     RejectInstitutionView,
 )
@@ -48,5 +49,10 @@ urlpatterns = [
         "me/staff/<int:pk>/reinstate/",
         views.StaffReinstateView.as_view(),
         name="institution-staff-reinstate",
+    ),
+    path(
+        "me/document/",
+        InstitutionDocumentUploadView.as_view(),
+        name="institution-document-upload",
     ),
 ]

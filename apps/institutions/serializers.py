@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
@@ -229,3 +231,31 @@ class StaffUpdateSerializer(serializers.Serializer):
 
         instance.save()
         return instance
+
+
+class InstitutionDocumentUploadSerializer(serializers.Serializer):
+    document = serializers.FileField()
+
+    def validate_document(self, value):
+        if value.size > 5 * 1024 * 1024:
+            raise serializers.ValidationError(
+                "Document must not exceed 5 MB."
+            )
+
+        if Path(value.name).suffix.lower() != ".pdf":
+            raise serializers.ValidationError(
+                "Only PDF documents are accepted."
+            )
+
+        if value.content_type != "application/pdf":
+            raise serializers.ValidationError(
+                "The uploaded file must be a PDF."
+            )
+
+        if value.read(5) != b"%PDF-":
+            raise serializers.ValidationError(
+                "The uploaded file is not a valid PDF."
+            )
+
+        value.seek(0)
+        return value
