@@ -233,7 +233,12 @@ class InterpreterOfferRespondView(APIView):
                 {"detail": str(error), "code": "offer_not_active"},
                 status=status.HTTP_409_CONFLICT,
             )
-        return Response({"status": OFFER_STATUS_FOR_SCREEN[offer.outcome]})
+        return Response(
+            {
+                "status": OFFER_STATUS_FOR_SCREEN[offer.outcome],
+                "requestId": str(offer.service_request_id),
+            }
+        )
 
 
 class InterpreterOfferStateView(APIView):
