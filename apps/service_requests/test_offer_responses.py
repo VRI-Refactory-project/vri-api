@@ -110,7 +110,10 @@ class OfferResponseTests(APITestCase):
         response = self.respond("accept")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data, {"status": "accepted"})
+        self.assertEqual(
+            response.data,
+            {"status": "accepted", "requestId": str(self.service_request.pk)},
+        )
         self.service_request.refresh_from_db()
         self.offer.refresh_from_db()
         self.assertEqual(self.service_request.status, Status.ASSIGNED)
@@ -205,7 +208,7 @@ class OfferResponseTests(APITestCase):
 
         response = self.respond("decline")
 
-        self.assertEqual(response.data, {"status": "declined"})
+        self.assertEqual(response.data["status"], "declined")
         self.service_request.refresh_from_db()
         self.assertEqual(self.service_request.status, Status.OFFERED)
         self.assertIsNone(self.service_request.interpreter)
