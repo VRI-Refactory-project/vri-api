@@ -12,13 +12,13 @@ from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
-from django.db.models import Case, IntegerField, Max, Q, Value, When
+from django.db.models import Case, IntegerField, Q, Value, When
 from django.utils import timezone
 
 from apps.audit import services as audit
 from apps.audit.models import AuditLog
 from apps.interpreters.models import InterpreterProfile, Specialisation
-from apps.interpreters.routing import pick_interpreter
+from apps.interpreters.routing import pick_candidates
 from apps.notifications.models import Notification
 from apps.notifications.services import create_notification, send_expo_push
 from apps.service_requests.models import OPEN_STATUSES, RequestOffer, ServiceRequest
@@ -196,81 +196,74 @@ def create_request(
 
 
 def offer_next(service_request, *, now=None):
-    """Offer a waiting request to the best available interpreter. Returns the offer, or None when
-    nobody can take it right now and the request stays pending."""
+    """Offer a waiting request to every eligible interpreter at once (V2-022). The first to accept
+    gets it, and the other offers close then. Returns the new offers, or None when nobody can take
+    it right now and the request stays pending."""
     now = now or timezone.now()
     check_transition(service_request.status, Status.OFFERED)
 
-    # An offer nobody answered in time must not keep its interpreter busy. Without this, an old
-    # request that nobody is checking on any more would block every new request from reaching them.
+    # An offer nobody answered in time must not keep the request open. Without this, an old request
+    # that nobody is checking on any more would hold up everyone who is offered it.
     expire_stale_offers(now=now)
 
+    # Anyone who has already had this request (declined, expired, or still waiting) is not asked again.
     already_asked = set(service_request.offers.values_list("interpreter_id", flat=True))
-    holding_an_offer = set(
-        ServiceRequest.objects.filter(
-            status=ServiceRequest.Status.OFFERED, interpreter__isnull=False
-        ).values_list("interpreter_id", flat=True)
-    )
-    last_offered = dict(
-        RequestOffer.objects.values("interpreter_id")
-        .annotate(last=Max("offered_at"))
-        .values_list("interpreter_id", "last")
-    )
-
-    match = pick_interpreter(
+    candidates, fallback = pick_candidates(
         service_request.specialisation_required,
-        exclude=already_asked | holding_an_offer,
-        last_offered=last_offered,
+        exclude=already_asked,
         now=now,
     )
-    if match is None:
+    if not candidates:
         return None
 
     try:
         with transaction.atomic():
             service_request.status = ServiceRequest.Status.OFFERED
-            service_request.interpreter = match.interpreter
+            service_request.interpreter = None
             service_request.offered_at = now
-            service_request.matched_by_fallback = match.matched_by_fallback
+            service_request.matched_by_fallback = fallback
             service_request.save()
-            offer = RequestOffer.objects.create(
-                service_request=service_request,
-                interpreter=match.interpreter,
-                offered_at=now,
-                expires_at=now + timedelta(seconds=offer_expiry_seconds()),
-            )
-            create_notification(
-                user=match.interpreter.user,
-                title="New interpreting request",
-                body=(
-                    "A new interpreting request has been offered to you. "
-                    "Open the app to review it."
-                ),
-                category=Notification.Category.INCOMING_REQUEST,
-                data={
-                    "request_id": service_request.pk,
-                    "screen": "request-details",
-                    "context": service_request.specialisation_required,
-                    "priority": service_request.priority,
-                },
-            )
-            audit.record(
-                AuditLog.Event.REQUEST_OFFERED,
-                None,
-                target_user=match.interpreter.user,
-                details={
-                    "request_id": service_request.pk,
-                    "requester_id": service_request.requester_id,
-                    "matched_by_fallback": match.matched_by_fallback,
-                },
-            )
-            # Send the push only after the offer and notification are committed.
+            offers = []
+            for profile in candidates:
+                offer = RequestOffer.objects.create(
+                    service_request=service_request,
+                    interpreter=profile,
+                    offered_at=now,
+                    expires_at=now + timedelta(seconds=offer_expiry_seconds()),
+                )
+                offers.append(offer)
+                create_notification(
+                    user=profile.user,
+                    title="New interpreting request",
+                    body=(
+                        "A new interpreting request has been offered to you. "
+                        "Open the app to review it."
+                    ),
+                    category=Notification.Category.INCOMING_REQUEST,
+                    data={
+                        "request_id": service_request.pk,
+                        "screen": "request-details",
+                        "context": service_request.specialisation_required,
+                        "priority": service_request.priority,
+                    },
+                )
+                audit.record(
+                    AuditLog.Event.REQUEST_OFFERED,
+                    None,
+                    target_user=profile.user,
+                    details={
+                        "request_id": service_request.pk,
+                        "requester_id": service_request.requester_id,
+                        "matched_by_fallback": fallback,
+                    },
+                )
+            # Send the push only after the offers and notifications are committed.
     except IntegrityError:
-        # Another request took this interpreter a moment ago. This one stays pending.
+        # Another request was offered at the same moment. Read the current state and leave it.
         service_request.refresh_from_db()
         return None
 
-    return offer
+    return offers
 
 
 def cancel_request(service_request, *, request=None):
@@ -311,18 +304,21 @@ OFFER_DECLINE = "decline"
 
 _NOT_ACTIVE_MESSAGES = {
     RequestOffer.Outcome.EXPIRED: "This offer has expired.",
-    RequestOffer.Outcome.WITHDRAWN: "This request was cancelled.",
+    # Withdrawn means another interpreter accepted first, or the requester cancelled.
+    RequestOffer.Outcome.WITHDRAWN: "This request is no longer available.",
     RequestOffer.Outcome.ACCEPTED: "You have already accepted this offer.",
     RequestOffer.Outcome.DECLINED: "You have already declined this offer.",
 }
 
 
 def respond_to_offer(offer, action, *, request=None, now=None):
-    """An interpreter accepts or declines an offer made to them (V2-010).
+    """An interpreter accepts or declines an offer made to them (V2-010, broadcast in V2-022).
 
-    Accepting assigns the request to them and switches them to unavailable, so they are not offered
-    another request during the session (until V2-011 ends sessions, they switch back on themselves).
-    Declining sends the request straight to the next eligible interpreter, or back to pending.
+    The request is offered to several interpreters at once, so the first to accept gets it. Accepting
+    assigns the request to them, closes every other open offer for it straight away, and switches
+    them to unavailable: their other open offers close too, so they are not held by two requests.
+    Declining removes only their own offer. The request goes back out to the others only once nobody
+    still has an open offer for it.
 
     Giving the same answer twice returns the offer unchanged, so a retry is safe. Raises OfferNotActive
     when the offer can no longer be answered. ``request`` is the HTTP request, for the audit entry.
@@ -332,15 +328,18 @@ def respond_to_offer(offer, action, *, request=None, now=None):
     expire_stale_offers(now=now, service_request=offer.service_request)
     accepting = action == OFFER_ACCEPT
     wanted = RequestOffer.Outcome.ACCEPTED if accepting else RequestOffer.Outcome.DECLINED
+    reopened = []
 
     with transaction.atomic():
         locked = ServiceRequest.objects.select_for_update().get(pk=offer.service_request_id)
         offer = RequestOffer.objects.select_related("interpreter__user").get(pk=offer.pk)
         if offer.outcome == wanted:
             return offer
+        if locked.status == Status.CANCELLED:
+            raise OfferNotActive("This request was cancelled.")
         if offer.outcome != RequestOffer.Outcome.PENDING:
             raise OfferNotActive(_NOT_ACTIVE_MESSAGES[offer.outcome])
-        if locked.status != Status.OFFERED or locked.interpreter_id != offer.interpreter_id:
+        if locked.status != Status.OFFERED:
             raise OfferNotActive("This offer is no longer available.")
 
         offer.outcome = wanted
@@ -350,18 +349,30 @@ def respond_to_offer(offer, action, *, request=None, now=None):
         if accepting:
             check_transition(locked.status, Status.ASSIGNED)
             locked.status = Status.ASSIGNED
+            locked.interpreter = offer.interpreter
             locked.assigned_at = now
-            locked.save(update_fields=["status", "assigned_at", "updated_at"])
-            InterpreterProfile.objects.filter(pk=offer.interpreter_id).update(is_available=False)
-        else:
-            check_transition(locked.status, Status.PENDING)
-            locked.status = Status.PENDING
-            locked.interpreter = None
-            locked.offered_at = None
-            locked.matched_by_fallback = False
-            locked.save(
-                update_fields=["status", "interpreter", "offered_at", "matched_by_fallback", "updated_at"]
+            locked.save(update_fields=["status", "interpreter", "assigned_at", "updated_at"])
+            # The request is taken: every other interpreter's open offer for it closes now.
+            locked.offers.filter(outcome=RequestOffer.Outcome.PENDING).update(
+                outcome=RequestOffer.Outcome.WITHDRAWN, responded_at=now
             )
+            # The accepting interpreter is busy now, so their open offers for other requests close too.
+            busy_with = list(
+                RequestOffer.objects.filter(
+                    interpreter=offer.interpreter, outcome=RequestOffer.Outcome.PENDING
+                ).values_list("service_request_id", flat=True)
+            )
+            RequestOffer.objects.filter(
+                interpreter=offer.interpreter, outcome=RequestOffer.Outcome.PENDING
+            ).update(outcome=RequestOffer.Outcome.WITHDRAWN, responded_at=now)
+            InterpreterProfile.objects.filter(pk=offer.interpreter_id).update(is_available=False)
+            for request_id in sorted(set(busy_with)):
+                other = ServiceRequest.objects.select_for_update().get(pk=request_id)
+                if _reopen_if_unanswered(other, now):
+                    reopened.append(other)
+        else:
+            if _reopen_if_unanswered(locked, now):
+                reopened.append(locked)
 
         audit.record(
             AuditLog.Event.OFFER_ACCEPTED if accepting else AuditLog.Event.OFFER_DECLINED,
@@ -371,10 +382,28 @@ def respond_to_offer(offer, action, *, request=None, now=None):
             details={"request_id": locked.pk, "offer_id": offer.pk},
         )
 
-    if not accepting:
-        # Re-route straight away; the one who declined is never asked again.
-        offer_next(locked, now=now)
+    # Requests that have no open offers left are offered again straight away, to everyone still eligible.
+    for waiting in reopened:
+        offer_next(waiting, now=now)
     return offer
+
+
+def _reopen_if_unanswered(service_request, now):
+    """A request still OFFERED with no open offers left goes back to pending, so it can be offered
+    again. Returns True when it did. Call it with the request locked."""
+    if service_request.status != Status.OFFERED:
+        return False
+    if service_request.offers.filter(outcome=RequestOffer.Outcome.PENDING).exists():
+        return False
+    check_transition(service_request.status, Status.PENDING)
+    service_request.status = Status.PENDING
+    service_request.interpreter = None
+    service_request.offered_at = None
+    service_request.matched_by_fallback = False
+    service_request.save(
+        update_fields=["status", "interpreter", "offered_at", "matched_by_fallback", "updated_at"]
+    )
+    return True
 
 
 def disconnect_cutoff(now=None):
@@ -441,8 +470,8 @@ def refresh_for_requester(service_request, *, now=None):
 
 
 def expire_stale_offers(*, now=None, service_request=None, interpreter_user=None):
-    """Take back offers nobody answered in time. Each such request goes back to pending, and the
-    interpreter is never offered that request again. Returns how many offers expired."""
+    """Take back offers nobody answered in time. A request goes back to pending once none of its offers
+    is still open, and nobody who was offered it is offered it again. Returns how many offers expired."""
     now = now or timezone.now()
     stale = RequestOffer.objects.filter(
         outcome=RequestOffer.Outcome.PENDING,
@@ -460,20 +489,16 @@ def expire_stale_offers(*, now=None, service_request=None, interpreter_user=None
             locked = ServiceRequest.objects.select_for_update().get(
                 pk=offer.service_request_id
             )
-            # Look again now the row is locked: it may have been accepted or cancelled meanwhile.
-            if (
-                locked.status != ServiceRequest.Status.OFFERED
-                or locked.interpreter_id != offer.interpreter_id
-            ):
+            # Look again now the row is locked: it may have been answered or cancelled meanwhile.
+            still_open = RequestOffer.objects.filter(
+                pk=offer.pk, outcome=RequestOffer.Outcome.PENDING
+            ).exists()
+            if locked.status != ServiceRequest.Status.OFFERED or not still_open:
                 continue
             RequestOffer.objects.filter(pk=offer.pk).update(
                 outcome=RequestOffer.Outcome.EXPIRED, responded_at=now
             )
-            locked.status = ServiceRequest.Status.PENDING
-            locked.interpreter = None
-            locked.offered_at = None
-            locked.matched_by_fallback = False
-            locked.save()
+            _reopen_if_unanswered(locked, now)
             audit.record(
                 AuditLog.Event.OFFER_EXPIRED,
                 None,

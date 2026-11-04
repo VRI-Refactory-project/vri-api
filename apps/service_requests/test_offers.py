@@ -71,7 +71,8 @@ class OfferFlowTests(APITestCase):
         response = self.create(specialisation_required="MEDICAL")
 
         found = ServiceRequest.objects.get(pk=response.data["id"])
-        self.assertEqual(found.interpreter, medical)
+        self.assertEqual(found.status, ServiceRequest.Status.OFFERED)
+        self.assertEqual([o.interpreter for o in found.offers.all()], [medical])
         self.assertFalse(found.matched_by_fallback)
 
     def test_falls_back_to_a_general_interpreter_and_says_so(self):
@@ -81,7 +82,7 @@ class OfferFlowTests(APITestCase):
 
         found = ServiceRequest.objects.get(pk=response.data["id"])
         self.assertEqual(found.status, ServiceRequest.Status.OFFERED)
-        self.assertEqual(found.interpreter, general)
+        self.assertEqual([o.interpreter for o in found.offers.all()], [general])
         self.assertTrue(found.matched_by_fallback)
 
     def test_every_offer_is_recorded(self):
@@ -128,34 +129,34 @@ class OfferFlowTests(APITestCase):
         self.assertEqual(again.data["id"], first.data["id"])
         self.assertEqual(ServiceRequest.objects.count(), 1)
 
-    def test_an_interpreter_holds_one_offer_at_a_time(self):
-        make_interpreter()
+    def test_an_interpreter_can_be_offered_several_requests_at_once(self):
+        interpreter = make_interpreter()
         self.create()
 
         self.client.force_authenticate(make_user(User.Role.DEAF_HOH))
         response = self.create()
 
-        self.assertEqual(response.data["status"], "PENDING")
+        self.assertEqual(response.data["status"], "OFFERED")
+        self.assertEqual(
+            RequestOffer.objects.filter(
+                interpreter=interpreter, outcome=RequestOffer.Outcome.PENDING
+            ).count(),
+            2,
+        )
 
-    def test_the_longest_waiting_interpreter_is_asked_first(self):
+    def test_every_available_interpreter_is_offered_at_once(self):
         first = make_interpreter()
         second = make_interpreter()
 
-        one = self.create()
-        self.client.post(
-            reverse("service-request-cancel", kwargs={"pk": one.data["id"]})
-        )
-        two = self.create()
+        response = self.create()
 
-        # The first interpreter was offered the earlier request, so the second is next.
-        self.assertEqual(
-            ServiceRequest.objects.get(pk=one.data["id"]).offers.get().interpreter,
-            first,
+        found = ServiceRequest.objects.get(pk=response.data["id"])
+        self.assertEqual(found.status, ServiceRequest.Status.OFFERED)
+        # Nobody is held back for someone who waited longer: both are asked, and the first to accept wins.
+        self.assertCountEqual(
+            [o.interpreter for o in found.offers.all()], [first, second]
         )
-        self.assertEqual(
-            RequestOffer.objects.get(service_request_id=two.data["id"]).interpreter,
-            second,
-        )
+        self.assertIsNone(found.interpreter)
 
     def test_only_the_requester_can_see_a_request(self):
         request_id = self.create().data["id"]
@@ -193,7 +194,7 @@ class OfferFlowTests(APITestCase):
         self.assertIsNone(self.client.get(url).data["interpreter"])
 
         ServiceRequest.objects.filter(pk=request_id).update(
-            status=ServiceRequest.Status.ASSIGNED
+            status=ServiceRequest.Status.ASSIGNED, interpreter=interpreter
         )
 
         shown = self.client.get(url).data["interpreter"]
@@ -217,7 +218,8 @@ class OfferFlowTests(APITestCase):
         again = self.create()
         self.assertEqual(again.data["status"], "OFFERED")
         self.assertEqual(
-            ServiceRequest.objects.get(pk=again.data["id"]).interpreter, interpreter
+            RequestOffer.objects.get(service_request_id=again.data["id"]).interpreter,
+            interpreter,
         )
 
     def test_cancelling_twice_is_fine(self):

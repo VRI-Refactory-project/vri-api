@@ -141,11 +141,14 @@ class ServiceRequestCallTokenView(APIView):
     def post(self, request, pk):
         # Anyone who is not on this session gets 404, so they cannot tell it exists.
         found = get_object_or_404(
-            ServiceRequest,
-            Q(requester=request.user) | Q(interpreter__user=request.user),
+            ServiceRequest.objects.filter(
+                Q(requester=request.user)
+                | Q(interpreter__user=request.user)
+                | Q(offers__interpreter__user=request.user, offers__outcome=RequestOffer.Outcome.PENDING)
+            ).distinct(),
             pk=pk,
         )
-        # An interpreter who was only offered the session also matches above.
+        # An interpreter who holds an open offer for the request also matches above (broadcast offers).
         if found.status != ServiceRequest.Status.ASSIGNED:
             return Response(
                 {
@@ -173,10 +176,20 @@ class InterpreterOffersView(APIView):
     @extend_schema(responses={200: OfferedRequestSerializer(many=True)})
     def get(self, request):
         expire_stale_offers(interpreter_user=request.user)
-        offered = ServiceRequest.objects.filter(
-            status=ServiceRequest.Status.OFFERED, interpreter__user=request.user
-        ).select_related("requester")
-        return Response(OfferedRequestSerializer(offered, many=True).data)
+        # Offers are open to several interpreters at once, so a request is offered to this person
+        # when one of its offers is still waiting for them.
+        offered = (
+            ServiceRequest.objects.filter(
+                status=ServiceRequest.Status.OFFERED,
+                offers__interpreter__user=request.user,
+                offers__outcome=RequestOffer.Outcome.PENDING,
+            )
+            .select_related("requester")
+            .distinct()
+        )
+        return Response(
+            OfferedRequestSerializer(offered, many=True, context={"user": request.user}).data
+        )
 
 
 class InterpreterOfferListView(APIView):

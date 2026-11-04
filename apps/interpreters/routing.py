@@ -58,6 +58,27 @@ def pick_interpreter(context=None, *, exclude=(), last_offered=None, now=None):
     return RoutingMatch(chosen, True) if chosen else None
 
 
+def pick_candidates(context=None, *, exclude=(), now=None):
+    """Return ``(interpreters, matched_by_fallback)``: every interpreter who should be offered the
+    request at once, or an empty list when nobody can take it right now.
+
+    Broadcast (V2-022): the first to accept gets the request, so nobody is held back for someone
+    who waited longer. The same specialist-first rule applies: specialists when any are eligible,
+    otherwise every eligible interpreter, flagged as a fallback.
+    """
+    excluded = set(exclude)
+    eligible = list(get_eligible_interpreters(now=now).exclude(pk__in=excluded))
+
+    wanted = context or Specialisation.GENERAL
+    if wanted == Specialisation.GENERAL:
+        return eligible, False
+
+    specialists = [p for p in eligible if p.has_specialisation(wanted)]
+    if specialists:
+        return specialists, False
+    return eligible, bool(eligible)
+
+
 def _longest_waiting(profiles, last_offered):
     """The interpreter offered a request least recently. Never offered comes first; ties go to the
     earliest profile so the answer is the same every time."""
