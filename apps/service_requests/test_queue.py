@@ -46,18 +46,22 @@ def make_overdue(service_request):
 
 
 class OfferExpiryTests(APITestCase):
-    def test_an_unanswered_offer_goes_to_the_next_interpreter(self):
+    def test_an_unanswered_offer_goes_to_an_interpreter_who_becomes_free(self):
         first = make_interpreter()
-        second = make_interpreter()
         request = new_request()
-        self.assertEqual(request.interpreter, first)
+        self.assertEqual(request.offers.get().interpreter, first)
 
         let_offer_run_out(request)
+        refresh_request(request)
+        request.refresh_from_db()
+        self.assertEqual(request.status, ServiceRequest.Status.PENDING)
+
+        second = make_interpreter()
         refresh_request(request)
 
         request.refresh_from_db()
         self.assertEqual(request.status, ServiceRequest.Status.OFFERED)
-        self.assertEqual(request.interpreter, second)
+        self.assertIsNone(request.interpreter)
         outcomes = {o.interpreter_id: o.outcome for o in request.offers.all()}
         self.assertEqual(outcomes[first.pk], RequestOffer.Outcome.EXPIRED)
         self.assertEqual(outcomes[second.pk], RequestOffer.Outcome.PENDING)
@@ -93,11 +97,11 @@ class OfferExpiryTests(APITestCase):
         fresh = new_request()
 
         self.assertEqual(fresh.status, ServiceRequest.Status.OFFERED)
-        self.assertEqual(fresh.interpreter, only)
+        self.assertTrue(fresh.offers.filter(interpreter=only, outcome=RequestOffer.Outcome.PENDING).exists())
         abandoned.refresh_from_db()
         self.assertEqual(abandoned.status, ServiceRequest.Status.PENDING)
 
-    def test_an_expired_offer_frees_the_interpreter_for_other_requests(self):
+    def test_an_expired_offer_does_not_stop_the_interpreter_being_offered_other_requests(self):
         only = make_interpreter()
         first = new_request()
         let_offer_run_out(first)
@@ -106,7 +110,7 @@ class OfferExpiryTests(APITestCase):
         second = new_request()
 
         self.assertEqual(second.status, ServiceRequest.Status.OFFERED)
-        self.assertEqual(second.interpreter, only)
+        self.assertTrue(second.offers.filter(interpreter=only, outcome=RequestOffer.Outcome.PENDING).exists())
 
     def test_an_interpreter_looking_at_their_offers_does_not_see_an_expired_one(self):
         interpreter = make_interpreter()
@@ -207,7 +211,7 @@ class WaitingTooLongTests(APITestCase):
 
         self.assertEqual(response.data["status"], "OFFERED")
         request.refresh_from_db()
-        self.assertEqual(request.interpreter, interpreter)
+        self.assertEqual(request.offers.get().interpreter, interpreter)
 
 
 class DispatchTests(APITestCase):
@@ -220,54 +224,38 @@ class DispatchTests(APITestCase):
 
         request.refresh_from_db()
         self.assertEqual(offered, 1)
-        self.assertEqual(request.interpreter, interpreter)
+        self.assertEqual(request.offers.get().interpreter, interpreter)
 
-    def test_an_emergency_goes_first_even_if_it_came_later(self):
+    def test_every_waiting_request_is_offered_to_a_free_interpreter(self):
+        # Broadcast: an interpreter is not held back by one request, so each waiting request is offered.
         routine = new_request()
         emergency = new_request(priority=ServiceRequest.Priority.EMERGENCY)
         interpreter = make_interpreter()
 
-        dispatch_pending()
+        offered = dispatch_pending()
 
-        routine.refresh_from_db()
-        emergency.refresh_from_db()
-        self.assertEqual(emergency.interpreter, interpreter)
-        self.assertEqual(routine.status, ServiceRequest.Status.PENDING)
-
-    def test_the_longest_waiting_request_goes_first(self):
-        older = new_request()
-        newer = new_request()
-        ServiceRequest.objects.filter(pk=older.pk).update(
-            created_at=timezone.now() - timedelta(minutes=2)
-        )
-        interpreter = make_interpreter()
-
-        dispatch_pending()
-
-        older.refresh_from_db()
-        newer.refresh_from_db()
-        self.assertEqual(older.interpreter, interpreter)
-        self.assertEqual(newer.status, ServiceRequest.Status.PENDING)
+        self.assertEqual(offered, 2)
+        for request in (routine, emergency):
+            request.refresh_from_db()
+            self.assertEqual(request.status, ServiceRequest.Status.OFFERED)
+            self.assertEqual(request.offers.get().interpreter, interpreter)
 
     def test_a_sweep_reports_what_it_did(self):
-        interpreter = make_interpreter()
-        first = new_request()  # offered to the only interpreter, who never answers
-        waiting = new_request()  # waiting behind it
-        failing = new_request()
+        failing = new_request()  # nobody free yet, so it is waiting and runs out of time
         make_overdue(failing)
+        interpreter = make_interpreter()
+        first = new_request()  # offered to the interpreter, who never answers
         let_offer_run_out(first)
 
         result = sweep()
 
-        self.assertEqual(result, {"expired": 1, "failed": 1, "offered": 1})
+        self.assertEqual(result, {"expired": 1, "failed": 1, "offered": 0})
         first.refresh_from_db()
-        waiting.refresh_from_db()
         failing.refresh_from_db()
         self.assertEqual(failing.status, ServiceRequest.Status.FAILED)
-        # The interpreter who let the first offer run out is not asked about it again, so they are
-        # offered the request that was waiting instead.
+        # The interpreter who let the offer run out is not asked about the same request again.
         self.assertEqual(first.status, ServiceRequest.Status.PENDING)
-        self.assertEqual(waiting.interpreter, interpreter)
+        self.assertEqual(first.offers.get().interpreter, interpreter)
 
     def test_the_command_runs_a_sweep(self):
         new_request()

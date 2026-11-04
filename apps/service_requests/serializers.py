@@ -87,7 +87,12 @@ class OfferedRequestSerializer(serializers.ModelSerializer):
         )
 
     def get_expires_at(self, obj):
-        offer = obj.offers.filter(outcome=RequestOffer.Outcome.PENDING).first()
+        # Each interpreter has their own offer, so the countdown is the viewer's own offer's.
+        offers = obj.offers.filter(outcome=RequestOffer.Outcome.PENDING)
+        viewer = self.context.get("user")
+        if viewer is not None:
+            offers = offers.filter(interpreter__user=viewer)
+        offer = offers.first()
         return offer.expires_at if offer else None
 
 

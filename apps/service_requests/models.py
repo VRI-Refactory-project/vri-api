@@ -26,7 +26,8 @@ class ServiceRequest(models.Model):
         on_delete=models.CASCADE,
         related_name="service_requests",
     )
-    # The interpreter this request is with: offered it (OFFERED) or accepted it (ASSIGNED).
+    # The interpreter who accepted the request (ASSIGNED). While OFFERED, the offers in RequestOffer
+    # are open to several interpreters at once, so this stays empty until one of them accepts.
     interpreter = models.ForeignKey(
         InterpreterProfile,
         on_delete=models.SET_NULL,
@@ -74,12 +75,6 @@ class ServiceRequest(models.Model):
                 fields=["requester"],
                 condition=models.Q(status__in=["CREATED", "PENDING", "OFFERED"]),
                 name="one_open_request_per_requester",
-            ),
-            # An interpreter can only hold one offer at a time.
-            models.UniqueConstraint(
-                fields=["interpreter"],
-                condition=models.Q(status="OFFERED"),
-                name="one_offer_per_interpreter",
             ),
             # The same key from the same person is the same request.
             models.UniqueConstraint(

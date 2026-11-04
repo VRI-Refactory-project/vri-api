@@ -83,7 +83,11 @@ class ServiceRequestAPITests(APITestCase):
 
         service_request = ServiceRequest.objects.get(pk=response.data["id"])
         self.assertEqual(service_request.requester, self.requester)
-        self.assertEqual(service_request.interpreter, self.interpreter)
+        # Offered to every eligible interpreter at once; nobody holds the request until one accepts.
+        self.assertIsNone(service_request.interpreter)
+        self.assertEqual(
+            [offer.interpreter for offer in service_request.offers.all()], [self.interpreter]
+        )
         self.assertIsNotNone(service_request.offered_at)
         self.assertIsNone(service_request.assigned_at)
 

@@ -208,7 +208,12 @@ class OfferResponseTests(APITestCase):
         self.assertEqual(response.data, {"status": "declined"})
         self.service_request.refresh_from_db()
         self.assertEqual(self.service_request.status, Status.OFFERED)
-        self.assertEqual(self.service_request.interpreter, second)
+        self.assertIsNone(self.service_request.interpreter)
+        self.assertTrue(
+            self.service_request.offers.filter(
+                interpreter=second, outcome=Outcome.PENDING
+            ).exists()
+        )
         self.offer.refresh_from_db()
         self.assertEqual(self.offer.outcome, Outcome.DECLINED)
         self.assertIsNotNone(self.offer.responded_at)
