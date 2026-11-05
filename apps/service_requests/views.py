@@ -4,17 +4,31 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import generics, status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.permissions import IsApprovedInstitution, IsDeafUser, IsInterpreter
-from apps.service_requests.call_tokens import create_call_token, room_name
-from apps.service_requests.models import OPEN_STATUSES, RequestOffer, ServiceRequest
+from apps.service_requests.call_tokens import (
+    create_call_token,
+    create_guest_token,
+    interpreter_is_in_room,
+    remove_guest_from_room,
+    room_name,
+)
+from apps.service_requests.invitations import send_invitation_email
+from apps.service_requests.models import (
+    OPEN_STATUSES,
+    RequestOffer,
+    ServiceRequest,
+    SessionInvitation,
+)
 from apps.service_requests.serializers import (
     OFFER_STATUS_FOR_SCREEN,
     CallTokenSerializer,
+    CreateInvitationSerializer,
     InterpreterOfferSerializer,
+    InvitationSerializer,
     OfferedRequestSerializer,
     OfferResponseSerializer,
     OfferStatusSerializer,
@@ -30,7 +44,6 @@ from apps.service_requests.services import (
     refresh_for_requester,
     respond_to_offer,
 )
-
 
 # Who may ask for an interpreter (V2-024): Deaf users, and staff of an approved institution.
 # Every other role gets 403; pending or rejected institutions get a 403 that says why.
@@ -137,14 +150,19 @@ class ServiceRequestCallTokenView(APIView):
 
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(request=None, responses={200: CallTokenSerializer, 404: None, 409: None})
+    @extend_schema(
+        request=None, responses={200: CallTokenSerializer, 404: None, 409: None}
+    )
     def post(self, request, pk):
         # Anyone who is not on this session gets 404, so they cannot tell it exists.
         found = get_object_or_404(
             ServiceRequest.objects.filter(
                 Q(requester=request.user)
                 | Q(interpreter__user=request.user)
-                | Q(offers__interpreter__user=request.user, offers__outcome=RequestOffer.Outcome.PENDING)
+                | Q(
+                    offers__interpreter__user=request.user,
+                    offers__outcome=RequestOffer.Outcome.PENDING,
+                )
             ).distinct(),
             pk=pk,
         )
@@ -188,7 +206,9 @@ class InterpreterOffersView(APIView):
             .distinct()
         )
         return Response(
-            OfferedRequestSerializer(offered, many=True, context={"user": request.user}).data
+            OfferedRequestSerializer(
+                offered, many=True, context={"user": request.user}
+            ).data
         )
 
 
@@ -219,7 +239,9 @@ class InterpreterOfferRespondView(APIView):
         request=OfferResponseSerializer,
         responses={
             200: OfferStatusSerializer,
-            409: OpenApiResponse(description="The offer expired, was withdrawn, or was already answered."),
+            409: OpenApiResponse(
+                description="The offer expired, was withdrawn, or was already answered."
+            ),
         },
     )
     def post(self, request, pk):
@@ -227,7 +249,9 @@ class InterpreterOfferRespondView(APIView):
         serializer = OfferResponseSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            offer = respond_to_offer(offer, serializer.validated_data["action"], request=request)
+            offer = respond_to_offer(
+                offer, serializer.validated_data["action"], request=request
+            )
         except OfferNotActive as error:
             return Response(
                 {"detail": str(error), "code": "offer_not_active"},
@@ -252,3 +276,122 @@ class InterpreterOfferStateView(APIView):
         expire_stale_offers(service_request=offer.service_request)
         offer.refresh_from_db()
         return Response({"status": OFFER_STATUS_FOR_SCREEN[offer.outcome]})
+
+
+# --- V2-012: hearing guests (no account) invited by the Deaf user ---
+
+
+class SessionInvitationListCreateView(APIView):
+    """GET lists the guests of a session. POST invites a hearing guest by email."""
+
+    permission_classes = CAN_REQUEST
+
+    def get(self, request, pk):
+        found = get_object_or_404(ServiceRequest, pk=pk, requester=request.user)
+        return Response(InvitationSerializer(found.invitations.all(), many=True).data)
+
+    def post(self, request, pk):
+        found = get_object_or_404(ServiceRequest, pk=pk, requester=request.user)
+        # Rule: invites only work once the interpreter accepted, and while the session runs.
+        if found.status != ServiceRequest.Status.ASSIGNED or found.ended_at is not None:
+            return Response(
+                {
+                    "detail": "You can invite someone once an interpreter has accepted.",
+                    "code": "session_not_ready",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        serializer = CreateInvitationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        invitation = serializer.save(service_request=found)
+        send_invitation_email(invitation, request.user)
+        return Response(
+            InvitationSerializer(invitation).data, status=status.HTTP_201_CREATED
+        )
+
+
+class SessionInvitationRemoveView(APIView):
+    """POST /api/v1/requests/<id>/invitations/<invitation_id>/remove/"""
+
+    permission_classes = CAN_REQUEST
+
+    def post(self, request, pk, invitation_id):
+        found = get_object_or_404(ServiceRequest, pk=pk, requester=request.user)
+        invitation = get_object_or_404(found.invitations, pk=invitation_id)
+        if invitation.removed_at is None:
+            invitation.removed_at = timezone.now()  # the link stops working from now on
+            invitation.save(update_fields=["removed_at"])
+        remove_guest_from_room(
+            found, invitation
+        )  # and they are disconnected if they are in the call
+        return Response(InvitationSerializer(invitation).data)
+
+
+def _open_invitation_or_response(token):
+    """Shared by the two guest views. Returns (invitation, None) or (None, error response)."""
+    invitation = (
+        SessionInvitation.objects.select_related("service_request__interpreter")
+        .filter(token=token)
+        .first()
+    )
+    if invitation is None:
+        return None, Response(
+            {"detail": "This link is not valid.", "code": "invalid_link"}, status=404
+        )
+    if not invitation.is_open:
+        return None, Response(
+            {
+                "detail": "This session has ended or you were removed.",
+                "code": "link_closed",
+            },
+            status=status.HTTP_410_GONE,
+        )
+    return invitation, None
+
+
+class GuestLobbyView(APIView):
+    """GET /api/v1/requests/guest/<token>/ : the lobby asks this every few seconds."""
+
+    authentication_classes = []  # guests have no account, the token in the link is their key
+    permission_classes = [AllowAny]
+
+    def get(self, request, token):
+        invitation, error = _open_invitation_or_response(token)
+        if error:
+            return error
+        return Response(
+            {"interpreter_here": interpreter_is_in_room(invitation.service_request)}
+        )
+
+
+class GuestJoinView(APIView):
+    """POST /api/v1/requests/guest/<token>/join/ : the guest enters the live session."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request, token):
+        invitation, error = _open_invitation_or_response(token)
+        if error:
+            return error
+        session = invitation.service_request
+        if not interpreter_is_in_room(session):
+            return Response(
+                {
+                    "detail": "The interpreter has not arrived yet.",
+                    "code": "interpreter_not_here",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        if invitation.joined_at is None:  # first time in: the Deaf user will see this
+            invitation.joined_at = timezone.now()
+            invitation.save(update_fields=["joined_at"])
+        return Response(
+            CallTokenSerializer(
+                {
+                    "token": create_guest_token(session, invitation),
+                    "url": settings.LIVEKIT_URL,
+                    "room": room_name(session),
+                }
+            ).data
+        )
