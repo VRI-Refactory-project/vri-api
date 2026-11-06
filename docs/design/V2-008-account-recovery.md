@@ -67,6 +67,16 @@ Server side:
 - Invalidate any earlier unused codes for that user (only the newest code works).
 - Per-user cooldown: if a code was sent less than 60 seconds ago, do not send another (still return the same 200).
 
+### `POST /auth/verify-reset-code/`
+
+Added for the reset form's code step, so the app can check the code before it asks for a new password.
+Request: `{ "identifier": "0772123456", "code": "482913" }`
+
+Success: **`200`** with `{ "valid": true }`. It does **not** use the code up, so `/auth/recovery/confirm/` still accepts it.
+
+Failure: **`400`** with the same `{ "code": [...] }` error as confirm. Wrong guesses count towards the same
+5-attempt limit, and the verify and confirm calls share the `recovery_confirm` rate limit.
+
 ### `POST /auth/recovery/confirm/`
 
 Request:

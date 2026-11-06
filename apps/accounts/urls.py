@@ -73,6 +73,11 @@ urlpatterns = [
         name="auth-recovery-request",
     ),
     path(
+        "auth/verify-reset-code/",
+        views.RecoveryVerifyView.as_view(),
+        name="auth-verify-reset-code",
+    ),
+    path(
         "auth/recovery/confirm/",
         views.RecoveryConfirmView.as_view(),
         name="auth-recovery-confirm",

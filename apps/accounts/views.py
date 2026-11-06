@@ -54,6 +54,7 @@ from .serializers import (
     PlusPhoneNumberField,
     RecoveryConfirmSerializer,
     RecoveryRequestSerializer,
+    RecoveryVerifySerializer,
     TokenPairSerializer,
     UserSerializer,
     check_new_password,
@@ -423,6 +424,29 @@ class RecoveryRequestView(APIView):
                 "recovery_requested_no_delivery ip=%s", client_ip(request)
             )
         return Response({"detail": RECOVERY_REQUEST_MESSAGE})
+
+
+class RecoveryVerifyView(APIView):
+    """Step 2 of the reset form: check the code before asking for a new password.
+
+    Does not use the code up, so the confirm call can still accept it. Wrong guesses count
+    towards the same 5-attempt limit as confirm.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_scope = "recovery_confirm"
+
+    @extend_schema(
+        tags=["Auth"],
+        summary="Account recovery: check the code before setting a new password",
+        request=RecoveryVerifySerializer,
+        responses={200: inline_serializer("RecoveryValid", {"valid": serializers.BooleanField()})},
+    )
+    def post(self, request):
+        serializer = RecoveryVerifySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response({"valid": True})
 
 
 class RecoveryConfirmView(APIView):
