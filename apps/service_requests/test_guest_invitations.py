@@ -1,5 +1,7 @@
 """V2-012: a Deaf user invites a hearing guest (no account) into an accepted session."""
 
+import json
+import urllib.error
 from unittest.mock import patch
 
 import jwt
@@ -191,3 +193,38 @@ class GuestInvitationTests(APITestCase):
         self.assertEqual(
             self.lobby("not-a-real-token").status_code, status.HTTP_404_NOT_FOUND
         )
+
+    # --- email delivery: Brevo when configured, like the recovery codes ---
+
+    @override_settings(
+        BREVO_API_KEY="test-key", DEFAULT_FROM_EMAIL="SignConnect <no-reply@app.test>"
+    )
+    def test_brevo_is_used_when_a_key_is_configured(self):
+        self.accept()
+
+        with patch("apps.service_requests.invitations.urllib.request.urlopen") as sent:
+            response = self.invite()
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        request = sent.call_args.args[0]
+        self.assertEqual(request.full_url, "https://api.brevo.com/v3/smtp/email")
+        self.assertEqual(request.get_header("Api-key"), "test-key")
+        body = json.loads(request.data)
+        self.assertEqual(body["to"], [{"email": GUEST_EMAIL}])
+        self.assertEqual(body["sender"]["email"], "no-reply@app.test")
+        self.assertIn("/join/", body["textContent"])
+        self.assertEqual(len(mail.outbox), 0)  # not sent twice
+
+    @override_settings(BREVO_API_KEY="test-key")
+    def test_failed_email_gives_502_and_leaves_no_invitation(self):
+        self.accept()
+
+        with patch(
+            "apps.service_requests.invitations.urllib.request.urlopen",
+            side_effect=urllib.error.URLError("no network"),
+        ):
+            response = self.invite()
+
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+        self.assertEqual(response.data["code"], "email_failed")
+        self.assertEqual(SessionInvitation.objects.count(), 0)
