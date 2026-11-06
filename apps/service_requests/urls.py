@@ -24,4 +24,22 @@ urlpatterns = [
         views.ServiceRequestCallTokenView.as_view(),
         name="service-request-call-token",
     ),
+    # V2-012: hearing guests invited by the Deaf user
+    path(
+        "<int:pk>/invitations/",
+        views.SessionInvitationListCreateView.as_view(),
+        name="session-invitations",
+    ),
+    path(
+        "<int:pk>/invitations/<int:invitation_id>/remove/",
+        views.SessionInvitationRemoveView.as_view(),
+        name="session-invitation-remove",
+    ),
+    # The guest's own endpoints: no login, the token in the emailed link is the key.
+    path("guest/<str:token>/", views.GuestLobbyView.as_view(), name="guest-lobby"),
+    path(
+        "guest/<str:token>/join/",
+        views.GuestJoinView.as_view(),
+        name="guest-join",
+    ),
 ]

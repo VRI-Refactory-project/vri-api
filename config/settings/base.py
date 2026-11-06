@@ -157,6 +157,7 @@ BREVO_API_KEY = env("BREVO_API_KEY", default="")
 # Public address of the white SignConnect logo shown at the top of emails (served by the web app,
 # e.g. https://<web-address>/email-logo.png). Empty = the header shows the name as text.
 EMAIL_LOGO_URL = env("EMAIL_LOGO_URL", default="")
+WEB_APP_URL = env("WEB_APP_URL", default="http://localhost:5173")
 
 # --- Expo Push Notifications ---
 EXPO_PUSH_ENABLED = env.bool("EXPO_PUSH_ENABLED", default=False)

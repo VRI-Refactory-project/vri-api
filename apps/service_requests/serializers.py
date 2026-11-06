@@ -2,10 +2,14 @@ from rest_framework import serializers
 
 from apps.core.permissions import user_institution
 from apps.interpreters.models import Specialisation
-from apps.service_requests.models import RequestOffer, ServiceRequest
+from apps.service_requests.models import RequestOffer, ServiceRequest, SessionInvitation
 
 # The contexts a requester can choose. "Other" is an interpreter specialisation only.
-REQUEST_CONTEXTS = (Specialisation.GENERAL, Specialisation.MEDICAL, Specialisation.LEGAL)
+REQUEST_CONTEXTS = (
+    Specialisation.GENERAL,
+    Specialisation.MEDICAL,
+    Specialisation.LEGAL,
+)
 
 
 class ServiceRequestSerializer(serializers.ModelSerializer):
@@ -153,12 +157,33 @@ class OfferResponseSerializer(serializers.Serializer):
 
 
 class OfferStatusSerializer(serializers.Serializer):
-    status = serializers.ChoiceField(choices=sorted(set(OFFER_STATUS_FOR_SCREEN.values())))
+    status = serializers.ChoiceField(
+        choices=sorted(set(OFFER_STATUS_FOR_SCREEN.values()))
+    )
 
 
 class CallTokenSerializer(serializers.Serializer):
     """What an app needs to join a session's call."""
 
-    token = serializers.CharField(help_text="LiveKit access token for this person and room.")
+    token = serializers.CharField(
+        help_text="LiveKit access token for this person and room."
+    )
     url = serializers.CharField(help_text="LiveKit server address to connect to.")
     room = serializers.CharField(help_text="The session's room name.")
+
+
+class CreateInvitationSerializer(serializers.ModelSerializer):
+    """What the Deaf user sends to invite a hearing guest."""
+
+    class Meta:
+        model = SessionInvitation
+        fields = ["email", "phone"]  # phone is optional (blank allowed)
+
+
+class InvitationSerializer(serializers.ModelSerializer):
+    """What the Deaf user sees: who was invited, whether they joined, whether they were removed."""
+
+    class Meta:
+        model = SessionInvitation
+        fields = ["id", "email", "phone", "created_at", "joined_at", "removed_at"]
+        read_only_fields = fields

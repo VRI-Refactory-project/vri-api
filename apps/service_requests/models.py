@@ -1,3 +1,5 @@
+import secrets
+
 from django.conf import settings
 from django.db import models
 
@@ -57,6 +59,7 @@ class ServiceRequest(models.Model):
     matched_by_fallback = models.BooleanField(default=False)
     assigned_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
+    ended_at = models.DateTimeField(null=True, blank=True)  # set when the session ends; invites stop working
     cancel_reason = models.CharField(
         max_length=30, choices=CancelReason.choices, blank=True, default=""
     )
@@ -132,3 +135,38 @@ class RequestOffer(models.Model):
                 name="one_offer_per_request_and_interpreter",
             ),
         ]
+
+
+class SessionInvitation(models.Model):
+    """A hearing guest invited by the Deaf user to one session. The guest has no account."""
+
+    service_request = models.ForeignKey(
+        ServiceRequest, on_delete=models.CASCADE, related_name="invitations"
+    )
+    email = models.EmailField()
+    phone = models.CharField(
+        max_length=13, blank=True, default=""
+    )  # stored for later; no SMS yet
+    token = models.CharField(
+        max_length=64, unique=True, default=secrets.token_urlsafe
+    )  # the secret in the link
+    joined_at = models.DateTimeField(
+        null=True, blank=True
+    )  # first time the guest entered the call
+    removed_at = models.DateTimeField(
+        null=True, blank=True
+    )  # set when the Deaf user removes the guest
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def is_open(self):
+        """The link works only while the guest is not removed and the session is still running."""
+        session = self.service_request
+        return (
+            self.removed_at is None
+            and session.ended_at is None
+            and session.status == ServiceRequest.Status.ASSIGNED
+        )
+
+    def __str__(self):
+        return f"Invitation {self.pk} for request {self.service_request_id}"
