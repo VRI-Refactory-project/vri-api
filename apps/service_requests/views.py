@@ -1,3 +1,5 @@
+import logging
+
 from django.conf import settings
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
@@ -44,6 +46,8 @@ from apps.service_requests.services import (
     refresh_for_requester,
     respond_to_offer,
 )
+
+logger = logging.getLogger(__name__)
 
 # Who may ask for an interpreter (V2-024): Deaf users, and staff of an approved institution.
 # Every other role gets 403; pending or rejected institutions get a 403 that says why.
@@ -304,7 +308,19 @@ class SessionInvitationListCreateView(APIView):
         serializer = CreateInvitationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         invitation = serializer.save(service_request=found)
-        send_invitation_email(invitation, request.user)
+        try:
+            send_invitation_email(invitation, request.user)
+        except Exception:
+            # Do not leave an invitation nobody received. The Deaf user can try again.
+            logger.exception("Could not send the invitation email")
+            invitation.delete()
+            return Response(
+                {
+                    "detail": "We could not send the invitation email. Please try again.",
+                    "code": "email_failed",
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
         return Response(
             InvitationSerializer(invitation).data, status=status.HTTP_201_CREATED
         )
