@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.permissions import IsApprovedInstitution, IsDeafUser, IsInterpreter
+from apps.realtime.models import VideoSession
 from apps.service_requests.call_tokens import create_call_token, room_name
 from apps.service_requests.models import OPEN_STATUSES, RequestOffer, ServiceRequest
 from apps.service_requests.serializers import (
@@ -30,7 +31,6 @@ from apps.service_requests.services import (
     refresh_for_requester,
     respond_to_offer,
 )
-
 
 # Who may ask for an interpreter (V2-024): Deaf users, and staff of an approved institution.
 # Every other role gets 403; pending or rejected institutions get a 403 that says why.
@@ -133,22 +133,20 @@ class ServiceRequestCancelView(APIView):
 
 
 class ServiceRequestCallTokenView(APIView):
-    """POST /api/v1/requests/<id>/call-token/: lets a session's participant join its call."""
+    """POST /api/v1/requests/<id>/call-token/: lets a session participant join its call."""
 
     permission_classes = [IsAuthenticated]
 
     @extend_schema(request=None, responses={200: CallTokenSerializer, 404: None, 409: None})
     def post(self, request, pk):
-        # Anyone who is not on this session gets 404, so they cannot tell it exists.
+        # Only the requester or the currently assigned interpreter may access this session.
         found = get_object_or_404(
             ServiceRequest.objects.filter(
-                Q(requester=request.user)
-                | Q(interpreter__user=request.user)
-                | Q(offers__interpreter__user=request.user, offers__outcome=RequestOffer.Outcome.PENDING)
+                Q(requester=request.user) | Q(interpreter__user=request.user)
             ).distinct(),
             pk=pk,
         )
-        # An interpreter who holds an open offer for the request also matches above (broadcast offers).
+
         if found.status != ServiceRequest.Status.ASSIGNED:
             return Response(
                 {
@@ -157,6 +155,10 @@ class ServiceRequestCallTokenView(APIView):
                 },
                 status=status.HTTP_409_CONFLICT,
             )
+
+        # Create the video session once; subsequent token requests reuse it.
+        VideoSession.objects.get_or_create(service_request=found)
+
         return Response(
             CallTokenSerializer(
                 {

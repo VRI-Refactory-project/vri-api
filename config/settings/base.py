@@ -184,6 +184,13 @@ LIVEKIT_URL = env("LIVEKIT_URL", default="ws://localhost:7880")
 LIVEKIT_API_KEY = env("LIVEKIT_API_KEY", default="")
 LIVEKIT_API_SECRET = env("LIVEKIT_API_SECRET", default="")
 
+# Frontend URL used to generate guest invitation links.
+FRONTEND_URL = env("FRONTEND_URL", default="")
+GUEST_INVITATION_EXPIRY_SECONDS = env.int(
+    "GUEST_INVITATION_EXPIRY_SECONDS",
+    default=3600,
+)
+
 # --- Real-time (V2-011): Django Channels ---
 # Redis lets every server process reach the same WebSocket groups. Without REDIS_URL (tests, CI)
 # an in-memory layer is used, which only works inside one process.

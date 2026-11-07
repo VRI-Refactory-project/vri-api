@@ -7,7 +7,8 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.service_requests.models import ServiceRequest
+from apps.realtime.models import VideoSession
+from apps.service_requests.models import RequestOffer, ServiceRequest
 from apps.service_requests.services import create_request, respond_to_offer
 from apps.service_requests.test_offers import make_interpreter, make_user
 
@@ -85,6 +86,26 @@ class CallTokenTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_another_interpreter_withdrawn_offer_gets_404_after_assignment(self):
+        another_interpreter = make_interpreter()
+
+        self.service_request.offers.create(
+            interpreter=another_interpreter,
+            offered_at=self.offer.offered_at,
+            expires_at=self.offer.expires_at,
+        )
+
+        self.accept()
+
+        withdrawn_offer = self.service_request.offers.get(
+            interpreter=another_interpreter
+        )
+        self.assertEqual(withdrawn_offer.outcome, RequestOffer.Outcome.WITHDRAWN)
+
+        response = self.ask(another_interpreter.user)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_signing_in_is_required(self):
         self.accept()
 
@@ -94,14 +115,12 @@ class CallTokenTests(APITestCase):
 
     # --- Only an accepted session can be joined ---
 
-    def test_an_interpreter_who_was_only_offered_it_gets_409(self):
+    def test_an_interpreter_who_was_only_offered_it_gets_404(self):
         self.assertEqual(self.service_request.status, Status.OFFERED)
 
         response = self.ask(self.interpreter.user)
 
-        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
-        self.assertEqual(response.data["code"], "session_not_ready")
-        self.assertNotIn("token", response.data)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_a_cancelled_session_cannot_be_joined(self):
         self.accept()
@@ -110,3 +129,17 @@ class CallTokenTests(APITestCase):
         response = self.ask(self.deaf)
 
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+
+    def test_repeated_token_requests_reuse_the_same_video_session(self):
+        self.accept()
+
+        first_response = self.ask(self.deaf)
+        second_response = self.ask(self.deaf)
+
+        self.assertEqual(first_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(second_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(VideoSession.objects.count(), 1)
+
+        video_session = VideoSession.objects.get(service_request=self.service_request)
+        self.assertEqual(video_session.status, VideoSession.Status.WAITING)
+        self.assertEqual(video_session.joined_participants, [])
