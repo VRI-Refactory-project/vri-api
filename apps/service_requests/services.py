@@ -22,6 +22,7 @@ from apps.interpreters.routing import pick_candidates
 from apps.notifications.models import Notification
 from apps.notifications.services import create_notification, send_expo_push
 from apps.service_requests.models import OPEN_STATUSES, RequestOffer, ServiceRequest
+from apps.service_requests.status_broadcast import broadcast_status
 
 User = get_user_model()
 
@@ -29,9 +30,7 @@ User = get_user_model()
 def send_due_offer_reminders() -> int:
     """Send reminders for pending offers nearing expiration."""
     now = timezone.now()
-    lead_time = getattr(
-        settings, "INTERPRETER_OFFER_REMINDER_LEAD_TIME", 15
-    )
+    lead_time = getattr(settings, "INTERPRETER_OFFER_REMINDER_LEAD_TIME", 15)
     reminder_threshold = now + timedelta(seconds=lead_time)
 
     candidate_ids = list(
@@ -191,6 +190,7 @@ def create_request(
         check_transition(service_request.status, Status.PENDING)
         service_request.status = Status.PENDING
         service_request.save(update_fields=["status", "updated_at"])
+        broadcast_status(service_request)
     service_request.refresh_from_db()
     return service_request, True
 
@@ -223,6 +223,7 @@ def offer_next(service_request, *, now=None):
             service_request.offered_at = now
             service_request.matched_by_fallback = fallback
             service_request.save()
+            broadcast_status(service_request)
             offers = []
             for profile in candidates:
                 offer = RequestOffer.objects.create(
@@ -283,6 +284,7 @@ def cancel_request(service_request, *, request=None):
         locked.cancel_reason = ServiceRequest.CancelReason.REQUESTER_CANCELLED
         locked.interpreter = None
         locked.save()
+        broadcast_status(locked)
         locked.offers.filter(outcome=RequestOffer.Outcome.PENDING).update(
             outcome=RequestOffer.Outcome.WITHDRAWN, responded_at=now
         )
@@ -327,12 +329,18 @@ def respond_to_offer(offer, action, *, request=None, now=None):
     # An offer whose time ran out is expired first, so it cannot be accepted late.
     expire_stale_offers(now=now, service_request=offer.service_request)
     accepting = action == OFFER_ACCEPT
-    wanted = RequestOffer.Outcome.ACCEPTED if accepting else RequestOffer.Outcome.DECLINED
+    wanted = (
+        RequestOffer.Outcome.ACCEPTED if accepting else RequestOffer.Outcome.DECLINED
+    )
     reopened = []
 
     with transaction.atomic():
-        locked = ServiceRequest.objects.select_for_update().get(pk=offer.service_request_id)
-        offer = RequestOffer.objects.select_related("interpreter__user").get(pk=offer.pk)
+        locked = ServiceRequest.objects.select_for_update().get(
+            pk=offer.service_request_id
+        )
+        offer = RequestOffer.objects.select_related("interpreter__user").get(
+            pk=offer.pk
+        )
         if offer.outcome == wanted:
             return offer
         if locked.status == Status.CANCELLED:
@@ -351,7 +359,10 @@ def respond_to_offer(offer, action, *, request=None, now=None):
             locked.status = Status.ASSIGNED
             locked.interpreter = offer.interpreter
             locked.assigned_at = now
-            locked.save(update_fields=["status", "interpreter", "assigned_at", "updated_at"])
+            locked.save(
+                update_fields=["status", "interpreter", "assigned_at", "updated_at"]
+            )
+            broadcast_status(locked)
             # The request is taken: every other interpreter's open offer for it closes now.
             locked.offers.filter(outcome=RequestOffer.Outcome.PENDING).update(
                 outcome=RequestOffer.Outcome.WITHDRAWN, responded_at=now
@@ -365,7 +376,9 @@ def respond_to_offer(offer, action, *, request=None, now=None):
             RequestOffer.objects.filter(
                 interpreter=offer.interpreter, outcome=RequestOffer.Outcome.PENDING
             ).update(outcome=RequestOffer.Outcome.WITHDRAWN, responded_at=now)
-            InterpreterProfile.objects.filter(pk=offer.interpreter_id).update(is_available=False)
+            InterpreterProfile.objects.filter(pk=offer.interpreter_id).update(
+                is_available=False
+            )
             for request_id in sorted(set(busy_with)):
                 other = ServiceRequest.objects.select_for_update().get(pk=request_id)
                 if _reopen_if_unanswered(other, now):
@@ -375,7 +388,9 @@ def respond_to_offer(offer, action, *, request=None, now=None):
                 reopened.append(locked)
 
         audit.record(
-            AuditLog.Event.OFFER_ACCEPTED if accepting else AuditLog.Event.OFFER_DECLINED,
+            AuditLog.Event.OFFER_ACCEPTED
+            if accepting
+            else AuditLog.Event.OFFER_DECLINED,
             offer.interpreter.user,
             request,
             target_user=locked.requester,
@@ -401,8 +416,15 @@ def _reopen_if_unanswered(service_request, now):
     service_request.offered_at = None
     service_request.matched_by_fallback = False
     service_request.save(
-        update_fields=["status", "interpreter", "offered_at", "matched_by_fallback", "updated_at"]
+        update_fields=[
+            "status",
+            "interpreter",
+            "offered_at",
+            "matched_by_fallback",
+            "updated_at",
+        ]
     )
+    broadcast_status(service_request)
     return True
 
 
@@ -412,7 +434,9 @@ def disconnect_cutoff(now=None):
 
 def _requester_gone(cutoff):
     # A request the app has never checked on counts from when it was made.
-    return Q(last_seen_at__lt=cutoff) | Q(last_seen_at__isnull=True, created_at__lt=cutoff)
+    return Q(last_seen_at__lt=cutoff) | Q(
+        last_seen_at__isnull=True, created_at__lt=cutoff
+    )
 
 
 def cancel_if_requester_gone(service_request, now=None):
@@ -423,7 +447,9 @@ def cancel_if_requester_gone(service_request, now=None):
     """
     now = now or timezone.now()
     cancelled = (
-        ServiceRequest.objects.filter(pk=service_request.pk, status__in=DISCONNECT_CANCELLABLE)
+        ServiceRequest.objects.filter(
+            pk=service_request.pk, status__in=DISCONNECT_CANCELLABLE
+        )
         .filter(_requester_gone(disconnect_cutoff(now)))
         .update(
             status=Status.CANCELLED,
@@ -444,6 +470,7 @@ def cancel_if_requester_gone(service_request, now=None):
         },
     )
     service_request.refresh_from_db()
+    broadcast_status(service_request)
     return True
 
 
@@ -455,7 +482,9 @@ def cancel_disconnected_requests(*, now=None):
         .filter(_requester_gone(disconnect_cutoff(now)))
         .select_related("requester")
     )
-    return sum(cancel_if_requester_gone(service_request, now) for service_request in stale)
+    return sum(
+        cancel_if_requester_gone(service_request, now) for service_request in stale
+    )
 
 
 def refresh_for_requester(service_request, *, now=None):
@@ -529,6 +558,7 @@ def fail_overdue_requests(*, now=None, service_request=None):
             locked.failed_at = now
             locked.failure_reason = "no_interpreter_available"
             locked.save()
+            broadcast_status(locked)
             _report_failure(locked)
             failed += 1
     return failed
