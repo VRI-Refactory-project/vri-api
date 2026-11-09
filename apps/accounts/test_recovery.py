@@ -7,6 +7,7 @@ from unittest import mock
 from django.contrib.auth import get_user_model
 from django.core import mail
 from django.core.cache import cache
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -18,6 +19,7 @@ OLD = "Old-Pass-2026"
 NEW = "New-Pass-2026"
 
 
+@override_settings(BREVO_API_KEY="")  # never send real emails (or need a key) in tests
 class RecoveryTestCase(APITestCase):
     def setUp(self):
         cache.clear()  # reset rate limits
@@ -206,7 +208,7 @@ class VerifyTests(RecoveryTestCase):
 
     def verify(self, code, identifier="0772123456"):
         return self.client.post(
-            reverse("auth-recovery-verify"),
+            reverse("auth-verify-reset-code"),
             {"identifier": identifier, "code": code},
             format="json",
         )
@@ -214,12 +216,14 @@ class VerifyTests(RecoveryTestCase):
     def test_right_code_is_valid(self):
         response = self.verify(self.get_code())
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["detail"], "Code is valid.")
+        self.assertEqual(response.data, {"valid": True})
 
     def test_verify_does_not_use_the_code_up(self):
         code = self.get_code()
-        self.verify(code)
+        self.assertEqual(self.verify(code).status_code, 200)
+        self.assertEqual(self.verify(code).status_code, 200)
         self.assertEqual(self.confirm(code).status_code, 200)
+        self.assertEqual(self.login(NEW).status_code, 200)
 
     def test_verify_does_not_change_password(self):
         self.verify(self.get_code())
@@ -228,9 +232,12 @@ class VerifyTests(RecoveryTestCase):
 
     def test_wrong_code_is_rejected_with_the_same_error_as_confirm(self):
         code = self.get_code()
-        wrong = self.verify("000000" if code != "000000" else "111111")
+        wrong_code = "000000" if code != "000000" else "111111"
+        wrong = self.verify(wrong_code)
+        confirm_wrong = self.confirm(wrong_code)
         self.assertEqual(wrong.status_code, 400)
         self.assertEqual(list(wrong.data), ["code"])
+        self.assertEqual(wrong.data, confirm_wrong.data)
 
     def test_unknown_account_is_rejected(self):
         code = self.get_code()
@@ -248,15 +255,25 @@ class VerifyTests(RecoveryTestCase):
 
     def test_used_code_is_rejected(self):
         code = self.get_code()
-        self.confirm(code)
+        self.assertEqual(self.confirm(code).status_code, 200)
         self.assertEqual(self.verify(code).status_code, 400)
 
     def test_wrong_guesses_count_towards_the_same_limit(self):
         code = self.get_code()
         wrong = "000000" if code != "000000" else "111111"
-        for _ in range(4):
+        for _ in range(5):
+            cache.clear()  # keep the throttle out of this test
             self.verify(wrong)
+        cache.clear()
+        self.assertEqual(self.verify(code).status_code, 400)
         self.assertEqual(self.confirm(code).status_code, 400)
+
+    def test_verify_is_rate_limited(self):
+        for _ in range(10):
+            self.verify("000000", identifier="0799999999")
+        self.assertEqual(
+            self.verify("000000", identifier="0799999999").status_code, 429
+        )
 
 
 class PasswordChangeTests(RecoveryTestCase):

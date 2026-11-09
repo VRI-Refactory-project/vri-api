@@ -266,6 +266,14 @@ CodeField = serializers.RegexField(
 )
 
 
+def _check_recovery_code(identifier, code):
+    """Return (user, usable RecoveryCode or None). Shared by verify and confirm; never consumes the code."""
+    user = find_user_by_identifier(identifier)
+    if user is not None and not user.is_active:
+        user = None  # recovery never reactivates a deactivated account
+    return user, recovery.check_code(user, code, RecoveryCode.Purpose.SELF_RECOVERY)
+
+
 class RecoveryRequestSerializer(serializers.Serializer):
     identifier = serializers.CharField(
         help_text="Phone number or email the account was registered with."
@@ -285,16 +293,7 @@ class RecoveryConfirmSerializer(serializers.Serializer):
     }
 
     def validate(self, attrs):
-        user = find_user_by_identifier(attrs["identifier"])
-
-        if user is not None and not user.is_active:
-            user = None  # recovery never reactivates a deactivated account
-
-        rc = recovery.check_code(
-            user,
-            attrs["code"],
-            RecoveryCode.Purpose.SELF_RECOVERY,
-        )
+        user, rc = _check_recovery_code(attrs["identifier"], attrs["code"])
 
         if rc is None:
             raise serializers.ValidationError(
@@ -305,6 +304,25 @@ class RecoveryConfirmSerializer(serializers.Serializer):
         check_new_password(attrs["new_password"], user)
         attrs["user"], attrs["recovery_code"] = user, rc
 
+        return attrs
+
+
+class RecoveryVerifySerializer(serializers.Serializer):
+    """Check a self-recovery code without using it up, so the reset form can open."""
+
+    identifier = serializers.CharField()
+    code = CodeField
+
+    default_error_messages = {
+        "invalid_code": "Invalid or expired code. Request a new one."
+    }
+
+    def validate(self, attrs):
+        _, rc = _check_recovery_code(attrs["identifier"], attrs["code"])
+        if rc is None:
+            raise serializers.ValidationError(
+                {"code": [self.error_messages["invalid_code"]]}
+            )
         return attrs
 
 
