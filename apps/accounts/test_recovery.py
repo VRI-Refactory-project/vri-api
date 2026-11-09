@@ -1,4 +1,4 @@
-"""Tests for V2-008 account recovery (see docs/design/V2-008-account-recovery.md)."""
+"""Tests for V2-008 account recovery (see docs/design/V2-008-account-recovery.md)"""
 
 import re
 from datetime import timedelta
