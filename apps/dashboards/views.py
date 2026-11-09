@@ -1,4 +1,4 @@
-"""Dashboard data for each role.
+"""Dashboard data for each roles.
 
 Deaf, interpreter, and administrator dashboard endpoints are restricted
 by shared permission classes in apps/core/permissions.py.
