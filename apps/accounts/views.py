@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import update_last_login
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -59,7 +61,12 @@ from .serializers import (
     UserSerializer,
     check_new_password,
 )
+from .sms import send_sms
 from .utils import find_user_by_identifier
+
+import secrets
+from django.contrib.auth.hashers import make_password
+from django.utils import timezone
 
 User = get_user_model()
 DetailSerializer = inline_serializer("Detail", {"detail": serializers.CharField()})
@@ -76,8 +83,8 @@ EMAIL_CODE_ERRORS = {
     "failed": "We could not send the email. Please try again later.",
 }
 RECOVERY_REQUEST_MESSAGE = (
-    "If an account matches, we have sent a recovery code to its registered email. "
-    "If you registered with a phone number only, please contact support to reset your PIN."
+    "If an account matches, we have sent a recovery code "
+    "to its registered email or phone number."
 )
 
 
@@ -201,10 +208,7 @@ class LoginView(APIView):
         # Set a cookie locking this browser to this specific User ID
         # It expires automatically when the browser closes
         response.set_cookie(
-            'active_platform_user',
-            str(user.id),
-            samesite='Lax',
-            httponly=True
+            "active_platform_user", str(user.id), samesite="Lax", httponly=True
         )
         return response
 
@@ -395,7 +399,7 @@ class InstitutionRegisterView(BaseRegisterView):
 
 
 class RecoveryRequestView(APIView):
-    """Step 1: ask for a recovery code by email.
+    """Step 1: ask for a recovery code by email or SMS.
 
     Always returns the same 200 response, whether or not the account exists, so this endpoint
     cannot be used to find out who is registered.
@@ -407,22 +411,66 @@ class RecoveryRequestView(APIView):
 
     @extend_schema(
         tags=["Auth"],
-        summary="Account recovery: request a code by email",
+        summary="Account recovery: request a code by email or SMS",
         request=RecoveryRequestSerializer,
         responses={200: DetailSerializer},
     )
     def post(self, request):
         serializer = RecoveryRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = find_user_by_identifier(serializer.validated_data["identifier"])
-        if user is not None and user.is_active and user.email:
-            recovery.issue_code(
-                user, RecoveryCode.Purpose.SELF_RECOVERY, ip=client_ip(request)
-            )
+        identifier = serializer.validated_data["identifier"]
+        user = find_user_by_identifier(identifier)
+
+        if user is not None and user.is_active:
+            if "@" in identifier:
+                if user.email:
+                    recovery.issue_code(
+                        user, RecoveryCode.Purpose.SELF_RECOVERY, ip=client_ip(request)
+                    )
+            elif user.phone_number:
+                now = timezone.now()
+                recent_codes = RecoveryCode.objects.filter(
+                    user=user, created_at__gte=now - timedelta(hours=24)
+                )
+
+                is_cooldown = recent_codes.filter(
+                    created_at__gte=now - timedelta(minutes=1)
+                ).exists()
+                is_limited = (
+                    recent_codes.filter(
+                        created_at__gte=now - timedelta(hours=1)
+                    ).count()
+                    >= 5
+                )
+                is_locked = recent_codes.filter(attempts__gte=5).count() >= 3
+
+                if not (is_cooldown or is_limited or is_locked):
+                    code = str(secrets.randbelow(1000000)).zfill(6)
+                    hashed_code = make_password(code)
+                    expires_at = now + RecoveryCode.LIFETIME
+
+                    rc = RecoveryCode.objects.create(
+                        user=user,
+                        purpose=RecoveryCode.Purpose.SELF_RECOVERY,
+                        channel="sms",
+                        code_hash=hashed_code,
+                        expires_at=expires_at,
+                        requested_ip=client_ip(request),
+                    )
+                    try:
+                        send_sms(user.phone_number, f"Your VRI reset code is: {code}")
+                    except Exception:
+                        rc.delete()
+                        recovery.logger.exception("Failed to send SMS recovery code")
+            else:
+                recovery.logger.info(
+                    "recovery_requested_no_delivery ip=%s", client_ip(request)
+                )
         else:
             recovery.logger.info(
                 "recovery_requested_no_delivery ip=%s", client_ip(request)
             )
+
         return Response({"detail": RECOVERY_REQUEST_MESSAGE})
 
 
@@ -441,7 +489,11 @@ class RecoveryVerifyView(APIView):
         tags=["Auth"],
         summary="Account recovery: check the code before setting a new password",
         request=RecoveryVerifySerializer,
-        responses={200: inline_serializer("RecoveryValid", {"valid": serializers.BooleanField()})},
+        responses={
+            200: inline_serializer(
+                "RecoveryValid", {"valid": serializers.BooleanField()}
+            )
+        },
     )
     def post(self, request):
         serializer = RecoveryVerifySerializer(data=request.data)
@@ -739,6 +791,7 @@ class LogoutView(APIView):
     allowing other account types (Deaf, Interpreter, Institution, Admin)
     to safely use the machine.
     """
+
     permission_classes = [AllowAny]  # Allow any request to clear the cookie
     authentication_classes = []
 
@@ -748,7 +801,9 @@ class LogoutView(APIView):
         responses={200: DetailSerializer},
     )
     def post(self, request):
-        response = Response({"detail": "Successfully logged out."}, status=status.HTTP_200_OK)
+        response = Response(
+            {"detail": "Successfully logged out."}, status=status.HTTP_200_OK
+        )
         # This deletes the cookie blocking the computer
-        response.delete_cookie('active_platform_user')
+        response.delete_cookie("active_platform_user")
         return response

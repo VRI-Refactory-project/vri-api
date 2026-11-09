@@ -105,4 +105,14 @@ urlpatterns = [
         views.PhoneAvailabilityView.as_view(),
         name="auth-phone-availability",
     ),
+    path(
+        "recovery/request/",
+        views.RecoveryRequestView.as_view(),
+        name="recovery-request",
+    ),
+    path(
+        "recovery/confirm/",
+        views.RecoveryConfirmView.as_view(),
+        name="recovery-confirm",
+    ),
 ]

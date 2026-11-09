@@ -402,3 +402,13 @@ class AvailabilityPeriodSerializer(serializers.ModelSerializer):
     class Meta:
         model = AvailabilityPeriod
         fields = ["id", "resource_id", "start_time", "end_time", "is_active"]
+
+
+class RequestRecoverySerializer(serializers.Serializer):
+    phone_number = serializers.CharField()
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    phone_number = serializers.CharField()
+    code = serializers.CharField(max_length=6)
+    new_password = serializers.CharField(min_length=8)

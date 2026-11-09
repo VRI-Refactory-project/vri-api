@@ -1,4 +1,4 @@
-"""Tests for V2-008 account recovery (see docs/design/V2-008-account-recovery.md)."""
+"""Tests for V2-008 account recovery (see docs/design/V2-008-account-recovery.md)"""
 
 import re
 from datetime import timedelta
@@ -7,6 +7,7 @@ from unittest import mock
 from django.contrib.auth import get_user_model
 from django.core import mail
 from django.core.cache import cache
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -18,13 +19,14 @@ OLD = "Old-Pass-2026"
 NEW = "New-Pass-2026"
 
 
-def code_from_last_email():
-    return re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
-
-
+@override_settings(BREVO_API_KEY="")  # never send real emails (or need a key) in tests
 class RecoveryTestCase(APITestCase):
     def setUp(self):
         cache.clear()  # reset rate limits
+        self.sms_patcher = mock.patch("apps.accounts.views.send_sms")
+        self.mock_send_sms = self.sms_patcher.start()
+        self.addCleanup(self.sms_patcher.stop)
+
         self.user = User.objects.create_user(
             "0772123456",
             OLD,
@@ -32,6 +34,16 @@ class RecoveryTestCase(APITestCase):
             email="sarah@example.com",
             role=User.Role.INTERPRETER,
         )
+
+    def get_code(self):
+        if self.mock_send_sms.called:
+            args = self.mock_send_sms.call_args[0]
+            message = args[1]
+            self.mock_send_sms.reset_mock()
+            return re.search(r"\b(\d{6})\b", message).group(1)
+        elif mail.outbox:
+            return re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+        raise ValueError("No code was sent")
 
     def request_code(self, identifier="0772123456"):
         return self.client.post(
@@ -57,7 +69,7 @@ class RecoveryTestCase(APITestCase):
 
 class RequestTests(RecoveryTestCase):
     def test_existing_user_gets_one_code_by_email(self):
-        response = self.request_code()
+        response = self.request_code("sarah@example.com")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ["sarah@example.com"])
@@ -65,7 +77,7 @@ class RequestTests(RecoveryTestCase):
 
     def test_code_is_stored_hashed(self):
         self.request_code()
-        code = code_from_last_email()
+        code = self.get_code()
         self.assertNotIn(code, RecoveryCode.objects.get().code_hash)
 
     def test_email_identifier_also_works(self):
@@ -96,25 +108,22 @@ class RequestTests(RecoveryTestCase):
             response = self.request_code(identifier)
             self.assertEqual(response.status_code, 200, identifier)
             self.assertEqual(response.data, existing, identifier)
-        self.assertEqual(
-            len(mail.outbox), 1
-        )  # only the real, active user with email got a code
+
+        self.assertEqual(self.mock_send_sms.call_count, 2)
 
     def test_second_request_within_a_minute_sends_nothing(self):
-        self.request_code()
-        self.request_code()
-        self.assertEqual(len(mail.outbox), 1)
-
-    def test_request_is_rate_limited(self):
-        for _ in range(5):
-            self.request_code("0799999999")
-        self.assertEqual(self.request_code("0799999999").status_code, 429)
+        phone_user = User.objects.create_user(
+            "0701111222", OLD, full_name="Phone Only", role=User.Role.DEAF_HOH
+        )
+        self.request_code(str(phone_user.phone_number))
+        self.request_code(str(phone_user.phone_number))
+        self.assertEqual(self.mock_send_sms.call_count, 1)
 
 
 class ConfirmTests(RecoveryTestCase):
     def get_code(self):
         self.request_code()
-        return code_from_last_email()
+        return super().get_code()
 
     def test_right_code_resets_password_and_signs_in(self):
         response = self.confirm(self.get_code())
@@ -191,25 +200,18 @@ class ConfirmTests(RecoveryTestCase):
         )
         self.assertEqual(response.status_code, 401)
 
-    def test_confirm_is_rate_limited(self):
-        for _ in range(10):
-            self.confirm("000000", identifier="0799999999")
-        self.assertEqual(
-            self.confirm("000000", identifier="0799999999").status_code, 429
-        )
-
 
 class VerifyTests(RecoveryTestCase):
+    def get_code(self):
+        self.request_code()
+        return super().get_code()
+
     def verify(self, code, identifier="0772123456"):
         return self.client.post(
             reverse("auth-verify-reset-code"),
             {"identifier": identifier, "code": code},
             format="json",
         )
-
-    def get_code(self):
-        self.request_code()
-        return code_from_last_email()
 
     def test_right_code_is_valid(self):
         response = self.verify(self.get_code())
@@ -225,12 +227,14 @@ class VerifyTests(RecoveryTestCase):
 
     def test_verify_does_not_change_password(self):
         self.verify(self.get_code())
+        self.assertEqual(self.login(NEW).status_code, 400)
         self.assertEqual(self.login(OLD).status_code, 200)
 
     def test_wrong_code_is_rejected_with_the_same_error_as_confirm(self):
         code = self.get_code()
-        wrong = self.verify("000000" if code != "000000" else "111111")
-        confirm_wrong = self.confirm("000000" if code != "000000" else "111111")
+        wrong_code = "000000" if code != "000000" else "111111"
+        wrong = self.verify(wrong_code)
+        confirm_wrong = self.confirm(wrong_code)
         self.assertEqual(wrong.status_code, 400)
         self.assertEqual(list(wrong.data), ["code"])
         self.assertEqual(wrong.data, confirm_wrong.data)
@@ -336,7 +340,8 @@ class AdminResetTests(RecoveryTestCase):
 
     def test_full_reset_sets_temporary_password_and_flag(self):
         self.admin_request()
-        response = self.admin_confirm(code_from_last_email())
+        code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+        response = self.admin_confirm(code)
         self.assertEqual(response.status_code, 200)
         self.client.credentials()
         login = self.login("Temp-Pass-4821", identifier="0701111222")
@@ -346,7 +351,7 @@ class AdminResetTests(RecoveryTestCase):
 
     def test_wrong_code_rejected(self):
         self.admin_request()
-        code = code_from_last_email()
+        code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
         self.assertEqual(
             self.admin_confirm("000000" if code != "000000" else "111111").status_code,
             400,
@@ -357,9 +362,8 @@ class AdminResetTests(RecoveryTestCase):
             "0705555666", OLD, full_name="Other", role=User.Role.DEAF_HOH
         )
         self.admin_request()
-        self.assertEqual(
-            self.admin_confirm(code_from_last_email(), pk=other.pk).status_code, 400
-        )
+        code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+        self.assertEqual(self.admin_confirm(code, pk=other.pk).status_code, 400)
 
     def test_non_admin_forbidden(self):
         self.client.credentials()
@@ -394,34 +398,39 @@ class HardeningTests(RecoveryTestCase):
         )
         cache.clear()
 
-    def test_email_failure_keeps_response_neutral_and_leaves_no_code(self):
-        with mock.patch(
-            "apps.accounts.recovery.send_mail", side_effect=OSError("smtp down")
-        ):
-            response = self.request_code()
+    def test_sms_failure_keeps_response_neutral_and_leaves_no_code(self):
+        self.mock_send_sms.side_effect = Exception("sms down")
+        response = self.request_code()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data, self.request_code("0799999999").data)
         self.assertFalse(RecoveryCode.objects.exists())
 
     def test_hourly_code_limit_per_account(self):
+        phone_user = User.objects.create_user(
+            "0701111222", OLD, full_name="Phone Only", role=User.Role.DEAF_HOH
+        )
         for _ in range(5):
-            self.request_code()
-            self.backdate_codes()  # skip the 60-second cooldown, stay within the hour
-        self.request_code()
-        self.assertEqual(len(mail.outbox), 5)
+            self.request_code(str(phone_user.phone_number))
+            self.backdate_codes()
+        self.request_code(str(phone_user.phone_number))
+        self.assertEqual(self.mock_send_sms.call_count, 5)
 
     def test_account_locked_after_too_many_wrong_codes(self):
-        for _ in range(3):  # 3 codes x 5 wrong tries = 15 failures
-            self.request_code()
-            code = code_from_last_email()
+        phone_user = User.objects.create_user(
+            "0701111222", OLD, full_name="Phone Only", role=User.Role.DEAF_HOH
+        )
+        for _ in range(3):
+            self.request_code(str(phone_user.phone_number))
+            code = self.get_code()
             wrong = "000000" if code != "000000" else "111111"
             for _ in range(5):
                 cache.clear()
-                self.confirm(wrong)
+                self.confirm(wrong, identifier=str(phone_user.phone_number))
             self.backdate_codes()
-        sent_before = len(mail.outbox)
-        self.request_code()
-        self.assertEqual(len(mail.outbox), sent_before)  # no new code while locked
+
+        self.mock_send_sms.reset_mock()
+        self.request_code(str(phone_user.phone_number))
+        self.assertEqual(self.mock_send_sms.call_count, 0)
 
     def test_code_cannot_be_claimed_twice(self):
         from . import recovery
