@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import update_last_login
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -417,29 +419,48 @@ class RecoveryRequestView(APIView):
         serializer.is_valid(raise_exception=True)
         identifier = serializer.validated_data["identifier"]
         user = find_user_by_identifier(identifier)
-        print(
-            f"--- RECOVERY REQUEST FOR: {identifier} | USER FOUND: {user is not None} ---"
-        )
 
         if user is not None and user.is_active:
-            if user.email and "@" in identifier:
-                recovery.issue_code(
-                    user, RecoveryCode.Purpose.SELF_RECOVERY, ip=client_ip(request)
-                )
+            if "@" in identifier:
+                if user.email:
+                    recovery.issue_code(
+                        user, RecoveryCode.Purpose.SELF_RECOVERY, ip=client_ip(request)
+                    )
             elif user.phone_number:
-                code = str(secrets.randbelow(1000000)).zfill(6)
-                hashed_code = make_password(code)
-                expires_at = timezone.now() + RecoveryCode.LIFETIME
-
-                RecoveryCode.objects.create(
-                    user=user,
-                    purpose=RecoveryCode.Purpose.SELF_RECOVERY,
-                    channel="sms",
-                    code_hash=hashed_code,
-                    expires_at=expires_at,
-                    requested_ip=client_ip(request),
+                now = timezone.now()
+                recent_codes = RecoveryCode.objects.filter(
+                    user=user, created_at__gte=now - timedelta(hours=24)
                 )
-                send_sms(user.phone_number, f"Your VRI reset code is: {code}")
+
+                is_cooldown = recent_codes.filter(
+                    created_at__gte=now - timedelta(minutes=1)
+                ).exists()
+                is_limited = (
+                    recent_codes.filter(
+                        created_at__gte=now - timedelta(hours=1)
+                    ).count()
+                    >= 5
+                )
+                is_locked = recent_codes.filter(attempts__gte=5).count() >= 3
+
+                if not (is_cooldown or is_limited or is_locked):
+                    code = str(secrets.randbelow(1000000)).zfill(6)
+                    hashed_code = make_password(code)
+                    expires_at = now + RecoveryCode.LIFETIME
+
+                    rc = RecoveryCode.objects.create(
+                        user=user,
+                        purpose=RecoveryCode.Purpose.SELF_RECOVERY,
+                        channel="sms",
+                        code_hash=hashed_code,
+                        expires_at=expires_at,
+                        requested_ip=client_ip(request),
+                    )
+                    try:
+                        send_sms(user.phone_number, f"Your VRI reset code is: {code}")
+                    except Exception:
+                        rc.delete()
+                        recovery.logger.exception("Failed to send SMS recovery code")
             else:
                 recovery.logger.info(
                     "recovery_requested_no_delivery ip=%s", client_ip(request)
