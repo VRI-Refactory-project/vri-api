@@ -199,6 +199,66 @@ class ConfirmTests(RecoveryTestCase):
         self.assertEqual(response.status_code, 401)
 
 
+class VerifyTests(RecoveryTestCase):
+    def get_code(self):
+        self.request_code()
+        return super().get_code()
+
+    def verify(self, code, identifier="0772123456"):
+        return self.client.post(
+            reverse("auth-recovery-verify"),
+            {"identifier": identifier, "code": code},
+            format="json",
+        )
+
+    def test_right_code_is_valid(self):
+        response = self.verify(self.get_code())
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["detail"], "Code is valid.")
+
+    def test_verify_does_not_use_the_code_up(self):
+        code = self.get_code()
+        self.verify(code)
+        self.assertEqual(self.confirm(code).status_code, 200)
+
+    def test_verify_does_not_change_password(self):
+        self.verify(self.get_code())
+        self.assertEqual(self.login(NEW).status_code, 400)
+        self.assertEqual(self.login(OLD).status_code, 200)
+
+    def test_wrong_code_is_rejected_with_the_same_error_as_confirm(self):
+        code = self.get_code()
+        wrong = self.verify("000000" if code != "000000" else "111111")
+        self.assertEqual(wrong.status_code, 400)
+        self.assertEqual(list(wrong.data), ["code"])
+
+    def test_unknown_account_is_rejected(self):
+        code = self.get_code()
+        self.assertEqual(self.verify(code, identifier="0799999999").status_code, 400)
+
+    def test_deactivated_account_is_rejected(self):
+        code = self.get_code()
+        User.objects.filter(pk=self.user.pk).update(is_active=False)
+        self.assertEqual(self.verify(code).status_code, 400)
+
+    def test_expired_code_is_rejected(self):
+        code = self.get_code()
+        RecoveryCode.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
+        self.assertEqual(self.verify(code).status_code, 400)
+
+    def test_used_code_is_rejected(self):
+        code = self.get_code()
+        self.confirm(code)
+        self.assertEqual(self.verify(code).status_code, 400)
+
+    def test_wrong_guesses_count_towards_the_same_limit(self):
+        code = self.get_code()
+        wrong = "000000" if code != "000000" else "111111"
+        for _ in range(4):
+            self.verify(wrong)
+        self.assertEqual(self.confirm(code).status_code, 400)
+
+
 class PasswordChangeTests(RecoveryTestCase):
     def test_change_password_clears_must_change_flag(self):
         User.objects.filter(pk=self.user.pk).update(must_change_password=True)
