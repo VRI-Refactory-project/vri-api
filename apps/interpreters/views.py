@@ -36,6 +36,7 @@ from .models import (
     DateException,
     InterpreterAvailability,
     InterpreterProfile,
+    # ScheduledSession,
     VerificationDecision,
     VerificationStatus,
     WeeklyAvailability,
@@ -55,6 +56,7 @@ from .serializers import (
     ManageInterpreterListSerializer,
     MonthExceptionsSerializer,
     MonthQuerySerializer,
+    ScheduledSessionSerializer,
     WeekQuerySerializer,
     WeekScheduleSerializer,
 )
@@ -593,9 +595,7 @@ class SpecialisationLibraryView(APIView):
         )
 
 
-from rest_framework import generics, permissions
-from .models import ScheduledSession
-from .serializers import ScheduledSessionSerializer
+# --- NEW: Scheduled Sessions ---
 
 
 class CreateScheduledSessionView(generics.CreateAPIView):
