@@ -11,6 +11,7 @@ class VideoSession(models.Model):
         CONNECTING = "connecting", "Connecting"
         CONNECTED = "connected", "Connected"
         ENDED = "ended", "Ended"
+        FAILED = "failed", "Failed"  # the call never connected in time (RT-03)
 
     service_request = models.OneToOneField(
         ServiceRequest,

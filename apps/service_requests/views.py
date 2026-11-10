@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.permissions import IsApprovedInstitution, IsDeafUser, IsInterpreter
+from apps.realtime.ice import ice_servers
 from apps.service_requests.call_tokens import (
     create_call_token,
     create_guest_token,
@@ -214,6 +215,7 @@ class ServiceRequestCallTokenView(APIView):
                     "token": create_call_token(found, request.user),
                     "url": settings.LIVEKIT_URL,
                     "room": room_name(found),
+                    "ice_servers": ice_servers(),
                 }
             ).data
         )
@@ -437,6 +439,7 @@ class GuestJoinView(APIView):
                     "token": create_guest_token(session, invitation),
                     "url": settings.LIVEKIT_URL,
                     "room": room_name(session),
+                    "ice_servers": ice_servers(),
                 }
             ).data
         )

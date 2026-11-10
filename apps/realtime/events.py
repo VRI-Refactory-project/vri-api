@@ -32,6 +32,7 @@ def broadcast_video_session_status(video_session):
         "connecting": "Connecting",
         "connected": "Connected",
         "ended": "Ended",
+        "failed": "Failed",
     }
 
     send_to_session(
