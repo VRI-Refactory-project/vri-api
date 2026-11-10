@@ -4,6 +4,8 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.notifications.models import Notification, PushDevice
+from apps.interpreters.models import Specialisation
+from apps.service_requests.models import ServiceRequest
 
 User = get_user_model()
 
@@ -189,3 +191,30 @@ class NotificationAPITests(APITestCase):
         )
         device.refresh_from_db()
         self.assertTrue(device.is_active)
+
+    def test_new_request_notification_shows_who_asked(self):
+        requester = User.objects.create_user(
+            phone_number="+256700000103",
+            password="TestPassword123!",
+            role="deaf_hoh",
+            full_name="James Carter",
+        )
+
+        service_request = ServiceRequest.objects.create(
+            requester=requester,
+            specialisation_required=Specialisation.GENERAL,
+        )
+        Notification.objects.create(
+            user=self.other_user,  # the person receiving the notification
+            title="New interpreting request",
+            body="A new interpreting request has been offered to you.",
+            category=Notification.Category.INCOMING_REQUEST,
+            data={"request_id": service_request.pk},
+        )
+        self.client.force_authenticate(user=self.other_user)
+
+        response = self.client.get(reverse("notifications:list"))
+
+        item = response.data[0]  # newest first
+        self.assertEqual(item["actor_name"], "James Carter")
+        self.assertIsNone(item["actor_photo"])  # James has no photo yet
