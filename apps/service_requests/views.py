@@ -30,6 +30,7 @@ from apps.service_requests.serializers import (
     OFFER_STATUS_FOR_SCREEN,
     CallTokenSerializer,
     CreateInvitationSerializer,
+    InterpreterSessionSerializer,
     InterpreterOfferSerializer,
     InvitationSerializer,
     OfferedRequestSerializer,
@@ -313,6 +314,27 @@ class InterpreterOfferStateView(APIView):
         return Response({"status": OFFER_STATUS_FOR_SCREEN[offer.outcome]})
 
 
+class InterpreterSessionListView(APIView):
+    """GET /api/v1/interpreters/me/sessions/: the sessions the signed-in interpreter took, newest
+    first. A session is a request the interpreter accepted: still running (ASSIGNED) or ended
+    (COMPLETED)."""
+
+    permission_classes = [IsAuthenticated, IsInterpreter]
+
+    @extend_schema(responses={200: InterpreterSessionSerializer(many=True)})
+    def get(self, request):
+        sessions = (
+            ServiceRequest.objects.filter(
+                interpreter__user=request.user,
+                status__in=[
+                    ServiceRequest.Status.ASSIGNED,
+                    ServiceRequest.Status.COMPLETED,
+                ],
+            )
+            .select_related("requester__photo")
+            .order_by("-assigned_at")[:100]
+        )
+        return Response(InterpreterSessionSerializer(sessions, many=True).data)
 # --- V2-012: hearing guests (no account) invited by the Deaf user ---
 
 
