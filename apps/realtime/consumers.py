@@ -7,6 +7,7 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.db.models import Q
 
 from apps.realtime.events import group_name
+from apps.realtime.models import VideoSession
 from apps.realtime.tickets import user_from_ticket
 from apps.service_requests.models import ServiceRequest
 
@@ -23,7 +24,8 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
         session_id = self.scope["url_route"]["kwargs"]["session_id"]
         ticket = parse_qs(self.scope["query_string"].decode()).get("ticket", [""])[0]
-        # Accept first, so the app receives the close code instead of a bare failed handshake.
+
+        # Accept first so the app receives the close code instead of a failed handshake.
         await self.accept()
 
         user = await database_sync_to_async(user_from_ticket)(ticket)
@@ -31,16 +33,28 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
             await self.close(code=CLOSE_BAD_TICKET)
             return
 
-        # Join the group before reading the status, so no change can slip in between the two.
+        # Join the group before reading the status to avoid missing updates.
         self.group = group_name(session_id)
         await self.channel_layer.group_add(self.group, self.channel_name)
+
         session = await database_sync_to_async(_session_for)(user, session_id)
         if session is None:
             await self.close(code=CLOSE_NOT_ALLOWED)
             return
+
+        # Send the service-request routing status.
         await self.send_json(
-            {"type": "session.status", "session": session.pk, "status": session.status}
+            {
+                "type": "session.status",
+                "session": session.pk,
+                "status": session.status,
+            }
         )
+
+        # Send the actual video-call lifecycle status, if one exists.
+        video_session = await database_sync_to_async(_video_session_snapshot)(session.pk)
+        if video_session is not None:
+            await self.send_json(video_session)
 
     async def disconnect(self, code):
         if self.group:
@@ -57,3 +71,24 @@ def _session_for(user, session_id):
         Q(requester=user) | Q(interpreter__user=user, status=ServiceRequest.Status.ASSIGNED),
         pk=session_id,
     ).first()
+
+
+def _video_session_snapshot(session_id):
+    """Return the current video-call status for the initial WebSocket connection."""
+    video_session = VideoSession.objects.filter(service_request_id=session_id).first()
+    if video_session is None:
+        return None
+
+    labels = {
+        VideoSession.Status.WAITING: "Waiting",
+        VideoSession.Status.CONNECTING: "Connecting",
+        VideoSession.Status.CONNECTED: "Connected",
+        VideoSession.Status.ENDED: "Ended",
+    }
+
+    return {
+        "type": "video_session.status",
+        "session": session_id,
+        "status": video_session.status,
+        "label": labels.get(video_session.status, "Updating"),
+    }

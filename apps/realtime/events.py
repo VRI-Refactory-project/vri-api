@@ -23,3 +23,22 @@ def send_to_session(session_id, event_type, data):
         )
 
     transaction.on_commit(send)
+
+
+def broadcast_video_session_status(video_session):
+    """Broadcast the actual video-call lifecycle status to session participants."""
+    labels = {
+        "waiting": "Waiting",
+        "connecting": "Connecting",
+        "connected": "Connected",
+        "ended": "Ended",
+    }
+
+    send_to_session(
+        video_session.service_request_id,
+        "video_session.status",
+        {
+            "status": video_session.status,
+            "label": labels.get(video_session.status, "Updating"),
+        },
+    )

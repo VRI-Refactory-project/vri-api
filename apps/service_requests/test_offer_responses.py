@@ -9,8 +9,14 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.audit.models import AuditLog
-from apps.institutions.models import InstitutionProfile, InstitutionStaff, InstitutionStatus, StaffRole
+from apps.institutions.models import (
+    InstitutionProfile,
+    InstitutionStaff,
+    InstitutionStatus,
+    StaffRole,
+)
 from apps.interpreters.models import Specialisation
+from apps.realtime.models import VideoSession
 from apps.service_requests.models import RequestOffer, ServiceRequest
 from apps.service_requests.services import create_request, sweep
 from apps.service_requests.test_offers import make_interpreter, make_user
@@ -122,6 +128,19 @@ class OfferResponseTests(APITestCase):
         self.assertEqual(self.offer.outcome, Outcome.ACCEPTED)
         self.assertIsNotNone(self.offer.responded_at)
 
+    def test_accepting_creates_a_waiting_video_session(self):
+        response = self.respond("accept")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        video_session = VideoSession.objects.get(
+            service_request=self.service_request
+        )
+        self.assertEqual(video_session.status, VideoSession.Status.WAITING)
+        self.assertEqual(video_session.joined_participants, [])
+        self.assertIsNone(video_session.connected_at)
+        self.assertIsNone(video_session.ended_at)
+
     def test_the_requester_sees_who_accepted(self):
         self.respond("accept")
         self.client.force_authenticate(self.deaf)
@@ -159,6 +178,12 @@ class OfferResponseTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(AuditLog.objects.filter(event=AuditLog.Event.OFFER_ACCEPTED).count(), 1)
+        self.assertEqual(
+            VideoSession.objects.filter(
+                service_request=self.service_request
+            ).count(),
+            1,
+        )
 
     # --- Refusing offers that are no longer active (BE-03) ---
 
@@ -240,6 +265,16 @@ class OfferResponseTests(APITestCase):
 
         self.interpreter.refresh_from_db()
         self.assertTrue(self.interpreter.is_available)
+
+    def test_declining_does_not_create_a_video_session(self):
+        response = self.respond("decline")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(
+            VideoSession.objects.filter(
+                service_request=self.service_request
+            ).exists()
+        )
 
     def test_declining_is_audited(self):
         self.respond("decline")

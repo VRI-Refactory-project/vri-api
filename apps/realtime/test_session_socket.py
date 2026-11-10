@@ -8,6 +8,7 @@ from django.test import TransactionTestCase, override_settings
 
 from apps.realtime.consumers import CLOSE_BAD_TICKET, CLOSE_NOT_ALLOWED
 from apps.realtime.events import send_to_session
+from apps.realtime.models import VideoSession
 from apps.realtime.tickets import issue_ticket
 from apps.service_requests.models import ServiceRequest
 from apps.service_requests.services import create_request, respond_to_offer
@@ -53,12 +54,34 @@ class SessionSocketTests(TransactionTestCase):
         self.assertEqual(await socket.receive_json_from(), self.snapshot(Status.OFFERED))
         await socket.disconnect()
 
-    async def test_the_assigned_interpreter_gets_the_status(self):
+    async def test_no_video_status_is_sent_when_video_session_does_not_exist(self):
+        socket = await self.open(self.deaf)
+
+        self.assertEqual(await socket.receive_json_from(), self.snapshot(Status.OFFERED))
+        self.assertTrue(await socket.receive_nothing())
+
+        await socket.disconnect()
+
+    async def test_the_assigned_interpreter_gets_both_statuses(self):
         await sync_to_async(self.accept)()
+
+        video_session = await sync_to_async(VideoSession.objects.get)(
+            service_request=self.session,
+        )
+        self.assertEqual(video_session.status, VideoSession.Status.WAITING)
 
         socket = await self.open(self.interpreter.user)
 
         self.assertEqual(await socket.receive_json_from(), self.snapshot(Status.ASSIGNED))
+        self.assertEqual(
+            await socket.receive_json_from(),
+            {
+                "type": "video_session.status",
+                "session": self.session.pk,
+                "status": VideoSession.Status.WAITING,
+                "label": "Waiting",
+            },
+        )
         await socket.disconnect()
 
     # --- Who stays out ---

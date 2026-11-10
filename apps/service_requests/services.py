@@ -326,8 +326,10 @@ def respond_to_offer(offer, action, *, request=None, now=None):
     when the offer can no longer be answered. ``request`` is the HTTP request, for the audit entry.
     """
     now = now or timezone.now()
+
     # An offer whose time ran out is expired first, so it cannot be accepted late.
     expire_stale_offers(now=now, service_request=offer.service_request)
+
     accepting = action == OFFER_ACCEPT
     wanted = (
         RequestOffer.Outcome.ACCEPTED if accepting else RequestOffer.Outcome.DECLINED
@@ -341,12 +343,16 @@ def respond_to_offer(offer, action, *, request=None, now=None):
         offer = RequestOffer.objects.select_related("interpreter__user").get(
             pk=offer.pk
         )
+
         if offer.outcome == wanted:
             return offer
+
         if locked.status == Status.CANCELLED:
             raise OfferNotActive("This request was cancelled.")
+
         if offer.outcome != RequestOffer.Outcome.PENDING:
             raise OfferNotActive(_NOT_ACTIVE_MESSAGES[offer.outcome])
+
         if locked.status != Status.OFFERED:
             raise OfferNotActive("This offer is no longer available.")
 
@@ -362,27 +368,48 @@ def respond_to_offer(offer, action, *, request=None, now=None):
             locked.save(
                 update_fields=["status", "interpreter", "assigned_at", "updated_at"]
             )
+
+            # Create the actual video-call lifecycle separately from request routing.
+            from apps.realtime.events import broadcast_video_session_status
+            from apps.realtime.models import VideoSession
+
+            video_session, created = VideoSession.objects.get_or_create(
+                service_request=locked,
+                defaults={"status": VideoSession.Status.WAITING},
+            )
+
+            if created:
+                broadcast_video_session_status(video_session)
+
             broadcast_status(locked)
+
             # The request is taken: every other interpreter's open offer for it closes now.
             locked.offers.filter(outcome=RequestOffer.Outcome.PENDING).update(
                 outcome=RequestOffer.Outcome.WITHDRAWN, responded_at=now
             )
+
             # The accepting interpreter is busy now, so their open offers for other requests close too.
             busy_with = list(
                 RequestOffer.objects.filter(
-                    interpreter=offer.interpreter, outcome=RequestOffer.Outcome.PENDING
+                    interpreter=offer.interpreter,
+                    outcome=RequestOffer.Outcome.PENDING,
                 ).values_list("service_request_id", flat=True)
             )
+
             RequestOffer.objects.filter(
-                interpreter=offer.interpreter, outcome=RequestOffer.Outcome.PENDING
+                interpreter=offer.interpreter,
+                outcome=RequestOffer.Outcome.PENDING,
             ).update(outcome=RequestOffer.Outcome.WITHDRAWN, responded_at=now)
+
             InterpreterProfile.objects.filter(pk=offer.interpreter_id).update(
                 is_available=False
             )
+
             for request_id in sorted(set(busy_with)):
                 other = ServiceRequest.objects.select_for_update().get(pk=request_id)
                 if _reopen_if_unanswered(other, now):
                     reopened.append(other)
+
         else:
             if _reopen_if_unanswered(locked, now):
                 reopened.append(locked)
@@ -400,6 +427,7 @@ def respond_to_offer(offer, action, *, request=None, now=None):
     # Requests that have no open offers left are offered again straight away, to everyone still eligible.
     for waiting in reopened:
         offer_next(waiting, now=now)
+
     return offer
 
 
