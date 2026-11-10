@@ -5,6 +5,7 @@ from .views import (
     AvailabilityPeriodViewSet,
     AvailabilityStatusView,
     CertificationUploadView,
+    CreateScheduledSessionView,
     DayAvailabilityView,
     ExceptionDetailView,
     ExceptionListView,
@@ -71,5 +72,12 @@ urlpatterns = [
         InterpreterAvailabilityDetailView.as_view(),
         name="availability-detail",
     ),
+
+    path(
+        "schedule/",
+        CreateScheduledSessionView.as_view(),
+        name="schedule-session",
+    ),
+    
     path('', include(router.urls)),
 ]

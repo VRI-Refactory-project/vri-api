@@ -522,3 +522,40 @@ class AvailabilityPeriodSerializer(serializers.ModelSerializer):
                 ) from exc
 
         return data
+
+
+
+
+from rest_framework import serializers
+from .models import ScheduledSession
+from datetime import date
+
+class ScheduledSessionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ScheduledSession
+        fields = [
+            'id', 
+            'date', 
+            'time', 
+            'duration', 
+            'session_type', 
+            'custom_session_type',
+            'status', 
+            'created_at'
+        ]
+        read_only_fields = ['id', 'status', 'created_at']
+
+    def validate(self, data):
+        # 1. Custom validation: Ensure "Other" has a custom text
+        if data.get('session_type') == 'other' and not data.get('custom_session_type'):
+            raise serializers.ValidationError({
+                "custom_session_type": "Please specify your session type."
+            })
+        
+        # 2. Ensure the date is in the future
+        if data.get('date') and data.get('date') < date.today():
+            raise serializers.ValidationError({
+                "date": "The date must be in the future."
+            })
+            
+        return data

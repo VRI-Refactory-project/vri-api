@@ -289,3 +289,63 @@ class AvailabilityPeriod(models.Model):
             raise ValidationError(
                 "This period overlaps with an existing availability slot."
             )
+
+
+class ScheduledSession(models.Model):
+    class SessionType(models.TextChoices):
+        MEDICAL = "medical", "Medical / Healthcare"
+        LEGAL = "legal", "Legal / Court"
+        EDUCATION = "education", "Education / School"
+        SOCIAL = "social", "Social services/community"
+        MEDIA = "media", "Media/broadcast"
+        CONFERENCES = "conferences", "Conferences/events"
+        RELIGIOUS = "religious", "Religious/church or mosque"
+        POLICE = "police", "Police/security"
+        OTHER = "other", "Other"
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        CONFIRMED = "CONFIRMED", "Confirmed"
+        CANCELLED = "CANCELLED", "Cancelled"
+
+    # The Deaf user who is booking the session
+    deaf_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="scheduled_sessions",
+    )
+    
+    # When is the session?
+    date = models.DateField()
+    time = models.TimeField()
+    duration = models.PositiveIntegerField(
+        help_text="Duration in minutes, e.g. 30, 45, 60"
+    )
+    
+    # What kind of session?
+    session_type = models.CharField(
+        max_length=20,
+        choices=SessionType.choices,
+        default=SessionType.MEDICAL,
+    )
+    custom_session_type = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Custom text if session_type is 'other'",
+    )
+    
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["date", "time"]
+
+    def __str__(self):
+        return f"{self.deaf_user.full_name} - {self.date} at {self.time} ({self.duration}m)"

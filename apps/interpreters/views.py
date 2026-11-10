@@ -588,3 +588,17 @@ class SpecialisationLibraryView(APIView):
         return Response(
             [{"value": v, "label": label} for v, label in library.SPECIALISATION_LIBRARY]
         )
+
+
+
+from rest_framework import generics, permissions
+from .models import ScheduledSession
+from .serializers import ScheduledSessionSerializer
+
+class CreateScheduledSessionView(generics.CreateAPIView):
+    serializer_class = ScheduledSessionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        # Attach the currently logged-in user as the deaf_user
+        serializer.save(deaf_user=self.request.user)
