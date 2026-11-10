@@ -184,6 +184,13 @@ REQUESTER_DISCONNECT_GRACE_WINDOW = timedelta(
 LIVEKIT_URL = env("LIVEKIT_URL", default="ws://localhost:7880")
 LIVEKIT_API_KEY = env("LIVEKIT_API_KEY", default="")
 LIVEKIT_API_SECRET = env("LIVEKIT_API_SECRET", default="")
+# Relay servers for calls behind strict firewalls (INFRA-03). Empty means none are sent to the apps.
+LIVEKIT_STUN_URLS = env.list("LIVEKIT_STUN_URLS", default=[])
+LIVEKIT_TURN_URLS = env.list("LIVEKIT_TURN_URLS", default=[])
+LIVEKIT_TURN_USERNAME = env("LIVEKIT_TURN_USERNAME", default="")
+LIVEKIT_TURN_CREDENTIAL = env("LIVEKIT_TURN_CREDENTIAL", default="")
+# A call that has not connected this many seconds after the first person joined is marked failed (RT-03).
+CALL_CONNECT_TIMEOUT_SECONDS = env.int("CALL_CONNECT_TIMEOUT_SECONDS", default=60)
 
 # --- Real-time (V2-011): Django Channels ---
 # Redis lets every server process reach the same WebSocket groups. Without REDIS_URL (tests, CI)

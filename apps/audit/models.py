@@ -31,6 +31,9 @@ class AuditLog(models.Model):
         OFFER_ACCEPTED = "offer_accepted", "Interpreter accepted a request"
         OFFER_DECLINED = "offer_declined", "Interpreter declined a request"
         OFFER_EXPIRED = "offer_expired", "Offer to an interpreter expired unanswered"
+        CALL_CONNECTED = "call_connected", "Video call connected"
+        CALL_ENDED = "call_ended", "Video call ended"
+        CALL_FAILED = "call_failed", "Video call failed (never connected in time)"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

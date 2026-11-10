@@ -170,6 +170,10 @@ class CallTokenSerializer(serializers.Serializer):
     )
     url = serializers.CharField(help_text="LiveKit server address to connect to.")
     room = serializers.CharField(help_text="The session's room name.")
+    ice_servers = serializers.ListField(
+        child=serializers.DictField(),
+        help_text="STUN and TURN servers the app should use to connect (may be empty).",
+    )
 
 
 class CreateInvitationSerializer(serializers.ModelSerializer):
