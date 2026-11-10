@@ -20,6 +20,11 @@ urlpatterns = [
         name="service-request-cancel",
     ),
     path(
+        "<int:pk>/end/",
+        views.ServiceRequestEndView.as_view(),
+        name="service-request-end",
+    ),
+    path(
         "<int:pk>/call-token/",
         views.ServiceRequestCallTokenView.as_view(),
         name="service-request-call-token",

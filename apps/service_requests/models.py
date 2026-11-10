@@ -12,6 +12,7 @@ class ServiceRequest(models.Model):
         PENDING = "PENDING", "Pending"  # waiting for an interpreter
         OFFERED = "OFFERED", "Offered"  # sent to one interpreter, no answer yet
         ASSIGNED = "ASSIGNED", "Assigned"  # an interpreter accepted
+        COMPLETED = "COMPLETED", "Completed"  # the session was ended (V2-034)
         CANCELLED = "CANCELLED", "Cancelled"
         FAILED = "FAILED", "Failed"  # nobody could take it in time
 

@@ -2,7 +2,7 @@
 
 TODO: replace the wording below with the UI Status Label Mapping table (Section 12 of the backlog).
 Only this file holds wording, so changing a label never touches the sending code.
-CONNECTING, ACTIVE and COMPLETED do not exist as request states yet; they are ready for when they do.
+CONNECTING and ACTIVE do not exist as request states yet; they are ready for when they do.
 """
 
 STATUS_LABELS = {
