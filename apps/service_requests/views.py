@@ -38,10 +38,12 @@ from apps.service_requests.serializers import (
 )
 from apps.service_requests.services import (
     NotCancellable,
+    NotEndable,
     OfferNotActive,
     OpenRequestExists,
     cancel_request,
     create_request,
+    end_session,
     expire_stale_offers,
     refresh_for_requester,
     respond_to_offer,
@@ -147,6 +149,33 @@ class ServiceRequestCancelView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
         return Response(ServiceRequestSerializer(cancelled).data)
+
+
+class ServiceRequestEndView(APIView):
+    """POST /api/v1/requests/<id>/end/ (V2-034): the requester or the assigned interpreter ends the
+    session for everyone. Anyone else gets 404, so they cannot tell the session exists."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(request=None, responses={200: ServiceRequestSerializer, 404: None, 409: None})
+    def post(self, request, pk):
+        found = get_object_or_404(
+            ServiceRequest.objects.filter(
+                Q(requester=request.user) | Q(interpreter__user=request.user)
+            ),
+            pk=pk,
+        )
+        try:
+            ended = end_session(found)
+        except NotEndable:
+            return Response(
+                {
+                    "detail": "This session is not running, so it cannot be ended.",
+                    "code": "not_endable",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(ServiceRequestSerializer(ended).data)
 
 
 class ServiceRequestCallTokenView(APIView):

@@ -78,6 +78,22 @@ async def _remove(room, identity):
         )
 
 
+async def _delete_room(room):
+    async with api.LiveKitAPI(
+        settings.LIVEKIT_URL, settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET
+    ) as lkapi:
+        await lkapi.room.delete_room(api.DeleteRoomRequest(room=room))
+
+
+def end_room(service_request):
+    """Close the live call for everyone in it. If LiveKit cannot be reached or the room is
+    already gone, nothing happens: the session is already ended in our own records."""
+    try:
+        asyncio.run(_delete_room(room_name(service_request)))
+    except Exception:
+        pass
+
+
 def remove_guest_from_room(service_request, invitation):
     """Kick the guest out of the live call. If they are not in it, nothing happens."""
     try:

@@ -21,6 +21,7 @@ from apps.interpreters.models import InterpreterProfile, Specialisation
 from apps.interpreters.routing import pick_candidates
 from apps.notifications.models import Notification
 from apps.notifications.services import create_notification, send_expo_push
+from apps.service_requests.call_tokens import end_room
 from apps.service_requests.models import OPEN_STATUSES, RequestOffer, ServiceRequest
 from apps.service_requests.status_broadcast import broadcast_status
 
@@ -87,6 +88,10 @@ class NotCancellable(Exception):
     """The request has already been accepted, so it can no longer be cancelled."""
 
 
+class NotEndable(Exception):
+    """The session cannot be ended because it never started (not accepted) or was cancelled."""
+
+
 class InvalidTransition(Exception):
     """A request was asked to move to a status it cannot reach from where it is."""
 
@@ -102,7 +107,8 @@ ALLOWED_TRANSITIONS = {
     Status.CREATED: {Status.PENDING, Status.OFFERED, Status.CANCELLED},
     Status.PENDING: {Status.OFFERED, Status.CANCELLED, Status.FAILED},
     Status.OFFERED: {Status.ASSIGNED, Status.OFFERED, Status.PENDING, Status.CANCELLED},
-    Status.ASSIGNED: set(),
+    Status.ASSIGNED: {Status.COMPLETED},
+    Status.COMPLETED: set(),
     Status.CANCELLED: set(),
     Status.FAILED: set(),
 }
@@ -299,6 +305,44 @@ def cancel_request(service_request, *, request=None):
             },
         )
     return locked
+
+
+def end_session(service_request):
+    """End an accepted session for everyone in it (V2-034).
+
+    The request becomes COMPLETED, its invitations stop working, the video session is marked ended
+    and everyone on the session's WebSocket hears about it. Ending twice is fine and changes nothing.
+    The LiveKit room is closed once the change is saved, so anyone still in the call is disconnected.
+    """
+    now = timezone.now()
+    with transaction.atomic():
+        locked = ServiceRequest.objects.select_for_update().get(pk=service_request.pk)
+        if locked.status == Status.COMPLETED:
+            return locked
+        if locked.status != Status.ASSIGNED:
+            raise NotEndable
+        check_transition(locked.status, Status.COMPLETED)
+        locked.status = Status.COMPLETED
+        locked.ended_at = locked.ended_at or now
+        locked.save()
+        _end_video_session(locked, now)
+        broadcast_status(locked)
+        transaction.on_commit(lambda: end_room(locked))
+    return locked
+
+
+def _end_video_session(service_request, now):
+    """Mark the call itself ended, if one was ever started, and tell the people in it."""
+    from apps.realtime.events import broadcast_video_session_status
+    from apps.realtime.models import VideoSession
+
+    video_session = VideoSession.objects.filter(service_request=service_request).first()
+    if video_session is None or video_session.status == VideoSession.Status.ENDED:
+        return
+    video_session.status = VideoSession.Status.ENDED
+    video_session.ended_at = video_session.ended_at or now
+    video_session.save(update_fields=["status", "ended_at", "updated_at"])
+    broadcast_video_session_status(video_session)
 
 
 OFFER_ACCEPT = "accept"
