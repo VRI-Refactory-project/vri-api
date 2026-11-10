@@ -91,7 +91,9 @@ class InterpreterProfile(models.Model):
     def specialisation_labels(self):
         from .specialisations import label_for
 
-        return [label_for(v, self.specialisation_other) for v in self.all_specialisations()]
+        return [
+            label_for(v, self.specialisation_other) for v in self.all_specialisations()
+        ]
 
     def clean(self):
         super().clean()
@@ -314,14 +316,14 @@ class ScheduledSession(models.Model):
         on_delete=models.CASCADE,
         related_name="scheduled_sessions",
     )
-    
+
     # When is the session?
     date = models.DateField()
     time = models.TimeField()
     duration = models.PositiveIntegerField(
         help_text="Duration in minutes, e.g. 30, 45, 60"
     )
-    
+
     # What kind of session?
     session_type = models.CharField(
         max_length=20,
@@ -334,13 +336,13 @@ class ScheduledSession(models.Model):
         default="",
         help_text="Custom text if session_type is 'other'",
     )
-    
+
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
         default=Status.PENDING,
     )
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

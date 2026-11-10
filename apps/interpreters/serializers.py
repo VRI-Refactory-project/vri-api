@@ -523,9 +523,6 @@ class AvailabilityPeriodSerializer(serializers.ModelSerializer):
 
         return data
 
-
-
-
 from rest_framework import serializers
 from .models import ScheduledSession
 from datetime import date
@@ -559,3 +556,7 @@ class ScheduledSessionSerializer(serializers.ModelSerializer):
             })
             
         return data
+
+
+
+

@@ -19,7 +19,7 @@ from .views import (
 app_name = "interpreters"
 
 router = DefaultRouter()
-router.register(r'availability', AvailabilityPeriodViewSet, basename='availability')
+router.register(r"availability", AvailabilityPeriodViewSet, basename="availability")
 
 urlpatterns = [
     path(
@@ -72,12 +72,10 @@ urlpatterns = [
         InterpreterAvailabilityDetailView.as_view(),
         name="availability-detail",
     ),
-
     path(
         "schedule/",
         CreateScheduledSessionView.as_view(),
         name="schedule-session",
     ),
-    
-    path('', include(router.urls)),
+    path("", include(router.urls)),
 ]

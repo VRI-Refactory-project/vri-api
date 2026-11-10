@@ -586,14 +586,17 @@ class SpecialisationLibraryView(APIView):
 
     def get(self, request):
         return Response(
-            [{"value": v, "label": label} for v, label in library.SPECIALISATION_LIBRARY]
+            [
+                {"value": v, "label": label}
+                for v, label in library.SPECIALISATION_LIBRARY
+            ]
         )
-
 
 
 from rest_framework import generics, permissions
 from .models import ScheduledSession
 from .serializers import ScheduledSessionSerializer
+
 
 class CreateScheduledSessionView(generics.CreateAPIView):
     serializer_class = ScheduledSessionSerializer
