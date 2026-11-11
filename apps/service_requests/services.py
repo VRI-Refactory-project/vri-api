@@ -307,12 +307,14 @@ def cancel_request(service_request, *, request=None):
     return locked
 
 
-def end_session(service_request):
+def end_session(service_request, *, close_room=True):
     """End an accepted session for everyone in it (V2-034).
 
     The request becomes COMPLETED, its invitations stop working, the video session is marked ended
     and everyone on the session's WebSocket hears about it. Ending twice is fine and changes nothing.
     The LiveKit room is closed once the change is saved, so anyone still in the call is disconnected.
+    ``close_room=False`` is for when LiveKit has already closed the room (it emptied), so there is
+    nothing left to close.
     """
     now = timezone.now()
     with transaction.atomic():
@@ -327,7 +329,8 @@ def end_session(service_request):
         locked.save()
         _end_video_session(locked, now)
         broadcast_status(locked)
-        transaction.on_commit(lambda: end_room(locked))
+        if close_room:
+            transaction.on_commit(lambda: end_room(locked))
     return locked
 
 

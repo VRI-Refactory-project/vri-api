@@ -7,6 +7,7 @@ from django.utils import timezone
 from apps.realtime.events import broadcast_video_session_status
 from apps.realtime.models import VideoSession
 from apps.service_requests.models import SessionInvitation
+from apps.service_requests.services import NotEndable, end_session
 
 
 def process_livekit_event(event):
@@ -45,8 +46,15 @@ def process_livekit_event(event):
         participants = list(video_session.joined_participants or [])
         now = timezone.now()
 
-        # A finished LiveKit room marks the actual video call as ended.
+        # LiveKit closes a room once everyone has left it, so the session is over: mark it completed
+        # the same way ending it for everyone does (the room is already closed, so skip that step).
         if event_type == "room_finished":
+            try:
+                end_session(service_request, close_room=False)
+                return
+            except NotEndable:
+                # Never accepted or already cancelled: only record that the call itself has ended.
+                pass
             video_session.status = VideoSession.Status.ENDED
             video_session.ended_at = video_session.ended_at or now
             service_request.ended_at = service_request.ended_at or now
