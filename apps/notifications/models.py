@@ -54,6 +54,27 @@ class Notification(models.Model):
         return f"{self.title} (user {self.user_id})"
 
 
+class NotificationPreference(models.Model):
+    """What a person chose to be pushed about. Everyone starts with the defaults below.
+
+    These switch off the push (phone and browser) only. The notification itself is still saved, so
+    it stays in the person's notification list and nothing important is lost.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notification_preference",
+    )
+    session_requests = models.BooleanField(default=True)
+    session_reminders = models.BooleanField(default=True)
+    product_updates = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user_id} (notification preferences)"
+
+
 class WebPushSubscription(models.Model):
     """A browser that agreed to show SignConnect notifications, even when the site is closed.
 

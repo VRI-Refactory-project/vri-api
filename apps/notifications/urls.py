@@ -4,6 +4,7 @@ from apps.notifications.views import (
     NotificationListView,
     NotificationMarkReadView,
     PushDeviceRegistrationView,
+    NotificationPreferenceView,
 )
 from apps.notifications.web_push import WebPushKeyView, WebPushSubscriptionView
 
@@ -20,6 +21,11 @@ urlpatterns = [
         "devices/",
         PushDeviceRegistrationView.as_view(),
         name="devices",
+    ),
+    path(
+        "preferences/",
+        NotificationPreferenceView.as_view(),
+        name="preferences",
     ),
     path(
         "web-push/",
