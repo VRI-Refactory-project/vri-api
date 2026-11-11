@@ -1,5 +1,8 @@
+from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
+from apps.interpreters.models import InterpreterProfile
 from apps.service_requests.models import ServiceRequest
 
 
@@ -34,3 +37,35 @@ class VideoSession(models.Model):
 
     def __str__(self):
         return f"Video session for request {self.service_request_id} ({self.status})"
+
+
+class SessionFeedback(models.Model):
+    """Stores a requester's feedback about the interpreter in a completed session."""
+
+    video_session = models.OneToOneField(
+        VideoSession,
+        on_delete=models.CASCADE,
+        related_name="feedback",
+    )
+    interpreter = models.ForeignKey(
+        InterpreterProfile,
+        on_delete=models.PROTECT,
+        related_name="session_feedback",
+    )
+    submitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="submitted_session_feedback",
+    )
+    rating = models.PositiveSmallIntegerField(
+        validators=[
+            MinValueValidator(1),
+            MaxValueValidator(5),
+        ],
+    )
+    accuracy_comment = models.TextField(blank=True, default="")
+    clarity_comment = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Feedback for video session {self.video_session_id}: {self.rating}/5"
