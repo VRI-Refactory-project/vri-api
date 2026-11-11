@@ -4,6 +4,8 @@
 from django.db import transaction
 from django.utils import timezone
 
+from apps.audit.models import AuditLog
+from apps.realtime.call_audit import record_call_event
 from apps.realtime.events import broadcast_video_session_status
 from apps.realtime.models import VideoSession
 from apps.service_requests.models import SessionInvitation
@@ -38,8 +40,11 @@ def process_livekit_event(event):
             .first()
         )
 
-        # Ignore events when no video session exists or the call has ended.
-        if video_session is None or video_session.status == VideoSession.Status.ENDED:
+        # Ignore events when no video session exists or the call is already over (ended or failed).
+        if video_session is None or video_session.status in (
+            VideoSession.Status.ENDED,
+            VideoSession.Status.FAILED,
+        ):
             return
 
         service_request = video_session.service_request
@@ -66,6 +71,7 @@ def process_livekit_event(event):
                 update_fields=["ended_at", "updated_at"]
             )
 
+            record_call_event(video_session, AuditLog.Event.CALL_ENDED)
             broadcast_video_session_status(video_session)
             return
 
@@ -103,6 +109,9 @@ def process_livekit_event(event):
             participants != video_session.joined_participants
             or new_status != video_session.status
         )
+
+        if new_status == VideoSession.Status.CONNECTED and video_session.status != VideoSession.Status.CONNECTED:
+            record_call_event(video_session, AuditLog.Event.CALL_CONNECTED)
 
         video_session.joined_participants = participants
         video_session.status = new_status

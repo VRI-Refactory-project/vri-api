@@ -36,6 +36,7 @@ from .models import (
     DateException,
     InterpreterAvailability,
     InterpreterProfile,
+    ScheduledSession,
     VerificationDecision,
     VerificationStatus,
     WeeklyAvailability,
@@ -55,6 +56,7 @@ from .serializers import (
     ManageInterpreterListSerializer,
     MonthExceptionsSerializer,
     MonthQuerySerializer,
+    ScheduledSessionSerializer,
     WeekQuerySerializer,
     WeekScheduleSerializer,
 )
@@ -586,5 +588,31 @@ class SpecialisationLibraryView(APIView):
 
     def get(self, request):
         return Response(
-            [{"value": v, "label": label} for v, label in library.SPECIALISATION_LIBRARY]
+            [
+                {"value": v, "label": label}
+                for v, label in library.SPECIALISATION_LIBRARY
+            ]
         )
+
+
+# --- NEW: Scheduled Sessions ---
+
+
+class CreateScheduledSessionView(generics.CreateAPIView):
+    serializer_class = ScheduledSessionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        # Attach the currently logged-in user as the deaf_user
+        serializer.save(deaf_user=self.request.user)
+
+
+class ListMyScheduledSessionsView(generics.ListAPIView):
+    serializer_class = ScheduledSessionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return ScheduledSession.objects.filter(
+            deaf_user=self.request.user,
+            date__gte=date.today()
+        ).order_by('date', 'time')

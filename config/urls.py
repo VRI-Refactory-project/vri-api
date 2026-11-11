@@ -12,7 +12,10 @@ from drf_spectacular.views import (
 )
 
 from apps.service_requests.services import sweep
-from apps.service_requests.views import InterpreterOffersView
+from apps.service_requests.views import (
+    InterpreterOffersView,
+    InterpreterSessionListView,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,11 @@ urlpatterns = [
         InterpreterOffersView.as_view(),
         name="interpreter-offers",
     ),  # V2-022, requests offered to the signed-in interpreter
+    path(
+        "api/v1/interpreters/me/sessions/",
+        InterpreterSessionListView.as_view(),
+        name="interpreter-session-list",
+    ),  # the sessions the signed-in interpreter took
     path(
         "api/v1/interpreters/me/offers/",
         include("apps.service_requests.interpreter_urls"),
@@ -88,5 +96,4 @@ urlpatterns = [
         "api/v1/realtime/",
         include("apps.realtime.urls"),
     ),  # V2-011, WebSocket tickets
-
 ]

@@ -3,6 +3,7 @@ from rest_framework import serializers
 from apps.core.permissions import user_institution
 from apps.interpreters.models import Specialisation
 from apps.service_requests.models import RequestOffer, ServiceRequest, SessionInvitation
+from apps.users.photos import photo_path
 
 # The contexts a requester can choose. "Other" is an interpreter specialisation only.
 REQUEST_CONTEXTS = (
@@ -69,6 +70,37 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
         if value not in REQUEST_CONTEXTS:
             raise serializers.ValidationError("Choose General, Medical or Legal.")
         return value
+
+
+class InterpreterSessionSerializer(serializers.ModelSerializer):
+    """A session the signed-in interpreter took: who it was with, and when it started and ended."""
+
+    requester_name = serializers.CharField(source="requester.full_name", read_only=True)
+    requester_photo = serializers.SerializerMethodField()
+    duration_minutes = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ServiceRequest
+        fields = (
+            "id",
+            "status",
+            "specialisation_required",
+            "priority",
+            "requester_name",
+            "requester_photo",
+            "assigned_at",
+            "ended_at",
+            "duration_minutes",
+        )
+
+    def get_requester_photo(self, obj) -> str | None:
+        return photo_path(obj.requester)
+
+    def get_duration_minutes(self, obj) -> int | None:
+        """How long it lasted, in whole minutes. None while the session is still running."""
+        if obj.assigned_at is None or obj.ended_at is None:
+            return None
+        return max(1, round((obj.ended_at - obj.assigned_at).total_seconds() / 60))
 
 
 class OfferedRequestSerializer(serializers.ModelSerializer):
@@ -170,6 +202,10 @@ class CallTokenSerializer(serializers.Serializer):
     )
     url = serializers.CharField(help_text="LiveKit server address to connect to.")
     room = serializers.CharField(help_text="The session's room name.")
+    ice_servers = serializers.ListField(
+        child=serializers.DictField(),
+        help_text="STUN and TURN servers the app should use to connect (may be empty).",
+    )
 
 
 class CreateInvitationSerializer(serializers.ModelSerializer):

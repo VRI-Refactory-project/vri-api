@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.permissions import IsApprovedInstitution, IsDeafUser, IsInterpreter
+from apps.realtime.ice import ice_servers
 from apps.service_requests.call_tokens import (
     create_call_token,
     create_guest_token,
@@ -29,6 +30,7 @@ from apps.service_requests.serializers import (
     OFFER_STATUS_FOR_SCREEN,
     CallTokenSerializer,
     CreateInvitationSerializer,
+    InterpreterSessionSerializer,
     InterpreterOfferSerializer,
     InvitationSerializer,
     OfferedRequestSerializer,
@@ -177,7 +179,7 @@ class ServiceRequestEndView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         try:
-            ended = end_session(found)
+            ended = end_session(found, ended_by=request.user)
         except NotEndable:
             return Response(
                 {
@@ -225,6 +227,7 @@ class ServiceRequestCallTokenView(APIView):
                     "token": create_call_token(found, request.user),
                     "url": settings.LIVEKIT_URL,
                     "room": room_name(found),
+                    "ice_servers": ice_servers(),
                 }
             ).data
         )
@@ -322,6 +325,27 @@ class InterpreterOfferStateView(APIView):
         return Response({"status": OFFER_STATUS_FOR_SCREEN[offer.outcome]})
 
 
+class InterpreterSessionListView(APIView):
+    """GET /api/v1/interpreters/me/sessions/: the sessions the signed-in interpreter took, newest
+    first. A session is a request the interpreter accepted: still running (ASSIGNED) or ended
+    (COMPLETED)."""
+
+    permission_classes = [IsAuthenticated, IsInterpreter]
+
+    @extend_schema(responses={200: InterpreterSessionSerializer(many=True)})
+    def get(self, request):
+        sessions = (
+            ServiceRequest.objects.filter(
+                interpreter__user=request.user,
+                status__in=[
+                    ServiceRequest.Status.ASSIGNED,
+                    ServiceRequest.Status.COMPLETED,
+                ],
+            )
+            .select_related("requester__photo")
+            .order_by("-assigned_at")[:100]
+        )
+        return Response(InterpreterSessionSerializer(sessions, many=True).data)
 # --- V2-012: hearing guests (no account) invited by the Deaf user ---
 
 
@@ -448,6 +472,7 @@ class GuestJoinView(APIView):
                     "token": create_guest_token(session, invitation),
                     "url": settings.LIVEKIT_URL,
                     "room": room_name(session),
+                    "ice_servers": ice_servers(),
                 }
             ).data
         )

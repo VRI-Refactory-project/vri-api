@@ -5,6 +5,7 @@ from .views import (
     AvailabilityPeriodViewSet,
     AvailabilityStatusView,
     CertificationUploadView,
+    CreateScheduledSessionView,
     DayAvailabilityView,
     ExceptionDetailView,
     ExceptionListView,
@@ -13,12 +14,13 @@ from .views import (
     InterpreterProfileDetailView,
     SpecialisationLibraryView,
     WeeklyScheduleView,
+    ListMyScheduledSessionsView
 )
 
 app_name = "interpreters"
 
 router = DefaultRouter()
-router.register(r'availability', AvailabilityPeriodViewSet, basename='availability')
+router.register(r"availability", AvailabilityPeriodViewSet, basename="availability")
 
 urlpatterns = [
     path(
@@ -71,5 +73,15 @@ urlpatterns = [
         InterpreterAvailabilityDetailView.as_view(),
         name="availability-detail",
     ),
-    path('', include(router.urls)),
+    path(
+        "schedule/",
+        CreateScheduledSessionView.as_view(),
+        name="schedule-session",
+    ),
+    path(
+        "sessions/booked/",
+        ListMyScheduledSessionsView.as_view(),
+        name="booked-sessions",
+    ),
+    path("", include(router.urls)),
 ]
