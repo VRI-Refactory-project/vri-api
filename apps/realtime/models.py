@@ -63,6 +63,18 @@ class SessionFeedback(models.Model):
             MaxValueValidator(5),
         ],
     )
+
+    class Category(models.TextChoices):
+        AUDIO = "Audio", "Audio"
+        VIDEO = "Video", "Video"
+        OTHER = "Other", "Other"
+
+    # What went wrong, as picked in the feedback wizard (all optional).
+    category = models.CharField(
+        max_length=10, choices=Category.choices, blank=True, default=""
+    )
+    issues = models.JSONField(default=list, blank=True)
+    comment = models.TextField(blank=True, default="")
     accuracy_comment = models.TextField(blank=True, default="")
     clarity_comment = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
