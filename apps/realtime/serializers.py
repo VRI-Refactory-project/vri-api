@@ -29,11 +29,21 @@ class SessionFeedbackSerializer(serializers.ModelSerializer):
     """Validate feedback submitted for a completed video session."""
 
     rating = serializers.IntegerField(min_value=1, max_value=5)
+    category = serializers.ChoiceField(
+        choices=SessionFeedback.Category.choices, required=False, allow_blank=True
+    )
+    issues = serializers.ListField(
+        child=serializers.CharField(max_length=80), required=False, max_length=10
+    )
+    comment = serializers.CharField(required=False, allow_blank=True, max_length=1000)
 
     class Meta:
         model = SessionFeedback
         fields = [
             "rating",
+            "category",
+            "issues",
+            "comment",
             "accuracy_comment",
             "clarity_comment",
             "created_at",

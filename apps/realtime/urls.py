@@ -23,6 +23,11 @@ urlpatterns = [
         name="session-feedback",
     ),
     path(
+        "requests/<int:request_id>/feedback/",
+        views.SessionFeedbackView.as_view(),
+        name="request-feedback",
+    ),
+    path(
         "livekit/webhook/",
         views.LiveKitWebhookView.as_view(),
         name="livekit-webhook",

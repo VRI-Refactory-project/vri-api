@@ -233,3 +233,82 @@ class SessionFeedbackEndpointTests(APITestCase):
         )
         self.assertEqual(feedback.interpreter, self.service_request.interpreter)
         self.assertEqual(feedback.submitted_by, self.deaf)
+
+    def test_interpreter_can_submit_feedback_too(self):
+        interpreter_user = self.service_request.interpreter.user
+        self.client.force_authenticate(interpreter_user)
+
+        response = self.client.post(self.url, self.payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        feedback = SessionFeedback.objects.get(video_session=self.video_session)
+        self.assertEqual(feedback.submitted_by, interpreter_user)
+        self.assertEqual(feedback.interpreter, self.service_request.interpreter)
+
+    def test_requester_and_interpreter_each_get_one_feedback(self):
+        interpreter_user = self.service_request.interpreter.user
+
+        first = self.client.post(self.url, self.payload, format="json")
+        self.client.force_authenticate(interpreter_user)
+        second = self.client.post(self.url, {"rating": 4}, format="json")
+        again = self.client.post(self.url, {"rating": 2}, format="json")
+
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(again.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(SessionFeedback.objects.count(), 2)
+
+    def test_an_interpreter_from_another_session_cannot_submit(self):
+        outsider = make_interpreter().user
+        self.client.force_authenticate(outsider)
+
+        response = self.client.post(self.url, self.payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(SessionFeedback.objects.count(), 0)
+
+    def test_wizard_details_are_saved(self):
+        response = self.client.post(
+            self.url,
+            {
+                "rating": 2,
+                "category": "Audio",
+                "issues": ["Sound was delayed", "There was echo"],
+                "comment": "Kept cutting out.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        feedback = SessionFeedback.objects.get(video_session=self.video_session)
+        self.assertEqual(feedback.category, "Audio")
+        self.assertEqual(feedback.issues, ["Sound was delayed", "There was echo"])
+        self.assertEqual(feedback.comment, "Kept cutting out.")
+
+    def test_an_unknown_category_is_rejected(self):
+        response = self.client.post(
+            self.url, {"rating": 2, "category": "Smell"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("category", response.data)
+
+    def test_feedback_can_be_sent_by_request_id(self):
+        url = reverse(
+            "request-feedback",
+            kwargs={"request_id": self.service_request.pk},
+        )
+
+        response = self.client.post(url, {"rating": 5}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(
+            SessionFeedback.objects.get().video_session, self.video_session
+        )
+
+    def test_unknown_request_id_returns_not_found(self):
+        url = reverse("request-feedback", kwargs={"request_id": 999999})
+
+        response = self.client.post(url, {"rating": 5}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
