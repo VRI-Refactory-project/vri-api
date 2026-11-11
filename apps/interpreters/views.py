@@ -606,6 +606,7 @@ class CreateScheduledSessionView(generics.CreateAPIView):
         # Attach the currently logged-in user as the deaf_user
         serializer.save(deaf_user=self.request.user)
 
+
 class ListMyScheduledSessionsView(generics.ListAPIView):
     serializer_class = ScheduledSessionSerializer
     permission_classes = [permissions.IsAuthenticated]

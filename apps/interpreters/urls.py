@@ -78,7 +78,7 @@ urlpatterns = [
         CreateScheduledSessionView.as_view(),
         name="schedule-session",
     ),
-        path(
+    path(
         "sessions/booked/",
         ListMyScheduledSessionsView.as_view(),
         name="booked-sessions",
