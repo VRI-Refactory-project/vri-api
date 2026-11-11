@@ -1,8 +1,10 @@
 import asyncio
+import logging
 from datetime import timedelta
 
 from django.conf import settings
 from livekit import api
+logger = logging.getLogger(__name__)
 
 
 def room_name(service_request):
@@ -91,7 +93,11 @@ def end_room(service_request):
     try:
         asyncio.run(_delete_room(room_name(service_request)))
     except Exception:
-        pass
+        logger.warning(
+            "Could not close the LiveKit room for request %s",
+            service_request.pk,
+            exc_info=True,
+        )
 
 
 def remove_guest_from_room(service_request, invitation):
