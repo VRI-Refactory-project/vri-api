@@ -54,7 +54,6 @@ class Notification(models.Model):
         return f"{self.title} (user {self.user_id})"
 
 
-
 class NotificationPreference(models.Model):
     """What a person chose to be pushed about. Everyone starts with the defaults below.
 
@@ -74,7 +73,6 @@ class NotificationPreference(models.Model):
 
     def __str__(self):
         return f"{self.user_id} (notification preferences)"
-
 
 
 class WebPushSubscription(models.Model):

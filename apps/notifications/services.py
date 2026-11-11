@@ -7,15 +7,11 @@ from django.conf import settings
 from django.utils import timezone
 from django.db import transaction
 
-
-from apps.notifications.models import Notification, PushDevice
-
 from apps.notifications.models import (
     Notification,
     NotificationPreference,
     PushDevice,
 )
-
 
 from apps.notifications.web_push import send_web_push
 
@@ -124,10 +120,9 @@ def send_pushes(notification):
 
     send_expo_push(notification)
     send_web_push(notification)
-    
+
 
 def create_notification(
-    *,
     user,
     title,
     body,
