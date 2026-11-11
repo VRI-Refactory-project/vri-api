@@ -40,9 +40,9 @@ class VideoSession(models.Model):
 
 
 class SessionFeedback(models.Model):
-    """Stores a requester's feedback about the interpreter in a completed session."""
+    """Feedback on a completed session, one per person who took part."""
 
-    video_session = models.OneToOneField(
+    video_session = models.ForeignKey(
         VideoSession,
         on_delete=models.CASCADE,
         related_name="feedback",
@@ -66,6 +66,14 @@ class SessionFeedback(models.Model):
     accuracy_comment = models.TextField(blank=True, default="")
     clarity_comment = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["video_session", "submitted_by"],
+                name="one_feedback_per_person_and_video_session",
+            ),
+        ]
 
     def __str__(self):
         return f"Feedback for video session {self.video_session_id}: {self.rating}/5"
