@@ -65,6 +65,7 @@ class InstitutionSerializer(serializers.ModelSerializer):
             "organisation_type_other",
             "status",
             "created_at",
+            "verification_document",  # ADDED
         ]
         read_only_fields = fields
 
