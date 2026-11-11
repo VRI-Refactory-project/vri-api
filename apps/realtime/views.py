@@ -144,13 +144,15 @@ class SessionFeedbackView(APIView):
         responses={201: SessionFeedbackSerializer},
     )
     @transaction.atomic
-    def post(self, request, session_id):
+    def post(self, request, session_id=None, request_id=None):
+        # The web app knows the request id; other callers may know the video session id.
+        lookup = {"pk": session_id} if session_id else {"service_request_id": request_id}
         video_session = get_object_or_404(
             VideoSession.objects.select_for_update(of=("self",)).select_related(
                 "service_request",
                 "service_request__interpreter",
             ),
-            pk=session_id,
+            **lookup,
         )
 
         service_request = video_session.service_request
