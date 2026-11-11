@@ -36,7 +36,7 @@ from .models import (
     DateException,
     InterpreterAvailability,
     InterpreterProfile,
-    # ScheduledSession,
+    ScheduledSession,
     VerificationDecision,
     VerificationStatus,
     WeeklyAvailability,
@@ -605,3 +605,13 @@ class CreateScheduledSessionView(generics.CreateAPIView):
     def perform_create(self, serializer):
         # Attach the currently logged-in user as the deaf_user
         serializer.save(deaf_user=self.request.user)
+
+class ListMyScheduledSessionsView(generics.ListAPIView):
+    serializer_class = ScheduledSessionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return ScheduledSession.objects.filter(
+            deaf_user=self.request.user,
+            date__gte=date.today()
+        ).order_by('date', 'time')
