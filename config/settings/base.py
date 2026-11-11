@@ -162,6 +162,12 @@ WEB_APP_URL = env("WEB_APP_URL", default="https://138.68.41.10")
 # --- Expo Push Notifications ---
 EXPO_PUSH_ENABLED = env.bool("EXPO_PUSH_ENABLED", default=False)
 EXPO_ACCESS_TOKEN = env("EXPO_ACCESS_TOKEN", default="")
+# --- Web Push (browser notifications) ---
+# Off until you turn it on AND set the three values below. Make the key pair once (see .env.example).
+WEB_PUSH_ENABLED = env.bool("WEB_PUSH_ENABLED", default=False)
+WEB_PUSH_VAPID_PUBLIC_KEY = env("WEB_PUSH_VAPID_PUBLIC_KEY", default="")
+WEB_PUSH_VAPID_PRIVATE_KEY = env("WEB_PUSH_VAPID_PRIVATE_KEY", default="")
+WEB_PUSH_CONTACT = env("WEB_PUSH_CONTACT", default="")  # e.g. mailto:you@example.com
 
 # --- Interpreter requests (V2-022) ---
 # How long an interpreter has to answer an offer, and how long a request may wait before it fails.

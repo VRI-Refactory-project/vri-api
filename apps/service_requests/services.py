@@ -1,10 +1,4 @@
 """Creating, offering and cancelling service requests.
-
-A new request is offered to one interpreter at a time. Accepting and declining an offer belong to
-V2-023 and are not here yet.
-
-There is no background worker (free hosting), so timeouts such as the requester-disconnect window
-(V2-009) are applied whenever a request is read, and by ``sweep`` for requests nobody reads.
 """
 
 from datetime import timedelta
@@ -21,6 +15,7 @@ from apps.interpreters.models import InterpreterProfile, Specialisation
 from apps.interpreters.routing import pick_candidates
 from apps.notifications.models import Notification
 from apps.notifications.services import create_notification, send_expo_push
+from apps.notifications.web_push import send_web_push
 from apps.service_requests.call_tokens import end_room
 from apps.service_requests.models import OPEN_STATUSES, RequestOffer, ServiceRequest
 from apps.service_requests.status_broadcast import broadcast_status
@@ -646,6 +641,7 @@ def _notify(user, title, body, data):
     )
     # Send the push only after the failure and notification are committed.
     transaction.on_commit(lambda: send_expo_push(notification))
+    transaction.on_commit(lambda: send_web_push(notification))
 
 
 def _report_failure(service_request):
