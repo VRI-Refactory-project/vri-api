@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.db import transaction
 
 from apps.notifications.models import Notification, PushDevice
+from apps.notifications.web_push import send_web_push
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,12 @@ def send_expo_push(notification):
             device.save(update_fields=["is_active", "updated_at"])
 
 
+def send_pushes(notification):
+    """Push a saved notification to the person's phones and browsers."""
+    send_expo_push(notification)
+    send_web_push(notification)
+
+
 def create_notification(
     *,
     user,
@@ -99,7 +106,7 @@ def create_notification(
         data=data or {},
     )
 
-    transaction.on_commit(lambda: send_expo_push(notification))
+    transaction.on_commit(lambda: send_pushes(notification))
     return notification
 
 
