@@ -539,3 +539,4 @@ class InstitutionDocumentUploadView(APIView):
             {"detail": "Institution document uploaded successfully."},
             status=status.HTTP_200_OK,
         )
+        
