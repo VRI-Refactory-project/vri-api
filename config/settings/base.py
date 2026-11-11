@@ -199,6 +199,8 @@ LIVEKIT_TURN_CREDENTIAL = env("LIVEKIT_TURN_CREDENTIAL", default="")
 CALL_CONNECT_TIMEOUT_SECONDS = env.int("CALL_CONNECT_TIMEOUT_SECONDS", default=60)
 # A session where nobody has joined this many seconds after it was created is marked failed.
 CALL_WAIT_TIMEOUT_SECONDS = env.int("CALL_WAIT_TIMEOUT_SECONDS", default=300)
+# After someone leaves a call, they have this long to come back before the session is settled (V2-033).
+SESSION_RECONNECT_GRACE_WINDOW_SECONDS = env.int("SESSION_RECONNECT_GRACE_WINDOW_SECONDS", default=300)
 
 # --- Real-time (V2-011): Django Channels ---
 # Redis lets every server process reach the same WebSocket groups. Without REDIS_URL (tests, CI)
