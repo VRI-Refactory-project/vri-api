@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.notifications.models import Notification, PushDevice
+from apps.notifications.models import Notification, PushDevice, NotificationPreference
 from apps.service_requests.models import ServiceRequest
 from apps.users.photos import photo_path
 
@@ -70,3 +70,9 @@ class NotificationSerializer(serializers.ModelSerializer):
             "actor_photo",
         ]
         read_only_fields = fields
+
+
+class NotificationPreferenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationPreference
+        fields = ["session_requests", "session_reminders", "product_updates"]

@@ -7,7 +7,16 @@ from django.conf import settings
 from django.utils import timezone
 from django.db import transaction
 
+
 from apps.notifications.models import Notification, PushDevice
+
+from apps.notifications.models import (
+    Notification,
+    NotificationPreference,
+    PushDevice,
+)
+
+
 from apps.notifications.web_push import send_web_push
 
 logger = logging.getLogger(__name__)
@@ -15,8 +24,16 @@ logger = logging.getLogger(__name__)
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
 
+# Map notification categories to their preference settings.
+PREFERENCE_FOR_CATEGORY = {
+    Notification.Category.INCOMING_REQUEST: "session_requests",
+    Notification.Category.OFFER_REMINDER: "session_requests",
+}
+
+
 def send_expo_push(notification):
-    """Send a saved notification to the user's active Expo devices."""
+    """Send a saved notification to active Expo devices."""
+
     if not getattr(settings, "EXPO_PUSH_ENABLED", False):
         return
 
@@ -83,11 +100,31 @@ def send_expo_push(notification):
             device.save(update_fields=["is_active", "updated_at"])
 
 
+def wants_push(notification):
+    """Check whether the user wants this notification category."""
+
+    field = PREFERENCE_FOR_CATEGORY.get(notification.category)
+
+    if field is None:
+        return True
+
+    preference = NotificationPreference.objects.filter(user=notification.user).first()
+
+    if preference is None:
+        return NotificationPreference._meta.get_field(field).default
+
+    return getattr(preference, field)
+
+
 def send_pushes(notification):
-    """Push a saved notification to the person's phones and browsers."""
+    """Send notifications to the user's phones and browsers."""
+
+    if not wants_push(notification):
+        return
+
     send_expo_push(notification)
     send_web_push(notification)
-
+    
 
 def create_notification(
     *,
@@ -97,7 +134,8 @@ def create_notification(
     category=Notification.Category.GENERAL,
     data=None,
 ):
-    """Save a notification and send its push after the transaction commits."""
+    """Save a notification and send pushes after transaction commit."""
+
     notification = Notification.objects.create(
         user=user,
         title=title,
@@ -112,6 +150,7 @@ def create_notification(
 
 def mark_notification_read(notification):
     """Mark a notification as read without changing its original timestamp."""
+
     if notification.read_at is None:
         notification.read_at = timezone.now()
         notification.save(update_fields=["read_at"])
