@@ -1,3 +1,4 @@
+
 """URL routes for realtime sessions."""
 
 from django.urls import path
@@ -15,6 +16,16 @@ urlpatterns = [
         "connection-quality/guest/<str:token>/test/",
         views.GuestConnectionQualityTestView.as_view(),
         name="guest-connection-quality-test",
+    ),
+    path(
+        "sessions/<int:session_id>/feedback/",
+        views.SessionFeedbackView.as_view(),
+        name="session-feedback",
+    ),
+    path(
+        "requests/<int:request_id>/feedback/",
+        views.SessionFeedbackView.as_view(),
+        name="request-feedback",
     ),
     path(
         "livekit/webhook/",

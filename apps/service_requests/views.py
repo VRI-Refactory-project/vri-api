@@ -30,6 +30,7 @@ from apps.service_requests.serializers import (
     OFFER_STATUS_FOR_SCREEN,
     CallTokenSerializer,
     CreateInvitationSerializer,
+    InterpreterSessionSerializer,
     InterpreterOfferSerializer,
     InvitationSerializer,
     OfferedRequestSerializer,
@@ -153,12 +154,15 @@ class ServiceRequestCancelView(APIView):
 
 
 class ServiceRequestEndView(APIView):
-    """POST /api/v1/requests/<id>/end/ (V2-034): the requester or the assigned interpreter ends the
-    session for everyone. Anyone else gets 404, so they cannot tell the session exists."""
+    """POST /api/v1/requests/<id>/end/ (V2-034): only the person who started the session (the
+    requester) ends it for everyone. The assigned interpreter gets 403 and leaves the call instead.
+    Anyone else gets 404, so they cannot tell the session exists."""
 
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(request=None, responses={200: ServiceRequestSerializer, 404: None, 409: None})
+    @extend_schema(
+        request=None, responses={200: ServiceRequestSerializer, 403: None, 404: None, 409: None}
+    )
     def post(self, request, pk):
         found = get_object_or_404(
             ServiceRequest.objects.filter(
@@ -166,8 +170,16 @@ class ServiceRequestEndView(APIView):
             ),
             pk=pk,
         )
+        if found.requester_id != request.user.pk:
+            return Response(
+                {
+                    "detail": "Only the person who started this session can end it for everyone.",
+                    "code": "only_starter_can_end",
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
         try:
-            ended = end_session(found)
+            ended = end_session(found, ended_by=request.user)
         except NotEndable:
             return Response(
                 {
@@ -313,6 +325,27 @@ class InterpreterOfferStateView(APIView):
         return Response({"status": OFFER_STATUS_FOR_SCREEN[offer.outcome]})
 
 
+class InterpreterSessionListView(APIView):
+    """GET /api/v1/interpreters/me/sessions/: the sessions the signed-in interpreter took, newest
+    first. A session is a request the interpreter accepted: still running (ASSIGNED) or ended
+    (COMPLETED)."""
+
+    permission_classes = [IsAuthenticated, IsInterpreter]
+
+    @extend_schema(responses={200: InterpreterSessionSerializer(many=True)})
+    def get(self, request):
+        sessions = (
+            ServiceRequest.objects.filter(
+                interpreter__user=request.user,
+                status__in=[
+                    ServiceRequest.Status.ASSIGNED,
+                    ServiceRequest.Status.COMPLETED,
+                ],
+            )
+            .select_related("requester__photo")
+            .order_by("-assigned_at")[:100]
+        )
+        return Response(InterpreterSessionSerializer(sessions, many=True).data)
 # --- V2-012: hearing guests (no account) invited by the Deaf user ---
 
 

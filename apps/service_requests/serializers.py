@@ -2,7 +2,9 @@ from rest_framework import serializers
 
 from apps.core.permissions import user_institution
 from apps.interpreters.models import Specialisation
+from apps.realtime.call_status import display_status
 from apps.service_requests.models import RequestOffer, ServiceRequest, SessionInvitation
+from apps.users.photos import photo_path
 
 # The contexts a requester can choose. "Other" is an interpreter specialisation only.
 REQUEST_CONTEXTS = (
@@ -18,6 +20,8 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
     requester_id = serializers.IntegerField(source="requester.id", read_only=True)
     interpreter_id = serializers.SerializerMethodField()
     interpreter = serializers.SerializerMethodField()
+    # How the call is going (waiting, connecting, connected, ended, failed). Apps show this; `status` is unchanged.
+    display_status = serializers.SerializerMethodField()
 
     class Meta:
         model = ServiceRequest
@@ -31,6 +35,7 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
             "priority",
             "request_key",
             "status",
+            "display_status",
             "assigned_at",
             "cancelled_at",
             "cancel_reason",
@@ -43,6 +48,7 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
             "interpreter_id",
             "interpreter",
             "status",
+            "display_status",
             "assigned_at",
             "cancelled_at",
             "cancel_reason",
@@ -50,6 +56,9 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         extra_kwargs = {"request_key": {"write_only": True, "required": False}}
+
+    def get_display_status(self, obj):
+        return display_status(obj)
 
     def get_interpreter_id(self, obj):
         if obj.status != ServiceRequest.Status.ASSIGNED:
@@ -69,6 +78,37 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
         if value not in REQUEST_CONTEXTS:
             raise serializers.ValidationError("Choose General, Medical or Legal.")
         return value
+
+
+class InterpreterSessionSerializer(serializers.ModelSerializer):
+    """A session the signed-in interpreter took: who it was with, and when it started and ended."""
+
+    requester_name = serializers.CharField(source="requester.full_name", read_only=True)
+    requester_photo = serializers.SerializerMethodField()
+    duration_minutes = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ServiceRequest
+        fields = (
+            "id",
+            "status",
+            "specialisation_required",
+            "priority",
+            "requester_name",
+            "requester_photo",
+            "assigned_at",
+            "ended_at",
+            "duration_minutes",
+        )
+
+    def get_requester_photo(self, obj) -> str | None:
+        return photo_path(obj.requester)
+
+    def get_duration_minutes(self, obj) -> int | None:
+        """How long it lasted, in whole minutes. None while the session is still running."""
+        if obj.assigned_at is None or obj.ended_at is None:
+            return None
+        return max(1, round((obj.ended_at - obj.assigned_at).total_seconds() / 60))
 
 
 class OfferedRequestSerializer(serializers.ModelSerializer):

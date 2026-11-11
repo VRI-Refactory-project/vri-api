@@ -18,6 +18,21 @@ STATUS_LABELS = {
 }
 
 
+# What the push says for the states that send one (V2-036). The push title is the on-screen label above,
+# so the two never disagree. TODO: replace these bodies with the approved wording, like the labels.
+PUSH_BODIES = {
+    "ASSIGNED": "An interpreter has accepted your request. Open the app to join.",
+    "COMPLETED": "The session has ended.",
+    "FAILED": "We couldn't find an interpreter in time. Please try again.",
+}
+
+
+def push_for(status: str):
+    """The (title, body) of the push for a state, or None when that state sends no push."""
+    body = PUSH_BODIES.get(str(status).upper())
+    return (label_for(status), body) if body else None
+
+
 def label_for(status: str) -> str:
     """The on-screen label for a state. Never returns the raw internal name."""
     return STATUS_LABELS.get(str(status).upper(), "Updating")

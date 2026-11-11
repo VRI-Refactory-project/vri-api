@@ -105,12 +105,62 @@ class StaleCallTests(CallFailureBase):
     def test_status_that_changed_before_the_lock_is_not_failed(self):
         # Simulates a participant joining between the candidate query and the lock: the re-check must win.
         self.set_session(VideoSession.Status.CONNECTED, requester_minutes_ago=5, interpreter_minutes_ago=5)
-        cutoff = timezone.now() - timedelta(seconds=TIMEOUT)
 
-        self.assertFalse(_fail_if_stale(self.video_session.pk, cutoff, timezone.now()))
+        self.assertFalse(_fail_if_stale(self.video_session.pk, timezone.now()))
 
         self.refresh()
         self.assertEqual(self.video_session.status, VideoSession.Status.CONNECTED)
+
+
+class NoJoinTests(CallFailureBase):
+    def created_minutes_ago(self, minutes):
+        VideoSession.objects.filter(pk=self.video_session.pk).update(
+            created_at=timezone.now() - timedelta(minutes=minutes)
+        )
+
+    def test_nobody_joining_in_time_fails_the_call(self):
+        self.created_minutes_ago(10)
+
+        self.assertEqual(fail_stale_calls(), 1)
+
+        self.refresh()
+        self.assertEqual(self.video_session.status, VideoSession.Status.FAILED)
+        self.send.assert_called_once_with(self.service_request.pk, "call.failed", {"reason": "no_join"})
+
+    def test_session_created_recently_is_left_alone(self):
+        self.created_minutes_ago(1)
+
+        self.assertEqual(fail_stale_calls(), 0)
+
+        self.refresh()
+        self.assertEqual(self.video_session.status, VideoSession.Status.WAITING)
+
+
+class DisplayStatusTests(CallFailureBase):
+    def display(self):
+        from apps.realtime.call_status import display_status
+
+        self.service_request.refresh_from_db()
+        return display_status(self.service_request)
+
+    def test_call_states_are_shown_on_the_assigned_request(self):
+        cases = {
+            VideoSession.Status.WAITING: "ASSIGNED",
+            VideoSession.Status.CONNECTING: "CONNECTING",
+            VideoSession.Status.CONNECTED: "ACTIVE",
+            VideoSession.Status.ENDED: "COMPLETED",
+            VideoSession.Status.FAILED: "FAILED",
+        }
+        for call_status, shown in cases.items():
+            VideoSession.objects.filter(pk=self.video_session.pk).update(status=call_status)
+            with self.subTest(call_status=call_status):
+                self.assertEqual(self.display(), shown)
+
+    def test_requests_that_are_not_assigned_keep_their_own_status(self):
+        from apps.service_requests.models import ServiceRequest
+
+        ServiceRequest.objects.filter(pk=self.service_request.pk).update(status=ServiceRequest.Status.CANCELLED)
+        self.assertEqual(self.display(), "CANCELLED")
 
 
 class FailureNoticeAndAuditTests(CallFailureBase):

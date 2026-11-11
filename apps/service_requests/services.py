@@ -1,10 +1,4 @@
 """Creating, offering and cancelling service requests.
-
-A new request is offered to one interpreter at a time. Accepting and declining an offer belong to
-V2-023 and are not here yet.
-
-There is no background worker (free hosting), so timeouts such as the requester-disconnect window
-(V2-009) are applied whenever a request is read, and by ``sweep`` for requests nobody reads.
 """
 
 from datetime import timedelta
@@ -21,9 +15,11 @@ from apps.interpreters.models import InterpreterProfile, Specialisation
 from apps.interpreters.routing import pick_candidates
 from apps.notifications.models import Notification
 from apps.notifications.services import create_notification, send_expo_push
+from apps.notifications.web_push import send_web_push
 from apps.service_requests.call_tokens import end_room
 from apps.service_requests.models import OPEN_STATUSES, RequestOffer, ServiceRequest
 from apps.service_requests.status_broadcast import broadcast_status
+from apps.service_requests.status_labels import push_for
 
 User = get_user_model()
 
@@ -307,12 +303,15 @@ def cancel_request(service_request, *, request=None):
     return locked
 
 
-def end_session(service_request):
+def end_session(service_request, ended_by=None, *, close_room=True):
     """End an accepted session for everyone in it (V2-034).
 
     The request becomes COMPLETED, its invitations stop working, the video session is marked ended
-    and everyone on the session's WebSocket hears about it. Ending twice is fine and changes nothing.
+    and everyone on the session's WebSocket hears about it. The other person gets a push (V2-036), and
+    an audit entry records who ended it. Ending twice is fine and changes nothing.
     The LiveKit room is closed once the change is saved, so anyone still in the call is disconnected.
+    ``close_room=False`` is for when LiveKit has already closed the room (it emptied), so there is
+    nothing left to close.
     """
     now = timezone.now()
     with transaction.atomic():
@@ -325,10 +324,51 @@ def end_session(service_request):
         locked.status = Status.COMPLETED
         locked.ended_at = locked.ended_at or now
         locked.save()
+
         _end_video_session(locked, now)
         broadcast_status(locked)
-        transaction.on_commit(lambda: end_room(locked))
+        push_status(locked, skip_user=ended_by)
+        audit.record(
+            AuditLog.Event.CALL_ENDED,
+            ended_by,
+            details={
+                "request_id": locked.pk,
+                "ended_by_id": ended_by.pk if ended_by else None,
+            },
+        )
+        if close_room:
+            transaction.on_commit(lambda: end_room(locked))
     return locked
+
+
+def push_status(service_request, *, skip_user=None):
+    """Push the request's new state to the people it concerns (V2-036).
+
+    ASSIGNED goes to the requester, who is waiting for an interpreter. COMPLETED goes to both people
+    on the session except `skip_user`, who just ended it. The words come from status_labels, and
+    states with no wording there send nothing.
+    """
+    message = push_for(service_request.status)
+    if message is None:
+        return
+    title, body = message
+
+    if service_request.status == Status.ASSIGNED:
+        people = [service_request.requester]
+    elif service_request.status == Status.COMPLETED:
+        interpreter = service_request.interpreter
+        people = [service_request.requester, interpreter.user if interpreter else None]
+    else:
+        return
+
+    data = {
+        "request_id": service_request.pk,
+        "screen": "request-details",
+        "status": service_request.status,
+    }
+    for person in people:
+        if person is not None and person != skip_user:
+            _notify(person, title, body, data)
 
 
 def _end_video_session(service_request, now):
@@ -426,7 +466,7 @@ def respond_to_offer(offer, action, *, request=None, now=None):
                 broadcast_video_session_status(video_session)
 
             broadcast_status(locked)
-
+            push_status(locked)
             # The request is taken: every other interpreter's open offer for it closes now.
             locked.offers.filter(outcome=RequestOffer.Outcome.PENDING).update(
                 outcome=RequestOffer.Outcome.WITHDRAWN, responded_at=now
@@ -646,6 +686,7 @@ def _notify(user, title, body, data):
     )
     # Send the push only after the failure and notification are committed.
     transaction.on_commit(lambda: send_expo_push(notification))
+    transaction.on_commit(lambda: send_web_push(notification))
 
 
 def _report_failure(service_request):
@@ -656,12 +697,9 @@ def _report_failure(service_request):
         "screen": "request-details",
         "priority": service_request.priority,
     }
-    _notify(
-        service_request.requester,
-        "No interpreter available",
-        "We couldn't find an interpreter in time. Please try again.",
-        data,
-    )
+    title, body = push_for(service_request.status)
+    _notify(service_request.requester, title, body, data)
+
     if service_request.priority == ServiceRequest.Priority.EMERGENCY:
         admins = User.objects.filter(role=User.Role.ADMIN, is_active=True)
         for admin in admins:

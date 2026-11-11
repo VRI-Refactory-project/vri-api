@@ -2,6 +2,8 @@
 """HTTP endpoints for realtime sessions and LiveKit webhooks."""
 
 from django.conf import settings
+from django.db import transaction
+from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from livekit import api
 from rest_framework import status
@@ -10,13 +12,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.realtime.lifecycle import process_livekit_event
+from apps.realtime.models import SessionFeedback, VideoSession
 from apps.realtime.quality import assess_connection_quality
 from apps.realtime.serializers import (
     ConnectionQualityTestSerializer,
+    SessionFeedbackSerializer,
     TicketSerializer,
 )
 from apps.realtime.tickets import TICKET_MAX_AGE_SECONDS, issue_ticket
-from apps.service_requests.models import SessionInvitation
+from apps.service_requests.models import ServiceRequest, SessionInvitation
 
 
 class TicketView(APIView):
@@ -28,7 +32,10 @@ class TicketView(APIView):
     def post(self, request):
         return Response(
             TicketSerializer(
-                {"ticket": issue_ticket(request.user), "expires_in": TICKET_MAX_AGE_SECONDS}
+                {
+                    "ticket": issue_ticket(request.user),
+                    "expires_in": TICKET_MAX_AGE_SECONDS,
+                }
             ).data
         )
 
@@ -59,7 +66,10 @@ class GuestConnectionQualityTestView(APIView):
 
         if invitation is None:
             return Response(
-                {"detail": "This link is not valid.", "code": "invalid_link"},
+                {
+                    "detail": "This link is not valid.",
+                    "code": "invalid_link",
+                },
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -89,7 +99,9 @@ class LiveKitWebhookView(APIView):
     def post(self, request):
         if not settings.LIVEKIT_API_KEY or not settings.LIVEKIT_API_SECRET:
             return Response(
-                {"detail": "LiveKit webhook verification is not configured."},
+                {
+                    "detail": "LiveKit webhook verification is not configured.",
+                },
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
@@ -111,10 +123,96 @@ class LiveKitWebhookView(APIView):
             event = receiver.receive(body, authorization)
         except Exception:
             return Response(
-                {"detail": "Invalid LiveKit webhook signature or payload."},
+                {
+                    "detail": "Invalid LiveKit webhook signature or payload.",
+                },
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
         process_livekit_event(event)
 
         return Response(status=status.HTTP_200_OK)
+
+
+class SessionFeedbackView(APIView):
+    """Submit feedback after a completed session (one each for requester and interpreter)."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=SessionFeedbackSerializer,
+        responses={201: SessionFeedbackSerializer},
+    )
+    @transaction.atomic
+    def post(self, request, session_id=None, request_id=None):
+        # The web app knows the request id; other callers may know the video session id.
+        lookup = {"pk": session_id} if session_id else {"service_request_id": request_id}
+        video_session = get_object_or_404(
+            VideoSession.objects.select_for_update(of=("self",)).select_related(
+                "service_request",
+                "service_request__interpreter",
+            ),
+            **lookup,
+        )
+
+        service_request = video_session.service_request
+
+        interpreter = service_request.interpreter
+        is_requester = service_request.requester_id == request.user.pk
+        is_interpreter = (
+            interpreter is not None and interpreter.user_id == request.user.pk
+        )
+
+        if not (is_requester or is_interpreter):
+            return Response(
+                {
+                    "detail": (
+                        "Only people who took part in this session "
+                        "can submit feedback."
+                    ),
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if (
+            service_request.status != ServiceRequest.Status.COMPLETED
+            or video_session.status != VideoSession.Status.ENDED
+        ):
+            return Response(
+                {
+                    "detail": "Feedback can only be submitted after the session has ended.",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        if service_request.interpreter_id is None:
+            return Response(
+                {
+                    "detail": "This session has no assigned interpreter.",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        if SessionFeedback.objects.filter(
+            video_session=video_session, submitted_by=request.user
+        ).exists():
+            return Response(
+                {
+                    "detail": "You have already submitted feedback for this session.",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        serializer = SessionFeedbackSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        feedback = serializer.save(
+            video_session=video_session,
+            interpreter=service_request.interpreter,
+            submitted_by=request.user,
+        )
+
+        return Response(
+            SessionFeedbackSerializer(feedback).data,
+            status=status.HTTP_201_CREATED,
+        )

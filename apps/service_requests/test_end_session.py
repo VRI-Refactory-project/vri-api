@@ -1,4 +1,4 @@
-"""V2-034: either person on an accepted session can end it for everyone."""
+"""V2-034: only the person who started an accepted session can end it for everyone."""
 
 from unittest import mock
 
@@ -62,14 +62,16 @@ class EndSessionTests(APITestCase):
         self.assertEqual(self.service_request.status, Status.COMPLETED)
         self.assertIsNotNone(self.service_request.ended_at)
 
-    def test_the_assigned_interpreter_ends_the_session(self):
+    def test_the_assigned_interpreter_cannot_end_it_for_everyone(self):
         self.accept()
 
         response = self.end(self.interpreter.user)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data["code"], "only_starter_can_end")
         self.service_request.refresh_from_db()
-        self.assertEqual(self.service_request.status, Status.COMPLETED)
+        self.assertEqual(self.service_request.status, Status.ASSIGNED)
+        self.end_room.assert_not_called()
 
     def test_someone_who_is_not_on_the_session_gets_404(self):
         self.accept()
@@ -136,7 +138,7 @@ class EndSessionTests(APITestCase):
         self.service_request.refresh_from_db()
         first_end = self.service_request.ended_at
 
-        response = self.end(self.interpreter.user)
+        response = self.end(self.deaf)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.service_request.refresh_from_db()
