@@ -337,8 +337,8 @@ def _end_video_session(service_request, now):
     from apps.realtime.models import VideoSession
 
     video_session = VideoSession.objects.filter(service_request=service_request).first()
-    if video_session is None or video_session.status == VideoSession.Status.ENDED:
-        return
+    if video_session is None or video_session.status in (VideoSession.Status.ENDED, VideoSession.Status.FAILED):
+        return  # already over: keep the outcome that was recorded
     video_session.status = VideoSession.Status.ENDED
     video_session.ended_at = video_session.ended_at or now
     video_session.save(update_fields=["status", "ended_at", "updated_at"])

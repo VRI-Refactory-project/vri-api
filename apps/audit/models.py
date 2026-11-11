@@ -34,6 +34,7 @@ class AuditLog(models.Model):
         CALL_CONNECTED = "call_connected", "Video call connected"
         CALL_ENDED = "call_ended", "Video call ended"
         CALL_FAILED = "call_failed", "Video call failed (never connected in time)"
+        CALL_DISCONNECTED = "call_disconnected", "Participant's connection dropped during a video call"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

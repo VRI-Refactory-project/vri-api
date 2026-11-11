@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from apps.audit.models import AuditLog
 from apps.realtime.call_audit import record_call_event
+from apps.realtime.departures import departure_reason, record_departure, resolve_departure
 from apps.realtime.events import broadcast_video_session_status
 from apps.realtime.models import VideoSession
 from apps.service_requests.models import SessionInvitation
@@ -72,6 +73,7 @@ def process_livekit_event(event):
             return
 
         if event_type == "participant_joined":
+            resolve_departure(video_session, identity, now)
             _handle_participant_joined(
                 identity=identity,
                 participants=participants,
@@ -81,6 +83,8 @@ def process_livekit_event(event):
             )
 
         elif event_type == "participant_left":
+            if identity in participants:
+                record_departure(video_session, identity, departure_reason(participant), now)
             participants = [
                 item for item in participants if item != identity
             ]
