@@ -328,6 +328,10 @@ def end_session(service_request, ended_by=None, *, close_room=True):
         _end_video_session(locked, now)
         broadcast_status(locked)
         push_status(locked, skip_user=ended_by)
+        if locked.interpreter_id:
+            InterpreterProfile.objects.filter(pk=locked.interpreter_id).update(
+                is_available=True
+            )
         audit.record(
             AuditLog.Event.CALL_ENDED,
             ended_by,
