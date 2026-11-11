@@ -168,7 +168,7 @@ class ServiceRequestEndView(APIView):
             pk=pk,
         )
         try:
-            ended = end_session(found)
+            ended = end_session(found, ended_by=request.user)
         except NotEndable:
             return Response(
                 {
