@@ -9,7 +9,7 @@ from rest_framework.test import APITestCase
 from apps.audit.models import AuditLog
 from apps.notifications.models import Notification
 from apps.service_requests.models import ServiceRequest
-from apps.service_requests.services import create_request, respond_to_offer
+from apps.service_requests.services import create_request, end_session, respond_to_offer
 from apps.service_requests.status_labels import push_for
 from apps.service_requests.test_offers import make_interpreter, make_user
 
@@ -78,14 +78,22 @@ class StatusPushTests(APITestCase):
         )
         self.assertFalse(self.pushes(self.deaf, "Session completed").exists())
 
-    def test_ending_tells_the_requester_when_the_interpreter_ends_it(self):
+    def test_the_interpreter_cannot_end_it_so_nobody_is_pushed(self):
         self.accept()
 
         self.end(self.interpreter.user)
 
+        self.assertFalse(Notification.objects.filter(title="Session completed").exists())
+
+    def test_an_empty_room_tells_both_people(self):
+        self.accept()
+
+        # LiveKit closed the room because everyone left: nobody ended it, so nobody is skipped.
+        end_session(self.service_request, close_room=False)
+
         self.assertEqual(self.pushes(self.deaf, "Session completed").count(), 1)
-        self.assertFalse(
-            self.pushes(self.interpreter.user, "Session completed").exists()
+        self.assertEqual(
+            self.pushes(self.interpreter.user, "Session completed").count(), 1
         )
 
     def test_ending_twice_sends_one_push(self):
@@ -101,10 +109,10 @@ class StatusPushTests(APITestCase):
     def test_the_audit_log_says_who_ended_the_session(self):
         self.accept()
 
-        self.end(self.interpreter.user)
+        self.end(self.deaf)
 
         entry = AuditLog.objects.get(event=AuditLog.Event.CALL_ENDED)
-        self.assertEqual(entry.user, self.interpreter.user)
+        self.assertEqual(entry.user, self.deaf)
         self.assertEqual(entry.details["request_id"], self.service_request.pk)
 
     def test_ending_twice_writes_one_audit_entry(self):
