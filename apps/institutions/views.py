@@ -10,6 +10,7 @@ from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_sche
 from rest_framework import serializers, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import RetrieveAPIView
+from rest_framework.parsers import FormParser, MultiPartParser  # ADDED
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -508,6 +509,8 @@ class DeleteInstitutionView(APIView):
 
 class InstitutionDocumentUploadView(APIView):
     permission_classes = [IsInstitutionAccountAdmin]
+    # ADDED: This tells Django to accept file uploads
+    parser_classes = (MultiPartParser, FormParser)
 
     @extend_schema(
         tags=["Institutions"],
@@ -536,3 +539,4 @@ class InstitutionDocumentUploadView(APIView):
             {"detail": "Institution document uploaded successfully."},
             status=status.HTTP_200_OK,
         )
+        
