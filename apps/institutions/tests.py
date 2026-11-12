@@ -244,7 +244,7 @@ class InstitutionApprovalTests(APITestCase):
         self.institution_user.save(update_fields=["email_verified_at"])
 
         with patch(
-            "apps.institutions.views.send_mail",
+            "apps.institutions.views.send_branded_email",
             side_effect=OSError("SMTP server unavailable"),
         ):
             with self.captureOnCommitCallbacks(execute=True):
@@ -258,7 +258,7 @@ class InstitutionApprovalTests(APITestCase):
 
     def test_rejection_succeeds_when_notification_email_fails(self):
         with patch(
-            "apps.institutions.views.send_mail",
+            "apps.institutions.views.send_branded_email",
             side_effect=OSError("SMTP server unavailable"),
         ):
             with self.captureOnCommitCallbacks(execute=True):

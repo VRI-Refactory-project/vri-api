@@ -3,17 +3,11 @@
 Views stay thin; all the rules live here so they are easy to test and to extend (e.g. SMS later).
 """
 
-import json
 import logging
 import secrets
-import urllib.error
-import urllib.request
 from datetime import timedelta
-from email.utils import parseaddr
 
-from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
-from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import F, Sum
 from django.utils import timezone
@@ -22,7 +16,7 @@ from rest_framework_simplejwt.token_blacklist.models import (
     OutstandingToken,
 )
 
-from apps.core.emailing import code_email_html
+from apps.core.emailing import code_email_html, send_branded_email
 
 from .models import RecoveryCode
 
@@ -231,57 +225,4 @@ def _code_email_parts(user, code, purpose, target_user, seconds):
 def _send_code_email(user, code, purpose, target_user=None):
     seconds = int(RecoveryCode.LIFETIME.total_seconds())
     subject, text, html = _code_email_parts(user, code, purpose, target_user, seconds)
-
-    brevo_api_key = getattr(settings, "BREVO_API_KEY", "")
-
-    # Local development and tests: use Django's configured email backend.
-    if not brevo_api_key:
-        send_mail(
-            subject,
-            text,
-            settings.DEFAULT_FROM_EMAIL,
-            [user.email],
-            fail_silently=False,
-            html_message=html,
-        )
-        return
-
-    # Production: send through Brevo's API when a key is configured. The design lives in
-    # apps/core/emailing.py, so it is versioned with the code (no template in the Brevo dashboard).
-    #
-    # DEFAULT_FROM_EMAIL may look like "Sign Connect <a@b.com>". Brevo's sender.email must be
-    # the plain address only, so split it into a name and an address first.
-    sender_name, sender_email = parseaddr(settings.DEFAULT_FROM_EMAIL)
-    if not sender_email:
-        # Fail loudly with a clear reason instead of sending Brevo a request it will reject.
-        logger.error("DEFAULT_FROM_EMAIL has no valid email address in it")
-        raise RuntimeError("DEFAULT_FROM_EMAIL is not a valid sender address")
-
-    payload = {
-        "sender": {"name": sender_name or "SignConnect", "email": sender_email},
-        "to": [{"email": user.email, "name": user.full_name}],
-        "subject": subject,
-        "htmlContent": html,
-        "textContent": text,
-    }
-
-    req = urllib.request.Request(
-        "https://api.brevo.com/v3/smtp/email",
-        data=json.dumps(payload).encode("utf-8"),
-    )
-    req.add_header("accept", "application/json")
-    req.add_header("api-key", brevo_api_key)
-    req.add_header("content-type", "application/json")
-
-    try:
-        with urllib.request.urlopen(req, timeout=10):
-            pass
-    except urllib.error.HTTPError as exc:
-        # Brevo explains the failure in the response body (for example an unrecognised IP or
-        # an unvalidated sender). Log it, but never the key or the code.
-        detail = exc.read().decode("utf-8", "replace")[:300]
-        logger.error("Brevo API returned HTTP %s: %s", exc.code, detail)
-        raise RuntimeError("Failed to send email via Brevo") from exc
-    except urllib.error.URLError as exc:
-        logger.error("Could not reach Brevo: %s", exc.reason)
-        raise RuntimeError("Failed to send email via Brevo") from exc
+    send_branded_email(subject, text, html, user.email, user.full_name, log=logger)

@@ -1,5 +1,6 @@
 """V2-006: institution administrators create, change, revoke and reinstate staff accounts."""
 
+import json
 import re
 from unittest import mock
 
@@ -59,7 +60,9 @@ def emailed_password():
     return TEMPORARY_PASSWORD.search(mail.outbox[-1].body).group(1)
 
 
-@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", BREVO_API_KEY=""
+)
 class StaffTestCase(APITestCase):
     def setUp(self):
         cache.clear()  # reset rate limits
@@ -183,7 +186,7 @@ class CreateStaffTests(StaffTestCase):
 
     def test_nothing_is_created_if_the_email_cannot_be_sent(self):
         with mock.patch(
-            "apps.institutions.staff.send_mail", side_effect=OSError("smtp down")
+            "apps.institutions.staff.send_branded_email", side_effect=OSError("smtp down")
         ):
             res = self.client.post(STAFF_URL, staff_data(), format="json")
         self.assertEqual(res.status_code, 503)
@@ -191,6 +194,21 @@ class CreateStaffTests(StaffTestCase):
         self.assertFalse(
             AuditLog.objects.filter(event=AuditLog.Event.STAFF_CREATED).exists()
         )
+
+    @override_settings(
+        BREVO_API_KEY="test-key",
+        DEFAULT_FROM_EMAIL="SignConnect <no-reply@signconnect.example>",
+    )
+    def test_login_details_go_out_through_brevo_when_a_key_is_set(self):
+        with mock.patch("urllib.request.urlopen") as urlopen:
+            res = self.client.post(STAFF_URL, staff_data(), format="json")
+        self.assertEqual(res.status_code, 201, res.data)
+        payload = json.loads(urlopen.call_args.args[0].data)
+        self.assertEqual(payload["to"][0]["email"], "sarah@mulago.example")
+        self.assertEqual(payload["subject"], "Your SignConnect staff account")
+        self.assertIn("Mulago Hospital", payload["textContent"])
+        self.assertTrue(TEMPORARY_PASSWORD.search(payload["textContent"]))
+        self.assertEqual(len(mail.outbox), 0)
 
 
 class ListAndIsolationTests(StaffTestCase):
