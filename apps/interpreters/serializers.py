@@ -8,6 +8,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.accounts.serializers import BaseRegistrationSerializer
+from apps.users.photos import photo_path
 
 from . import specialisations as library
 from .models import (
@@ -556,3 +557,41 @@ class ScheduledSessionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"date": "The date must be in the future."})
 
         return data
+
+
+class BookedSessionSerializer(serializers.ModelSerializer):
+    """A session a Deaf user booked, as an interpreter sees it: who, what kind, and when.
+
+    Only what the dashboard needs. The Deaf user's contact details are never included.
+    """
+
+    deaf_name = serializers.CharField(source="deaf_user.full_name", read_only=True)
+    deaf_photo = serializers.SerializerMethodField()
+    session_type_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ScheduledSession
+        fields = [
+            "id",
+            "deaf_name",
+            "deaf_photo",
+            "date",
+            "time",
+            "duration",
+            "session_type",
+            "session_type_label",
+            "status",
+        ]
+        read_only_fields = fields
+
+    def get_deaf_photo(self, obj) -> str | None:
+        return photo_path(obj.deaf_user)
+
+    def get_session_type_label(self, obj) -> str:
+        """e.g. "Medical / Healthcare", or the person's own words when they chose Other."""
+        if (
+            obj.session_type == ScheduledSession.SessionType.OTHER
+            and obj.custom_session_type
+        ):
+            return obj.custom_session_type
+        return obj.get_session_type_display()
