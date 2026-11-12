@@ -128,7 +128,7 @@ class EmailVerificationTests(APITestCase):
 
         self.client.credentials()  # sign out: registering is only for signed-out people
         with mock.patch(
-            "apps.accounts.recovery.send_mail", side_effect=OSError("smtp down")
+            "apps.accounts.recovery.send_branded_email", side_effect=OSError("smtp down")
         ):
             res = self.client.post(
                 reverse("auth-register-interpreter"),

@@ -1,7 +1,5 @@
 import logging
 
-from django.conf import settings
-from django.core.mail import send_mail
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -17,7 +15,7 @@ from rest_framework.views import APIView
 
 from apps.audit import services as audit
 from apps.audit.models import AuditLog
-from apps.core.emailing import branded_html
+from apps.core.emailing import branded_html, send_branded_email
 from apps.core.permissions import (
     HasInstitutionalRole,
     IsAdminRole,
@@ -78,13 +76,13 @@ def notify_institution(profile, decision):
         f"has been {'approved' if approved else 'rejected'}.\n"
     )
     try:
-        send_mail(
+        send_branded_email(
             subject,
             message,
-            getattr(settings, "DEFAULT_FROM_EMAIL", None),
-            [profile.user.email],
-            fail_silently=False,
-            html_message=branded_html(message),
+            branded_html(message),
+            profile.user.email,
+            profile.user.full_name,
+            log=logger,
         )
     except Exception:
         logger.exception(
