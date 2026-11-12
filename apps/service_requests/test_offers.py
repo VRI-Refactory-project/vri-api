@@ -265,8 +265,9 @@ class InterpreterOffersApiTests(APITestCase):
         self.assertEqual(response.data[0]["requester_name"], deaf.full_name)
         self.assertIsNotNone(response.data[0]["expires_at"])
 
+        # V2-024: an emergency is offered to every eligible interpreter, so the general one sees it too.
         self.client.force_authenticate(other.user)
-        self.assertEqual(self.client.get(url).data, [])
+        self.assertEqual(len(self.client.get(url).data), 1)
 
     def test_only_interpreters_can_look(self):
         self.client.force_authenticate(make_user(User.Role.DEAF_HOH))

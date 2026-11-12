@@ -58,7 +58,7 @@ def pick_interpreter(context=None, *, exclude=(), last_offered=None, now=None):
     return RoutingMatch(chosen, True) if chosen else None
 
 
-def pick_candidates(context=None, *, exclude=(), now=None):
+def pick_candidates(context=None, *, exclude=(), now=None, emergency=False):
     """Return ``(interpreters, matched_by_fallback)``: every interpreter who should be offered the
     request at once, or an empty list when nobody can take it right now.
 
@@ -70,6 +70,12 @@ def pick_candidates(context=None, *, exclude=(), now=None):
     eligible = list(get_eligible_interpreters(now=now).exclude(pk__in=excluded))
 
     wanted = context or Specialisation.GENERAL
+    if emergency:
+        # An emergency does not wait for a specialist: every eligible interpreter is offered it at once.
+        wants_specialist = wanted != Specialisation.GENERAL
+        no_specialist = not any(p.has_specialisation(wanted) for p in eligible)
+        return eligible, bool(eligible) and wants_specialist and no_specialist
+
     if wanted == Specialisation.GENERAL:
         return eligible, False
 

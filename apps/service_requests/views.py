@@ -39,6 +39,7 @@ from apps.service_requests.serializers import (
     ServiceRequestSerializer,
 )
 from apps.service_requests.services import (
+    EmergencyLimitReached,
     NotCancellable,
     NotEndable,
     OfferNotActive,
@@ -82,6 +83,14 @@ class ServiceRequestListCreateView(generics.ListCreateAPIView):
         try:
             service_request, created = create_request(
                 requester=request.user, request=request, **serializer.validated_data
+            )
+        except EmergencyLimitReached:
+            return Response(
+                {
+                    "detail": "You have made too many emergency requests in the last hour. Please try again later.",
+                    "code": "emergency_limit_reached",
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
         except OpenRequestExists:
             open_request = ServiceRequest.objects.filter(
