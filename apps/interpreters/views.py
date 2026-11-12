@@ -3,7 +3,7 @@ from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -56,6 +56,7 @@ from .serializers import (
     ManageInterpreterListSerializer,
     MonthExceptionsSerializer,
     MonthQuerySerializer,
+    BookedSessionSerializer,
     ScheduledSessionSerializer,
     WeekQuerySerializer,
     WeekScheduleSerializer,
@@ -616,3 +617,23 @@ class ListMyScheduledSessionsView(generics.ListAPIView):
             deaf_user=self.request.user,
             date__gte=date.today()
         ).order_by('date', 'time')
+
+
+class InterpreterBookedSessionListView(generics.ListAPIView):
+    """GET /api/v1/interpreters/booked-sessions/: the sessions Deaf users have booked that are still
+    to come, soonest first. Cancelled bookings and ones whose time has passed are left out.
+
+    Bookings are not assigned to an interpreter yet, so every interpreter sees the same list."""
+
+    serializer_class = BookedSessionSerializer
+    permission_classes = [permissions.IsAuthenticated, IsInterpreter]
+    pagination_class = None
+
+    def get_queryset(self):
+        now = timezone.localtime()
+        return (
+            ScheduledSession.objects.exclude(status=ScheduledSession.Status.CANCELLED)
+            .filter(Q(date__gt=now.date()) | Q(date=now.date(), time__gte=now.time()))
+            .select_related("deaf_user__photo")
+            .order_by("date", "time")[:50]
+        )
