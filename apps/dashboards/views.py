@@ -602,9 +602,10 @@ class AdminDashboardView(APIView):
 
         # NEW: Calculate the Top Session Types
         session_counts = (
-            ScheduledSession.objects.values("session_type")
-            .annotate(count=Count("id"))
-            .order_by("-count")
+            ScheduledSession.objects.filter(status='COMPLETED')
+            .values('session_type')
+            .annotate(count=Count('id'))
+            .order_by('-count')
         )
         formatted_session_types = [
             {"type": item["session_type"], "count": item["count"]}
