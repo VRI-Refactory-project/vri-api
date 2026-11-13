@@ -35,6 +35,7 @@
 #     VerificationStatus,
 # )
 # from apps.interpreters.services import get_eligible_interpreters
+# from apps.notifications.models import Notification  # 👈 NEW
 # from apps.service_requests.models import ServiceRequest
 # from apps.users.photos import photo_path
 
@@ -72,6 +73,7 @@
 #         ),
 #         "top_session_types": serializers.ListField(child=serializers.DictField()),
 #         "performance": serializers.DictField(),
+#         "unread_notifications": serializers.IntegerField(),  # 👈 NEW
 #     },
 # )
 
@@ -280,6 +282,12 @@
 #                 (completed_requests_7d / total_requests_7d) * 100, 1
 #             )
 
+#         # 👇 NEW: Unread notifications for this admin
+#         unread_notifications = Notification.objects.filter(
+#             user=request.user,
+#             read_at__isnull=True,
+#         ).count()
+
 #         return Response(
 #             {
 #                 "user": UserSerializer(request.user).data,
@@ -313,11 +321,13 @@
 #                 "performance": {
 #                     "avg_response_time": avg_response_time,
 #                     "completion_rate": completion_rate,
-#                     "response_trend": "+18%",     # Placeholder
-#                     "completion_trend": "+4%",    # Placeholder
+#                     "response_trend": "+18%",
+#                     "completion_trend": "+4%",
 #                 },
+#                 "unread_notifications": unread_notifications,
 #             }
 #         )
+
 
 # class AdminUpcomingSessionsView(APIView):
 #     """Upcoming sessions for the admin dashboard.
@@ -512,7 +522,7 @@ from apps.interpreters.models import (
     VerificationStatus,
 )
 from apps.interpreters.services import get_eligible_interpreters
-from apps.notifications.models import Notification  # 👈 NEW
+from apps.notifications.models import Notification
 from apps.service_requests.models import ServiceRequest
 from apps.users.photos import photo_path
 
@@ -550,7 +560,10 @@ AdminDashboardSerializer = inline_serializer(
         ),
         "top_session_types": serializers.ListField(child=serializers.DictField()),
         "performance": serializers.DictField(),
-        "unread_notifications": serializers.IntegerField(),  # 👈 NEW
+        "unread_notifications": serializers.IntegerField(),
+        # 👇 NEW: Real interpreter availability fields
+        "available_interpreters": serializers.IntegerField(),
+        "offline_interpreters": serializers.IntegerField(),
     },
 )
 
@@ -725,7 +738,6 @@ class AdminDashboardView(APIView):
         # --- Interpreter Performance (last 7 days) ---
         seven_days_ago = timezone.now() - timedelta(days=7)
 
-        # 1. Avg response time: assigned_at - created_at
         accepted_requests = ServiceRequest.objects.filter(
             created_at__gte=seven_days_ago,
             assigned_at__isnull=False,
@@ -744,7 +756,6 @@ class AdminDashboardView(APIView):
             total_seconds = int(avg_response.total_seconds())
             avg_response_time = f"{total_seconds // 60}m {total_seconds % 60}s"
 
-        # 2. Completion rate: COMPLETED / total requests in last 7 days
         total_requests_7d = ServiceRequest.objects.filter(
             created_at__gte=seven_days_ago
         ).count()
@@ -759,11 +770,20 @@ class AdminDashboardView(APIView):
                 (completed_requests_7d / total_requests_7d) * 100, 1
             )
 
-        # 👇 NEW: Unread notifications for this admin
+        # --- Unread notifications for this admin ---
         unread_notifications = Notification.objects.filter(
             user=request.user,
             read_at__isnull=True,
         ).count()
+
+        # 👇 NEW: Real interpreter availability breakdown
+        interpreters_qs = InterpreterProfile.objects.filter(
+            verification_status=VerificationStatus.APPROVED,
+            user__is_active=True,
+        )
+        total_interpreters = interpreters_qs.count()
+        available_interpreters = interpreters_qs.filter(is_available=True).count()
+        offline_interpreters = total_interpreters - available_interpreters
 
         return Response(
             {
@@ -802,6 +822,9 @@ class AdminDashboardView(APIView):
                     "completion_trend": "+4%",
                 },
                 "unread_notifications": unread_notifications,
+                # 👇 NEW: Real availability
+                "available_interpreters": available_interpreters,
+                "offline_interpreters": offline_interpreters,
             }
         )
 
