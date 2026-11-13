@@ -1,6 +1,7 @@
 import logging
 
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
@@ -23,14 +24,20 @@ from apps.core.permissions import (
     IsInstitutionAccountAdmin,
     IsInstitutionAdmin,
     user_institution,
+    user_staff_membership,
 )
+from apps.interpreters.models import ScheduledSession
+from apps.service_requests.models import ServiceRequest
 
 from . import staff
 from .models import InstitutionProfile, InstitutionStaff, InstitutionStatus
 from .serializers import (
     InstitutionDocumentUploadSerializer,
     InstitutionProfileUpdateSerializer,
+    InstitutionScheduledSessionSerializer,
     InstitutionSerializer,
+    InstitutionSessionSerializer,
+    OwnProfileUpdateSerializer,
     StaffCreateSerializer,
     StaffSerializer,
     StaffUpdateSerializer,
@@ -423,6 +430,160 @@ class StaffReinstateView(InstitutionStaffMixin, APIView):
             self.get_membership(pk), request.user, request
         )
         return Response(StaffSerializer(membership).data)
+
+
+class MyStaffProfileView(APIView):
+    """The signed-in staff member's own profile. They may change their name and phone number."""
+
+    permission_classes = [IsApprovedInstitution]
+
+    def membership(self):
+        return user_staff_membership(self.request.user)
+
+    @extend_schema(
+        tags=["Institution Staff"],
+        summary="My staff profile",
+        responses={200: StaffSerializer},
+    )
+    def get(self, request):
+        return Response(StaffSerializer(self.membership()).data)
+
+    @extend_schema(
+        tags=["Institution Staff"],
+        summary="Change my name or phone number",
+        request=OwnProfileUpdateSerializer,
+        responses={
+            200: StaffSerializer,
+            400: OpenApiResponse(
+                description="Invalid name, or the phone number belongs to another account."
+            ),
+        },
+    )
+    def patch(self, request):
+        membership = self.membership()
+        serializer = OwnProfileUpdateSerializer(
+            data=request.data, context={"user": request.user}
+        )
+        serializer.is_valid(raise_exception=True)
+        staff.update_own_profile(membership, serializer.validated_data, request)
+        return Response(StaffSerializer(membership).data)
+
+
+# --- Sessions across the institution: its administrators see what every staff member requested and booked ---
+
+STAFF_FILTERS = [
+    OpenApiParameter(
+        "staff",
+        OpenApiTypes.INT,
+        description="Only this staff member (their staff id).",
+    ),
+    OpenApiParameter(
+        "department",
+        OpenApiTypes.STR,
+        description="Only staff in this department (job title).",
+    ),
+]
+
+
+def filter_by_staff(queryset, params, user_field):
+    """Applies the ?staff= and ?department= filters. `user_field` is the queryset's link to the staff user."""
+    staff_id = params.get("staff")
+    if staff_id:
+        if not staff_id.isdigit():
+            raise ValidationError({"staff": ["Give a staff id (a number)."]})
+        queryset = queryset.filter(**{f"{user_field}__institution_staff__id": staff_id})
+    department = params.get("department", "").strip()
+    if department:
+        queryset = queryset.filter(
+            **{f"{user_field}__institution_staff__job_title__iexact": department}
+        )
+    return queryset
+
+
+class InstitutionSessionListView(APIView):
+    """Every interpreter request made by the institution's staff, newest first. Staff who were revoked
+    are included so the history stays complete. Reading this list never changes a request."""
+
+    permission_classes = [IsInstitutionAdmin]
+
+    ACTIVE = (
+        ServiceRequest.Status.CREATED,
+        ServiceRequest.Status.PENDING,
+        ServiceRequest.Status.OFFERED,
+        ServiceRequest.Status.ASSIGNED,
+    )
+
+    @extend_schema(
+        tags=["Institution Sessions"],
+        summary="My institution's sessions",
+        parameters=[
+            OpenApiParameter(
+                "state",
+                OpenApiTypes.STR,
+                enum=["active", "history"],
+                description="active: waiting for or with an interpreter. history: completed, cancelled or failed.",
+            ),
+            OpenApiParameter(
+                "search",
+                OpenApiTypes.STR,
+                description="Matches the staff member, their department or the interpreter.",
+            ),
+            *STAFF_FILTERS,
+        ],
+        responses={200: InstitutionSessionSerializer(many=True), **STAFF_ERRORS},
+    )
+    def get(self, request):
+        params = request.query_params
+        queryset = ServiceRequest.objects.filter(
+            requester__institution_staff__institution=user_institution(request.user)
+        ).select_related("requester__institution_staff", "interpreter__user")
+
+        state = params.get("state")
+        if state == "active":
+            queryset = queryset.filter(status__in=self.ACTIVE)
+        elif state == "history":
+            queryset = queryset.exclude(status__in=self.ACTIVE)
+        elif state:
+            raise ValidationError({"state": ["Choose active or history."]})
+
+        queryset = filter_by_staff(queryset, params, "requester")
+
+        search = params.get("search", "").strip()
+        if search:
+            queryset = queryset.filter(
+                Q(requester__full_name__icontains=search)
+                | Q(requester__institution_staff__job_title__icontains=search)
+                | Q(interpreter__user__full_name__icontains=search)
+            )
+
+        return Response(InstitutionSessionSerializer(queryset, many=True).data)
+
+
+class InstitutionScheduledSessionListView(APIView):
+    """Sessions the institution's staff booked for today or later, soonest first."""
+
+    permission_classes = [IsInstitutionAdmin]
+
+    @extend_schema(
+        tags=["Institution Sessions"],
+        summary="My institution's upcoming booked sessions",
+        parameters=STAFF_FILTERS,
+        responses={
+            200: InstitutionScheduledSessionSerializer(many=True),
+            **STAFF_ERRORS,
+        },
+    )
+    def get(self, request):
+        queryset = (
+            ScheduledSession.objects.filter(
+                institution=user_institution(request.user),
+                date__gte=timezone.localdate(),
+            )
+            .select_related("deaf_user__institution_staff")
+            .order_by("date", "time")
+        )
+        queryset = filter_by_staff(queryset, request.query_params, "deaf_user")
+        return Response(InstitutionScheduledSessionSerializer(queryset, many=True).data)
 
     # --- V2-046: Delete Institution (Platform Administrators Only) --------------------------------------
 

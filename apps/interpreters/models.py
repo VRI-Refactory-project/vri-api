@@ -316,6 +316,14 @@ class ScheduledSession(models.Model):
         on_delete=models.CASCADE,
         related_name="scheduled_sessions",
     )
+    # Set when institution staff book, so the institution can see all of its bookings.
+    institution = models.ForeignKey(
+        "institutions.InstitutionProfile",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="scheduled_sessions",
+    )
 
     # When is the session?
     date = models.DateField()

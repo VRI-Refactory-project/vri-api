@@ -28,6 +28,19 @@ class PlusPhoneNumberField(PhoneNumberField):
     }
 
 
+def clean_full_name(value):
+    """The sign-up form's rule for names: letters from any alphabet, spaces, hyphens, apostrophes and full
+    stops. Blocks "12345" and markup such as "<b>x</b>". Returns the name with its spaces tidied."""
+    name = " ".join(value.split())
+    if len(name) < 2:
+        raise serializers.ValidationError("That is too short.")
+    if not name[0].isalpha() or not all(ch.isalpha() or ch in " '’.-" for ch in name):
+        raise serializers.ValidationError(
+            "Use letters, spaces, hyphens and apostrophes only."
+        )
+    return name
+
+
 class UserSerializer(serializers.ModelSerializer):
     """Public view of a user. Reuse this inside role-specific profile responses."""
 
@@ -113,18 +126,7 @@ class BaseRegistrationSerializer(serializers.Serializer):
         return fields
 
     def validate_full_name(self, value):
-        # Same rule as the sign-up form: letters from any alphabet, spaces, hyphens,
-        # apostrophes and full stops. Blocks "12345" and markup such as "<b>x</b>".
-        name = " ".join(value.split())
-        if len(name) < 2:
-            raise serializers.ValidationError("That is too short.")
-        if not name[0].isalpha() or not all(
-            ch.isalpha() or ch in " '\u2019.-" for ch in name
-        ):
-            raise serializers.ValidationError(
-                "Use letters, spaces, hyphens and apostrophes only."
-            )
-        return name
+        return clean_full_name(value)
 
     def validate_phone_number(self, value):
         if User.objects.filter(phone_number=value).exists():
