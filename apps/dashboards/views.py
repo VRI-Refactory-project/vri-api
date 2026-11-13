@@ -378,9 +378,12 @@ Deaf, interpreter, and administrator dashboard endpoints are restricted
 by shared permission classes in apps/core/permissions.py.
 """
 
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
-from django.db.models import Count
+from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
@@ -402,10 +405,11 @@ from apps.core.permissions import (
 from apps.institutions.models import InstitutionProfile, InstitutionStatus
 from apps.interpreters.models import (
     InterpreterProfile,
-    ScheduledSession,  # NEW: Import ScheduledSession
+    ScheduledSession,
     VerificationStatus,
 )
 from apps.interpreters.services import get_eligible_interpreters
+from apps.service_requests.models import ServiceRequest
 from apps.users.photos import photo_path
 
 User = get_user_model()
@@ -441,6 +445,7 @@ AdminDashboardSerializer = inline_serializer(
             many=True,
         ),
         "top_session_types": serializers.ListField(child=serializers.DictField()),
+        "performance": serializers.DictField(),
     },
 )
 
@@ -600,18 +605,54 @@ class AdminDashboardView(APIView):
             .annotate(total=Count("id"))
         )
 
-        # NEW: Calculate the Top Session Types
+        # --- Top Session Types ---
         session_counts = (
-            ScheduledSession.objects.exclude(status='CANCELLED')
-            .values('session_type')
-            .annotate(count=Count('id'))
-            .order_by('-count')
+            ScheduledSession.objects.exclude(status="CANCELLED")
+            .values("session_type")
+            .annotate(count=Count("id"))
+            .order_by("-count")
         )
-
         formatted_session_types = [
             {"type": item["session_type"], "count": item["count"]}
             for item in session_counts
         ]
+
+        # --- Interpreter Performance (last 7 days) ---
+        seven_days_ago = timezone.now() - timedelta(days=7)
+
+        # 1. Avg response time: assigned_at - created_at
+        accepted_requests = ServiceRequest.objects.filter(
+            created_at__gte=seven_days_ago,
+            assigned_at__isnull=False,
+        )
+        avg_response = accepted_requests.aggregate(
+            avg_delta=Avg(
+                ExpressionWrapper(
+                    F("assigned_at") - F("created_at"),
+                    output_field=DurationField(),
+                )
+            )
+        )["avg_delta"]
+
+        avg_response_time = "0m 0s"
+        if avg_response:
+            total_seconds = int(avg_response.total_seconds())
+            avg_response_time = f"{total_seconds // 60}m {total_seconds % 60}s"
+
+        # 2. Completion rate: COMPLETED / total requests in last 7 days
+        total_requests_7d = ServiceRequest.objects.filter(
+            created_at__gte=seven_days_ago
+        ).count()
+        completed_requests_7d = ServiceRequest.objects.filter(
+            created_at__gte=seven_days_ago,
+            status=ServiceRequest.Status.COMPLETED,
+        ).count()
+
+        completion_rate = 0
+        if total_requests_7d > 0:
+            completion_rate = round(
+                (completed_requests_7d / total_requests_7d) * 100, 1
+            )
 
         return Response(
             {
@@ -642,8 +683,13 @@ class AdminDashboardView(APIView):
                         ).select_related("user")[:RECENT_SIGN_INS]
                     )
                 ],
-                #  NEW: Include the session types in the response
                 "top_session_types": formatted_session_types,
+                "performance": {
+                    "avg_response_time": avg_response_time,
+                    "completion_rate": completion_rate,
+                    "response_trend": "+18%",     # Placeholder
+                    "completion_trend": "+4%",    # Placeholder
+                },
             }
         )
 
@@ -741,7 +787,6 @@ class AdminLogoutView(APIView):
         },
     )
     def post(self, request):
-        # Passes request data to the serializer for standard validation
         serializer = AdminLogoutSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=400)
@@ -749,11 +794,9 @@ class AdminLogoutView(APIView):
         refresh_token = serializer.validated_data["refresh"]
 
         try:
-            # Blacklist the token so it can't forge new access tokens
             token = RefreshToken(refresh_token)
             token.blacklist()
 
-            # 1. Check if the user role is lowercase "admin" before logging
             if request.user.role == "admin":
                 AuditLog.objects.create(
                     user=request.user,
