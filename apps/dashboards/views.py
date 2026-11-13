@@ -409,6 +409,7 @@ from apps.interpreters.models import (
     VerificationStatus,
 )
 from apps.interpreters.services import get_eligible_interpreters
+from apps.realtime.models import VideoSession
 from apps.service_requests.models import ServiceRequest
 from apps.users.photos import photo_path
 
@@ -480,6 +481,24 @@ InstitutionDashboardSerializer = inline_serializer(
                 "total": serializers.IntegerField(),
                 "active": serializers.IntegerField(),
                 "revoked": serializers.IntegerField(),
+            },
+        ),
+        "session_analytics": inline_serializer(
+            "InstitutionSessionAnalytics",
+            {
+                "total_requests": serializers.IntegerField(),
+                "pending_requests": serializers.IntegerField(),
+                "assigned_requests": serializers.IntegerField(),
+                "completed_requests": serializers.IntegerField(),
+                "cancelled_requests": serializers.IntegerField(),
+                "failed_requests": serializers.IntegerField(),
+                "total_video_sessions": serializers.IntegerField(),
+                "waiting_video_sessions": serializers.IntegerField(),
+                "connecting_video_sessions": serializers.IntegerField(),
+                "connected_video_sessions": serializers.IntegerField(),
+                "ended_video_sessions": serializers.IntegerField(),
+                "failed_video_sessions": serializers.IntegerField(),
+                "average_call_duration_seconds": serializers.IntegerField(),
             },
         ),
     },
@@ -777,6 +796,37 @@ class InstitutionDashboardView(APIView):
         institution = staff_membership.institution
         staff_members = institution.staff.all()
 
+        # Requests created by users who belong to this institution.
+        institution_requests = ServiceRequest.objects.filter(
+            requester__institution_staff__institution=institution
+        )
+
+        # Actual video sessions associated with those requests.
+        institution_sessions = VideoSession.objects.filter(
+            service_request__in=institution_requests
+        )
+
+        # Calculate duration only for calls that connected and subsequently ended.
+        completed_call_durations = institution_sessions.filter(
+            connected_at__isnull=False,
+            ended_at__isnull=False,
+        ).aggregate(
+            average_duration=Avg(
+                ExpressionWrapper(
+                    F("ended_at") - F("connected_at"),
+                    output_field=DurationField(),
+                )
+            )
+        )
+
+        average_duration = completed_call_durations["average_duration"]
+
+        average_call_duration_seconds = (
+            round(average_duration.total_seconds())
+            if average_duration is not None
+            else 0
+        )
+
         return Response(
             {
                 "user": UserSerializer(request.user).data,
@@ -796,6 +846,57 @@ class InstitutionDashboardView(APIView):
                     "revoked": staff_members.filter(
                         revoked_at__isnull=False,
                     ).count(),
+                },
+                "session_analytics": {
+                    "total_requests": institution_requests.count(),
+
+                    "pending_requests": institution_requests.filter(
+                        status__in=[
+                            ServiceRequest.Status.CREATED,
+                            ServiceRequest.Status.PENDING,
+                            ServiceRequest.Status.OFFERED,
+                        ]
+                    ).count(),
+
+                    "assigned_requests": institution_requests.filter(
+                        status=ServiceRequest.Status.ASSIGNED
+                    ).count(),
+
+                    "completed_requests": institution_requests.filter(
+                        status=ServiceRequest.Status.COMPLETED
+                    ).count(),
+
+                    "cancelled_requests": institution_requests.filter(
+                        status=ServiceRequest.Status.CANCELLED
+                    ).count(),
+
+                    "failed_requests": institution_requests.filter(
+                        status=ServiceRequest.Status.FAILED
+                    ).count(),
+
+                    "total_video_sessions": institution_sessions.count(),
+
+                    "waiting_video_sessions": institution_sessions.filter(
+                        status=VideoSession.Status.WAITING
+                    ).count(),
+
+                    "connecting_video_sessions": institution_sessions.filter(
+                        status=VideoSession.Status.CONNECTING
+                    ).count(),
+
+                    "connected_video_sessions": institution_sessions.filter(
+                        status=VideoSession.Status.CONNECTED
+                    ).count(),
+
+                    "ended_video_sessions": institution_sessions.filter(
+                        status=VideoSession.Status.ENDED
+                    ).count(),
+
+                    "failed_video_sessions": institution_sessions.filter(
+                        status=VideoSession.Status.FAILED
+                    ).count(),
+
+                    "average_call_duration_seconds": average_call_duration_seconds,
                 },
             }
         )
