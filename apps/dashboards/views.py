@@ -602,11 +602,12 @@ class AdminDashboardView(APIView):
 
         # NEW: Calculate the Top Session Types
         session_counts = (
-            ScheduledSession.objects.filter(status='COMPLETED')
+            ScheduledSession.objects.exclude(status='CANCELLED')
             .values('session_type')
             .annotate(count=Count('id'))
             .order_by('-count')
         )
+
         formatted_session_types = [
             {"type": item["session_type"], "count": item["count"]}
             for item in session_counts
