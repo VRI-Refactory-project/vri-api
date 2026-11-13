@@ -378,7 +378,7 @@ Deaf, interpreter, and administrator dashboard endpoints are restricted
 by shared permission classes in apps/core/permissions.py.
 """
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F
@@ -692,6 +692,46 @@ class AdminDashboardView(APIView):
                 },
             }
         )
+
+
+class AdminUpcomingSessionsView(APIView):
+    """Upcoming sessions for the admin dashboard.
+
+    Returns anything scheduled from today onward (excluding cancelled sessions),
+    ordered by date and time.
+    """
+
+    permission_classes = [IsAdminRole]
+
+    @extend_schema(
+        tags=["Dashboards"],
+        summary="Upcoming sessions (admin)",
+        responses={200: serializers.ListField(child=serializers.DictField())},
+    )
+    def get(self, request):
+        today = date.today()
+
+        sessions_qs = (
+            ScheduledSession.objects.select_related("deaf_user")
+            .filter(date__gte=today)
+            .exclude(status="CANCELLED")
+            .order_by("date", "time")[:50]
+        )
+
+        data = []
+        for s in sessions_qs:
+            data.append(
+                {
+                    "id": s.pk,
+                    "date": f"{s.date} at {s.time.strftime('%H:%M')}",
+                    "client": s.deaf_user.full_name if s.deaf_user else "Unknown",
+                    "interpreter": "—",
+                    "session_type": s.session_type,
+                    "status": s.status,
+                }
+            )
+
+        return Response(data)
 
 
 class InterpreterDashboardView(APIView):

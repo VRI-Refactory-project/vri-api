@@ -19,6 +19,11 @@ urlpatterns = [
         "admin/logout/", views.AdminLogoutView.as_view(), name="dashboard-admin-logout"
     ),
     path(
+        "admin/upcoming-sessions/",
+        views.AdminUpcomingSessionsView.as_view(),
+        name="dashboard-admin-upcoming-sessions",
+    ),
+    path(
         "interpreter/",
         views.InterpreterDashboardView.as_view(),
         name="dashboard-interpreter",
