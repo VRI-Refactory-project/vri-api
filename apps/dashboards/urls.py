@@ -19,6 +19,11 @@ urlpatterns = [
         "admin/logout/", views.AdminLogoutView.as_view(), name="dashboard-admin-logout"
     ),
     path(
+        "admin/upcoming-sessions/",
+        views.AdminUpcomingSessionsView.as_view(),
+        name="dashboard-admin-upcoming-sessions",
+    ),
+    path(
         "admin/user-growth/",
         admin_stats.AdminUserGrowthView.as_view(),
         name="dashboard-admin-user-growth",
