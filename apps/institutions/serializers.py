@@ -3,7 +3,15 @@ from pathlib import Path
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from apps.accounts.serializers import BaseRegistrationSerializer
+from apps.accounts.serializers import (
+    BaseRegistrationSerializer,
+    PlusPhoneNumberField,
+    clean_full_name,
+)
+from apps.interpreters.models import ScheduledSession
+from apps.realtime.call_status import display_status
+from apps.service_requests.models import ServiceRequest
+from apps.service_requests.serializers import session_duration_minutes
 
 from .models import InstitutionProfile, InstitutionStaff, OrganisationType, StaffRole
 
@@ -241,6 +249,105 @@ class StaffUpdateSerializer(serializers.Serializer):
 
         instance.save()
         return instance
+
+
+class OwnProfileUpdateSerializer(serializers.Serializer):
+    """What institution staff may change about themselves. Their job title and role stay with the
+    administrator, and email is left out because it is where login details and codes are sent."""
+
+    full_name = serializers.CharField(max_length=150, required=False)
+    phone_number = PlusPhoneNumberField(required=False)
+
+    def validate_full_name(self, value):
+        return clean_full_name(value)
+
+    def validate_phone_number(self, value):
+        others = User.objects.filter(phone_number=value).exclude(
+            pk=self.context["user"].pk
+        )
+        if others.exists():
+            raise serializers.ValidationError(
+                "An account with this phone number already exists."
+            )
+        return value
+
+
+# --- What an institution's administrators see of its staff's sessions -------------------------------
+
+
+def _staff_fields(user):
+    """Who in the institution a session belongs to. The department is saved as the job title."""
+    membership = user.institution_staff
+    return {
+        "id": membership.id,
+        "name": user.full_name,
+        "department": membership.job_title,
+    }
+
+
+class InstitutionSessionSerializer(serializers.ModelSerializer):
+    """One interpreter request made by a staff member."""
+
+    staff = serializers.SerializerMethodField()
+    interpreter_name = serializers.SerializerMethodField()
+    display_status = serializers.SerializerMethodField()
+    duration_minutes = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ServiceRequest
+        fields = (
+            "id",
+            "staff",
+            "interpreter_name",
+            "specialisation_required",
+            "priority",
+            "status",
+            "display_status",
+            "created_at",
+            "assigned_at",
+            "ended_at",
+            "duration_minutes",
+        )
+        read_only_fields = fields
+
+    def get_staff(self, obj) -> dict:
+        return _staff_fields(obj.requester)
+
+    def get_interpreter_name(self, obj) -> str | None:
+        # Only once an interpreter has taken the request; who it was offered to stays private.
+        if obj.assigned_at is None or obj.interpreter is None:
+            return None
+        return obj.interpreter.user.full_name
+
+    def get_display_status(self, obj) -> str:
+        return display_status(obj)
+
+    def get_duration_minutes(self, obj) -> int | None:
+        return session_duration_minutes(obj)
+
+
+class InstitutionScheduledSessionSerializer(serializers.ModelSerializer):
+    """One session a staff member booked ahead."""
+
+    staff = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ScheduledSession
+        fields = (
+            "id",
+            "staff",
+            "date",
+            "time",
+            "duration",
+            "session_type",
+            "custom_session_type",
+            "status",
+            "created_at",
+        )
+        read_only_fields = fields
+
+    def get_staff(self, obj) -> dict:
+        return _staff_fields(obj.deaf_user)
 
 
 class InstitutionDocumentUploadSerializer(serializers.Serializer):

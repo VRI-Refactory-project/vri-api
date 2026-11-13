@@ -20,7 +20,12 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.permissions import HasVerifiedEmail, IsAdminRole, IsInterpreter
+from apps.core.permissions import (
+    HasVerifiedEmail,
+    IsAdminRole,
+    IsInterpreter,
+    user_institution,
+)
 
 from . import specialisations as library
 from . import verification
@@ -604,8 +609,11 @@ class CreateScheduledSessionView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
-        # Attach the currently logged-in user as the deaf_user
-        serializer.save(deaf_user=self.request.user)
+        # Attach the currently logged-in user as the deaf_user; staff bookings also belong to their institution.
+        serializer.save(
+            deaf_user=self.request.user,
+            institution=user_institution(self.request.user),
+        )
 
 
 class ListMyScheduledSessionsView(generics.ListAPIView):
