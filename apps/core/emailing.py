@@ -11,8 +11,18 @@ Two helpers:
 
     code_email_html(heading, greeting, intro, code, expires_text, safety_note)
         The designed layout for one-time-code emails (email verification and account recovery).
+
+And one sender, so every system email leaves the same way:
+
+    send_branded_email(subject, text, html, to_email, to_name)
+        Brevo's API when BREVO_API_KEY is set, otherwise Django's configured email backend.
 """
 
+import json
+import logging
+import urllib.error
+import urllib.request
+from email.utils import parseaddr
 from html import escape
 
 # The SignConnect palette, the same values as the web app (vri-web/src/all-css.css).
@@ -25,6 +35,8 @@ MUTED = "#64748b"  # --color-text-muted
 FONT = "Manrope,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 
 TAGLINE = "Video relay interpreting for Deaf and hard-of-hearing people in Uganda"
+
+logger = logging.getLogger("apps.core.emailing")
 
 
 def _logo_url():
@@ -158,3 +170,70 @@ def code_email_html(heading, greeting, intro, code, expires_text, safety_note, p
         "Kind regards,<br>The SignConnect team</p></td></tr>"
     )
     return _shell(inner, preheader or f"Your SignConnect code is {code}")
+
+
+def send_branded_email(subject, text, html, to_email, to_name="", log=None):
+    """Send one system email. Raises if it could not be sent.
+
+    With BREVO_API_KEY set (production and staging) it goes out through Brevo's API. Without
+    one (local development and tests) it uses Django's configured email backend, which prints
+    to the console unless EMAIL_URL is set. Every SignConnect email should go through here: a
+    plain ``send_mail`` call would only ever print to the log on a host that has a Brevo key
+    but no SMTP settings.
+
+    `log` is the logger for a Brevo failure (default: this module's), so callers keep their own
+    log names. The key and the message are never logged.
+    """
+    from django.conf import settings
+    from django.core.mail import send_mail
+
+    log = log or logger
+    brevo_api_key = getattr(settings, "BREVO_API_KEY", "")
+
+    if not brevo_api_key:
+        send_mail(
+            subject,
+            text,
+            settings.DEFAULT_FROM_EMAIL,
+            [to_email],
+            fail_silently=False,
+            html_message=html,
+        )
+        return
+
+    # DEFAULT_FROM_EMAIL may look like "Sign Connect <a@b.com>". Brevo's sender.email must be
+    # the plain address only, so split it into a name and an address first.
+    sender_name, sender_email = parseaddr(settings.DEFAULT_FROM_EMAIL)
+    if not sender_email:
+        # Fail loudly with a clear reason instead of sending Brevo a request it will reject.
+        log.error("DEFAULT_FROM_EMAIL has no valid email address in it")
+        raise RuntimeError("DEFAULT_FROM_EMAIL is not a valid sender address")
+
+    payload = {
+        "sender": {"name": sender_name or "SignConnect", "email": sender_email},
+        "to": [{"email": to_email, "name": to_name or to_email}],
+        "subject": subject,
+        "htmlContent": html,
+        "textContent": text,
+    }
+
+    req = urllib.request.Request(
+        "https://api.brevo.com/v3/smtp/email",
+        data=json.dumps(payload).encode("utf-8"),
+    )
+    req.add_header("accept", "application/json")
+    req.add_header("api-key", brevo_api_key)
+    req.add_header("content-type", "application/json")
+
+    try:
+        with urllib.request.urlopen(req, timeout=10):
+            pass
+    except urllib.error.HTTPError as exc:
+        # Brevo explains the failure in the response body (for example an unrecognised IP or
+        # an unvalidated sender). Log it, but never the key or the message.
+        detail = exc.read().decode("utf-8", "replace")[:300]
+        log.error("Brevo API returned HTTP %s: %s", exc.code, detail)
+        raise RuntimeError("Failed to send email via Brevo") from exc
+    except urllib.error.URLError as exc:
+        log.error("Could not reach Brevo: %s", exc.reason)
+        raise RuntimeError("Failed to send email via Brevo") from exc

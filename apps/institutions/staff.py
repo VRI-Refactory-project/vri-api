@@ -8,10 +8,8 @@ once (see docs/design/V2-006-staff-accounts.md).
 import logging
 import secrets
 
-from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
@@ -19,7 +17,7 @@ from rest_framework.exceptions import ValidationError
 from apps.accounts import recovery
 from apps.audit import services as audit
 from apps.audit.models import AuditLog
-from apps.core.emailing import branded_html
+from apps.core.emailing import branded_html, send_branded_email
 
 from .models import InstitutionStaff, StaffRole
 
@@ -161,10 +159,11 @@ def _send_login_details(membership, admin, temporary_password):
         "You will be asked to choose your own password when you first sign in.\n"
         "If you were not expecting this email, contact your institution's administrator.\n"
     )
-    send_mail(
+    send_branded_email(
         "Your SignConnect staff account",
         body,
-        settings.DEFAULT_FROM_EMAIL,
-        [user.email],
-        html_message=branded_html(body, highlight=temporary_password),
+        branded_html(body, highlight=temporary_password),
+        user.email,
+        user.full_name,
+        log=logger,
     )

@@ -55,6 +55,7 @@ class InstitutionRegistrationSerializer(BaseRegistrationSerializer):
 
 class InstitutionSerializer(serializers.ModelSerializer):
     """An institution as its own users and platform admins see it."""
+    verification_document = serializers.SerializerMethodField()
 
     class Meta:
         model = InstitutionProfile
@@ -65,8 +66,17 @@ class InstitutionSerializer(serializers.ModelSerializer):
             "organisation_type_other",
             "status",
             "created_at",
+            "verification_document",
         ]
         read_only_fields = fields
+
+    def get_verification_document(self, obj):
+        if obj.verification_document:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.verification_document.url)
+            return obj.verification_document.url
+        return None
 
 
 class InstitutionProfileUpdateSerializer(serializers.ModelSerializer):

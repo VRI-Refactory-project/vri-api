@@ -5,10 +5,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.notifications.models import Notification, PushDevice
+from apps.notifications.models import Notification, PushDevice, NotificationPreference
 from apps.notifications.serializers import (
     NotificationSerializer,
     PushDeviceRegistrationSerializer,
+    NotificationPreferenceSerializer,
 )
 from apps.notifications.services import mark_notification_read
 
@@ -108,3 +109,26 @@ class PushDeviceRegistrationView(APIView):
             device.save(update_fields=["is_active", "updated_at"])
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@extend_schema(
+    request=NotificationPreferenceSerializer,
+    responses={200: NotificationPreferenceSerializer},
+)
+class NotificationPreferenceView(APIView):
+    """Read or change what the signed-in person wants to be pushed about."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        preference, _ = NotificationPreference.objects.get_or_create(user=request.user)
+        return Response(NotificationPreferenceSerializer(preference).data)
+
+    def patch(self, request):
+        preference, _ = NotificationPreference.objects.get_or_create(user=request.user)
+        serializer = NotificationPreferenceSerializer(
+            preference, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)

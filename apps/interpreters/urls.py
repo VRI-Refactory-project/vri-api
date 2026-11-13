@@ -14,7 +14,8 @@ from .views import (
     InterpreterProfileDetailView,
     SpecialisationLibraryView,
     WeeklyScheduleView,
-    ListMyScheduledSessionsView
+    ListMyScheduledSessionsView,
+    InterpreterBookedSessionListView,
 )
 
 app_name = "interpreters"
@@ -82,6 +83,11 @@ urlpatterns = [
         "sessions/booked/",
         ListMyScheduledSessionsView.as_view(),
         name="booked-sessions",
+    ),
+    path(
+        "booked-sessions/",
+        InterpreterBookedSessionListView.as_view(),
+        name="interpreter-booked-sessions",
     ),
     path("", include(router.urls)),
 ]

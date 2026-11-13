@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from apps.core.permissions import user_institution
 from apps.interpreters.models import Specialisation
+from apps.realtime.call_status import display_status
 from apps.service_requests.models import RequestOffer, ServiceRequest, SessionInvitation
 from apps.users.photos import photo_path
 
@@ -19,6 +20,8 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
     requester_id = serializers.IntegerField(source="requester.id", read_only=True)
     interpreter_id = serializers.SerializerMethodField()
     interpreter = serializers.SerializerMethodField()
+    # How the call is going (waiting, connecting, connected, ended, failed). Apps show this; `status` is unchanged.
+    display_status = serializers.SerializerMethodField()
 
     class Meta:
         model = ServiceRequest
@@ -32,6 +35,7 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
             "priority",
             "request_key",
             "status",
+            "display_status",
             "assigned_at",
             "cancelled_at",
             "cancel_reason",
@@ -44,6 +48,7 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
             "interpreter_id",
             "interpreter",
             "status",
+            "display_status",
             "assigned_at",
             "cancelled_at",
             "cancel_reason",
@@ -51,6 +56,9 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         extra_kwargs = {"request_key": {"write_only": True, "required": False}}
+
+    def get_display_status(self, obj):
+        return display_status(obj)
 
     def get_interpreter_id(self, obj):
         if obj.status != ServiceRequest.Status.ASSIGNED:

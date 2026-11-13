@@ -162,11 +162,21 @@ WEB_APP_URL = env("WEB_APP_URL", default="https://138.68.41.10")
 # --- Expo Push Notifications ---
 EXPO_PUSH_ENABLED = env.bool("EXPO_PUSH_ENABLED", default=False)
 EXPO_ACCESS_TOKEN = env("EXPO_ACCESS_TOKEN", default="")
+# --- Web Push (browser notifications) ---
+# Off until you turn it on AND set the three values below. Make the key pair once (see .env.example).
+WEB_PUSH_ENABLED = env.bool("WEB_PUSH_ENABLED", default=False)
+WEB_PUSH_VAPID_PUBLIC_KEY = env("WEB_PUSH_VAPID_PUBLIC_KEY", default="")
+WEB_PUSH_VAPID_PRIVATE_KEY = env("WEB_PUSH_VAPID_PRIVATE_KEY", default="")
+WEB_PUSH_CONTACT = env("WEB_PUSH_CONTACT", default="")  # e.g. mailto:you@example.com
 
 # --- Interpreter requests (V2-022) ---
 # How long an interpreter has to answer an offer, and how long a request may wait before it fails.
 REQUEST_OFFER_EXPIRY_SECONDS = env.int("REQUEST_OFFER_EXPIRY_SECONDS", default=60)
 REQUEST_MAX_WAIT_SECONDS = env.int("REQUEST_MAX_WAIT_SECONDS", default=300)
+# Emergency requests (V2-024): a shorter wait, quicker re-offers, and a cap per person per hour.
+EMERGENCY_MAX_WAIT_SECONDS = env.int("EMERGENCY_MAX_WAIT_SECONDS", default=120)
+EMERGENCY_OFFER_EXPIRY_SECONDS = env.int("EMERGENCY_OFFER_EXPIRY_SECONDS", default=30)
+EMERGENCY_REQUESTS_PER_HOUR = env.int("EMERGENCY_REQUESTS_PER_HOUR", default=3)
 # Lead time (in seconds) before an offer expires to send an urgency reminder push notification (V2-037-BE-03)
 INTERPRETER_OFFER_REMINDER_LEAD_TIME = env.int(
     "INTERPRETER_OFFER_REMINDER_LEAD_TIME", default=15
@@ -191,6 +201,10 @@ LIVEKIT_TURN_USERNAME = env("LIVEKIT_TURN_USERNAME", default="")
 LIVEKIT_TURN_CREDENTIAL = env("LIVEKIT_TURN_CREDENTIAL", default="")
 # A call that has not connected this many seconds after the first person joined is marked failed (RT-03).
 CALL_CONNECT_TIMEOUT_SECONDS = env.int("CALL_CONNECT_TIMEOUT_SECONDS", default=60)
+# A session where nobody has joined this many seconds after it was created is marked failed.
+CALL_WAIT_TIMEOUT_SECONDS = env.int("CALL_WAIT_TIMEOUT_SECONDS", default=300)
+# After someone leaves a call, they have this long to come back before the session is settled (V2-033).
+SESSION_RECONNECT_GRACE_WINDOW_SECONDS = env.int("SESSION_RECONNECT_GRACE_WINDOW_SECONDS", default=300)
 
 # --- Real-time (V2-011): Django Channels ---
 # Redis lets every server process reach the same WebSocket groups. Without REDIS_URL (tests, CI)

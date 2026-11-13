@@ -2,6 +2,7 @@ from django.urls import path
 
 from apps.institutions.views import ApproveInstitutionView, RejectInstitutionView
 
+from .user_list import AdminUserListView
 from .views import (
     AdminChangePasswordView,
     AdminInstitutionDeactivateView,
@@ -19,6 +20,7 @@ urlpatterns = [
         AdminChangePasswordView.as_view(),
         name="admin-change-password",
     ),
+    path("users/", AdminUserListView.as_view(), name="admin-users"),
     path(
         "institutions/",
         AdminInstitutionListView.as_view(),

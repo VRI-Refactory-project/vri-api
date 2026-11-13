@@ -135,7 +135,7 @@ class LiveKitWebhookView(APIView):
 
 
 class SessionFeedbackView(APIView):
-    """Submit feedback about the interpreter after a completed session."""
+    """Submit feedback after a completed session (one each for requester and interpreter)."""
 
     permission_classes = [IsAuthenticated]
 
@@ -144,21 +144,32 @@ class SessionFeedbackView(APIView):
         responses={201: SessionFeedbackSerializer},
     )
     @transaction.atomic
-    def post(self, request, session_id):
+    def post(self, request, session_id=None, request_id=None):
+        # The web app knows the request id; other callers may know the video session id.
+        lookup = {"pk": session_id} if session_id else {"service_request_id": request_id}
         video_session = get_object_or_404(
             VideoSession.objects.select_for_update(of=("self",)).select_related(
                 "service_request",
                 "service_request__interpreter",
             ),
-            pk=session_id,
+            **lookup,
         )
 
         service_request = video_session.service_request
 
-        if service_request.requester_id != request.user.pk:
+        interpreter = service_request.interpreter
+        is_requester = service_request.requester_id == request.user.pk
+        is_interpreter = (
+            interpreter is not None and interpreter.user_id == request.user.pk
+        )
+
+        if not (is_requester or is_interpreter):
             return Response(
                 {
-                    "detail": "Only the session requester can submit feedback.",
+                    "detail": (
+                        "Only people who took part in this session "
+                        "can submit feedback."
+                    ),
                 },
                 status=status.HTTP_403_FORBIDDEN,
             )
@@ -182,10 +193,12 @@ class SessionFeedbackView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        if SessionFeedback.objects.filter(video_session=video_session).exists():
+        if SessionFeedback.objects.filter(
+            video_session=video_session, submitted_by=request.user
+        ).exists():
             return Response(
                 {
-                    "detail": "Feedback has already been submitted for this session.",
+                    "detail": "You have already submitted feedback for this session.",
                 },
                 status=status.HTTP_409_CONFLICT,
             )

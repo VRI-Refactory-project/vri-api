@@ -10,7 +10,7 @@ from django.test import TestCase
 
 from apps.realtime.lifecycle import process_livekit_event
 from apps.realtime.models import VideoSession
-from apps.service_requests.models import SessionInvitation
+from apps.service_requests.models import ServiceRequest, SessionInvitation
 from apps.service_requests.services import create_request, respond_to_offer
 from apps.service_requests.test_offers import make_interpreter, make_user
 
@@ -34,6 +34,15 @@ class LiveKitLifecycleTests(TestCase):
         broadcaster = patch("apps.realtime.lifecycle.broadcast_video_session_status")
         self.broadcast = broadcaster.start()
         self.addCleanup(broadcaster.stop)
+
+        # Completing a session on room_finished goes through end_session, which broadcasts itself.
+        for target in (
+            "apps.service_requests.status_broadcast.send_to_session",
+            "apps.realtime.events.broadcast_video_session_status",
+        ):
+            patcher = patch(target)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def make_event(self, event_type, identity=None, room_name=None):
         """Build a small event object with the fields used by lifecycle.py."""
@@ -183,6 +192,15 @@ class LiveKitLifecycleTests(TestCase):
         )
         self.assertIsNotNone(self.video_session.ended_at)
         self.assertIsNotNone(self.service_request.ended_at)
+
+    def test_room_finished_marks_the_session_completed_without_closing_the_room_again(self):
+        with patch("apps.service_requests.services.end_room") as end_room:
+            process_livekit_event(self.make_event("room_finished"))
+
+        self.refresh_session()
+
+        self.assertEqual(self.service_request.status, ServiceRequest.Status.COMPLETED)
+        end_room.assert_not_called()
 
     def test_duplicate_room_finished_does_not_change_end_time(self):
         event = self.make_event("room_finished")
