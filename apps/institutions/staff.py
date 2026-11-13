@@ -1,4 +1,5 @@
 """Institution staff accounts (V2-006): create, change, revoke and reinstate, done by an institution's admins.
+Staff can also change their own name and phone number.
 
 New staff get a temporary password by email ("send account details to staff" in the user flow) and must choose
 their own at first sign-in. Revoking deactivates the account and signs it out everywhere, so it is blocked at
@@ -129,6 +130,20 @@ def reinstate_staff(membership, admin, request=None):
         audit.record(
             AuditLog.Event.STAFF_REINSTATED, admin, request, target_user=membership.user
         )
+    return membership
+
+
+def update_own_profile(membership, data, request=None):
+    """A staff member changes their own name and/or phone number. `data` is validated
+    OwnProfileUpdateSerializer data."""
+    if not data:
+        return membership
+    user = membership.user
+    with transaction.atomic():
+        for field, value in data.items():
+            setattr(user, field, value)
+        user.save(update_fields=list(data))
+        audit.record(AuditLog.Event.STAFF_UPDATED, user, request, target_user=user)
     return membership
 
 

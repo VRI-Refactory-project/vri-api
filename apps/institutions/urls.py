@@ -51,6 +51,21 @@ urlpatterns = [
         name="institution-staff-reinstate",
     ),
     path(
+        "me/profile/",
+        views.MyStaffProfileView.as_view(),
+        name="institution-my-profile",
+    ),
+    path(
+        "me/sessions/",
+        views.InstitutionSessionListView.as_view(),
+        name="institution-sessions",
+    ),
+    path(
+        "me/scheduled-sessions/",
+        views.InstitutionScheduledSessionListView.as_view(),
+        name="institution-scheduled-sessions",
+    ),
+    path(
         "me/document/",
         InstitutionDocumentUploadView.as_view(),
         name="institution-document-upload",

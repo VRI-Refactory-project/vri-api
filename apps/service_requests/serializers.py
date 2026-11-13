@@ -105,10 +105,14 @@ class InterpreterSessionSerializer(serializers.ModelSerializer):
         return photo_path(obj.requester)
 
     def get_duration_minutes(self, obj) -> int | None:
-        """How long it lasted, in whole minutes. None while the session is still running."""
-        if obj.assigned_at is None or obj.ended_at is None:
-            return None
-        return max(1, round((obj.ended_at - obj.assigned_at).total_seconds() / 60))
+        return session_duration_minutes(obj)
+
+
+def session_duration_minutes(request) -> int | None:
+    """How long a session lasted, in whole minutes. None while it is still running or never started."""
+    if request.assigned_at is None or request.ended_at is None:
+        return None
+    return max(1, round((request.ended_at - request.assigned_at).total_seconds() / 60))
 
 
 class OfferedRequestSerializer(serializers.ModelSerializer):

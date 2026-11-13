@@ -1,3 +1,4 @@
+
 """Dashboard data for each roles.
 
 Deaf, interpreter, and administrator dashboard endpoints are restricted
@@ -35,6 +36,7 @@ from apps.interpreters.models import (
     VerificationStatus,
 )
 from apps.interpreters.services import get_eligible_interpreters
+from apps.notifications.models import Notification
 from apps.notifications.models import Notification
 from apps.realtime.models import VideoSession
 from apps.service_requests.models import ServiceRequest
