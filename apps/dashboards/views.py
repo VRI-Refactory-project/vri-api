@@ -37,7 +37,6 @@ from apps.interpreters.models import (
 )
 from apps.interpreters.services import get_eligible_interpreters
 from apps.notifications.models import Notification
-from apps.notifications.models import Notification
 from apps.realtime.models import VideoSession
 from apps.service_requests.models import ServiceRequest
 from apps.users.photos import photo_path
