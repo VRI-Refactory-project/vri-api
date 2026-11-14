@@ -67,6 +67,7 @@ urlpatterns = [
         "api/v1/institutions/",
         include("apps.institutions.urls"),
     ),  # V2-005, the institution's own data
+    path("api/v1/community/", include("apps.community.urls")),  # Deaf users connecting
     path("api/v1/auth/", include("apps.users.urls")),  # Web Registration endpoint
     path(
         "api/v1/administration/",

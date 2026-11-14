@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.service_requests",
     "apps.realtime",
+    "apps.community",
 ]
 
 MIDDLEWARE = [
