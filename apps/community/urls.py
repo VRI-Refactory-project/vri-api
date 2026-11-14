@@ -26,4 +26,15 @@ urlpatterns = [
         views.ConnectionDetailView.as_view(),
         name="connection-detail",
     ),
+    path("conversations/", views.ConversationListView.as_view(), name="conversations"),
+    path(
+        "conversations/<int:pk>/messages/",
+        views.MessageListView.as_view(),
+        name="messages",
+    ),
+    path(
+        "conversations/<int:pk>/read/",
+        views.ConversationReadView.as_view(),
+        name="conversation-read",
+    ),
 ]

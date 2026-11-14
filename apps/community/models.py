@@ -46,3 +46,34 @@ class Connection(models.Model):
 
     def __str__(self):
         return f"{self.requester_id} -> {self.addressee_id} ({self.status})"
+
+
+class Message(models.Model):
+    """One text message between two connected people.
+
+    A conversation is the connection itself: there is one conversation per accepted connection, and
+    removing the connection removes its messages.
+    """
+
+    MAX_LENGTH = 2000
+
+    connection = models.ForeignKey(
+        Connection, on_delete=models.CASCADE, related_name="messages"
+    )
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="community_messages_sent",
+    )
+    body = models.TextField(max_length=MAX_LENGTH)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    read_at = models.DateTimeField(
+        null=True, blank=True, help_text="When the other person opened it."
+    )
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        indexes = [models.Index(fields=["connection", "id"])]
+
+    def __str__(self):
+        return f"{self.sender_id}: {self.body[:30]}"

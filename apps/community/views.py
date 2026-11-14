@@ -12,10 +12,15 @@ from . import services
 from .models import Connection
 from .serializers import (
     ConnectionSerializer,
+    ConversationSerializer,
+    MessagePageSerializer,
+    MessageSerializer,
+    NewMessageSerializer,
     PersonListItemSerializer,
     RequestSerializer,
     SendRequestResultSerializer,
     SendRequestSerializer,
+    message_data,
     person_data,
 )
 
@@ -239,4 +244,108 @@ class ConnectionDetailView(APIView):
         if connection is None:
             raise Http404
         connection.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# --- Messages ---
+
+DEFAULT_PAGE = 50
+MAX_PAGE = 100
+
+
+def _conversation(request, pk):
+    connection = services.conversation_for(request.user, pk)
+    if connection is None:
+        raise Http404
+    return connection
+
+
+class ConversationListView(APIView):
+    permission_classes = [IsDeafUser]
+
+    @extend_schema(
+        tags=TAGS,
+        summary="Your conversations",
+        description="One per connection, most recent activity first, with the unread count.",
+        responses=ConversationSerializer(many=True),
+    )
+    def get(self, request):
+        rows = [
+            {
+                "id": connection.id,
+                "person": person_data(_other(request.user, connection)),
+                "last_message": message_data(last, request.user) if last else None,
+                "unread_count": unread,
+            }
+            for connection, last, unread in services.conversations_of(request.user)
+        ]
+        return Response(ConversationSerializer(rows, many=True).data)
+
+
+class MessageListView(APIView):
+    permission_classes = [IsDeafUser]
+
+    @extend_schema(
+        tags=TAGS,
+        summary="Messages in a conversation",
+        description=(
+            f"The newest {DEFAULT_PAGE} messages, oldest first. When `has_more` is true, ask again "
+            "with `before` set to the id of the oldest message you have."
+        ),
+        parameters=[
+            OpenApiParameter(
+                "before", int, description="Only messages with a lower id."
+            ),
+            OpenApiParameter("limit", int, description=f"How many, up to {MAX_PAGE}."),
+        ],
+        responses=MessagePageSerializer,
+    )
+    def get(self, request, pk):
+        connection = _conversation(request, pk)
+        try:
+            before = request.query_params.get("before")
+            before = int(before) if before else None
+            limit = int(request.query_params.get("limit", DEFAULT_PAGE))
+        except ValueError:
+            raise ValidationError(
+                {"detail": "before and limit must be numbers."}
+            ) from None
+        limit = max(1, min(limit, MAX_PAGE))
+        messages, has_more = services.messages_in(connection, before, limit)
+        return Response(
+            {
+                "messages": [message_data(m, request.user) for m in messages],
+                "has_more": has_more,
+            }
+        )
+
+    @extend_schema(
+        tags=TAGS,
+        summary="Send a message",
+        request=NewMessageSerializer,
+        responses={201: MessageSerializer},
+    )
+    def post(self, request, pk):
+        connection = _conversation(request, pk)
+        serializer = NewMessageSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        message = services.send_message(
+            connection, request.user, serializer.validated_data["body"]
+        )
+        return Response(
+            message_data(message, request.user), status=status.HTTP_201_CREATED
+        )
+
+
+class ConversationReadView(APIView):
+    permission_classes = [IsDeafUser]
+
+    @extend_schema(
+        tags=TAGS,
+        summary="Mark the other person's messages as read",
+        request=None,
+        responses={204: None},
+    )
+    def post(self, request, pk):
+        services.mark_read(_conversation(request, pk), request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
