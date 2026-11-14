@@ -20,6 +20,8 @@ from apps.interpreters.models import (
     InterpreterProfile,
     VerificationStatus,
 )
+from apps.realtime.models import VideoSession
+from apps.service_requests.models import ServiceRequest
 
 User = get_user_model()
 PASSWORD = "Sign-Connect-2026"
@@ -372,6 +374,57 @@ class InstitutionDashboardTests(TestCase):
             created_by=self.institution_user,
         )
 
+    def create_institution_request(self, phone, status):
+        requester = make_user(
+            User.Role.INSTITUTION,
+            phone,
+            full_name="Institution Requester",
+        )
+
+        InstitutionStaff.objects.create(
+            institution=self.institution,
+            user=requester,
+            role=StaffRole.STAFF,
+            created_by=self.institution_user,
+        )
+
+        return ServiceRequest.objects.create(
+            requester=requester,
+            status=status,
+        )
+
+    def test_dashboard_returns_correct_request_analytics(self):
+        statuses = [
+            ServiceRequest.Status.CREATED,
+            ServiceRequest.Status.PENDING,
+            ServiceRequest.Status.OFFERED,
+            ServiceRequest.Status.ASSIGNED,
+            ServiceRequest.Status.COMPLETED,
+            ServiceRequest.Status.CANCELLED,
+            ServiceRequest.Status.FAILED,
+        ]
+
+        for index, status in enumerate(statuses):
+            self.create_institution_request(
+                f"07000009{index:02d}",
+                status,
+            )
+
+        self.client.force_authenticate(user=self.institution_user)
+
+        response = self.client.get(self.URL)
+
+        self.assertEqual(response.status_code, 200)
+
+        analytics = response.data["session_analytics"]
+
+        self.assertEqual(analytics["total_requests"], 7)
+        self.assertEqual(analytics["pending_requests"], 3)
+        self.assertEqual(analytics["assigned_requests"], 1)
+        self.assertEqual(analytics["completed_requests"], 1)
+        self.assertEqual(analytics["cancelled_requests"], 1)
+        self.assertEqual(analytics["failed_requests"], 1)
+
     def test_institution_user_receives_dashboard_data(self):
         self.client.force_authenticate(user=self.institution_user)
 
@@ -393,6 +446,96 @@ class InstitutionDashboardTests(TestCase):
         self.assertEqual(response.data["staff_summary"]["total"], 1)
         self.assertEqual(response.data["staff_summary"]["active"], 1)
         self.assertEqual(response.data["staff_summary"]["revoked"], 0)
+
+    def test_dashboard_returns_video_session_analytics(self):
+        now = timezone.now()
+
+        sessions = [
+            (VideoSession.Status.WAITING, None, None),
+            (VideoSession.Status.CONNECTING, None, None),
+            (VideoSession.Status.CONNECTED, now, None),
+            (
+                VideoSession.Status.ENDED,
+                now - timedelta(seconds=120),
+                now,
+            ),
+            (
+                VideoSession.Status.ENDED,
+                now - timedelta(seconds=60),
+                now,
+            ),
+            (VideoSession.Status.FAILED, None, None),
+        ]
+
+        for index, (status, connected_at, ended_at) in enumerate(sessions):
+            service_request = self.create_institution_request(
+                f"07000109{index:02d}",
+                ServiceRequest.Status.ASSIGNED,
+            )
+
+            VideoSession.objects.create(
+                service_request=service_request,
+                status=status,
+                connected_at=connected_at,
+                ended_at=ended_at,
+            )
+
+        self.client.force_authenticate(user=self.institution_user)
+
+        response = self.client.get(self.URL)
+
+        self.assertEqual(response.status_code, 200)
+
+        analytics = response.data["session_analytics"]
+
+        self.assertEqual(analytics["total_video_sessions"], 6)
+        self.assertEqual(analytics["waiting_video_sessions"], 1)
+        self.assertEqual(analytics["connecting_video_sessions"], 1)
+        self.assertEqual(analytics["connected_video_sessions"], 1)
+        self.assertEqual(analytics["ended_video_sessions"], 2)
+        self.assertEqual(analytics["failed_video_sessions"], 1)
+
+        self.assertEqual(
+            analytics["average_call_duration_seconds"],
+            90,
+        )
+
+    def test_dashboard_excludes_other_institution_requests(self):
+        other_user = make_user(
+            User.Role.INSTITUTION,
+            "0700020900",
+            full_name="Other Institution Admin",
+        )
+
+        other_institution = InstitutionProfile.objects.create(
+            user=other_user,
+            organisation_name="Other Hospital",
+            organisation_type="HOSPITAL",
+            status=InstitutionStatus.PENDING,
+        )
+
+        InstitutionStaff.objects.create(
+            institution=other_institution,
+            user=other_user,
+            role=StaffRole.ADMIN,
+            created_by=other_user,
+        )
+
+        ServiceRequest.objects.create(
+            requester=other_user,
+            status=ServiceRequest.Status.COMPLETED,
+        )
+
+        self.client.force_authenticate(user=self.institution_user)
+
+        response = self.client.get(self.URL)
+
+        self.assertEqual(response.status_code, 200)
+
+        analytics = response.data["session_analytics"]
+
+        self.assertEqual(analytics["total_requests"], 0)
+        self.assertEqual(analytics["completed_requests"], 0)
 
     def test_unauthenticated_user_cannot_access_dashboard(self):
         response = self.client.get(self.URL)
