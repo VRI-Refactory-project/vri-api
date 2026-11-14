@@ -1,10 +1,10 @@
 """Rules for who can connect with whom. Views call these so the rules live in one place."""
 
 from django.contrib.auth import get_user_model
-from django.db.models import Q
+from django.db.models import Count, OuterRef, Q, Subquery
 from django.utils import timezone
 
-from .models import Connection
+from .models import Connection, Message
 
 User = get_user_model()
 
@@ -89,3 +89,85 @@ def decline(connection):
     connection.status = Connection.Status.DECLINED
     connection.responded_at = timezone.now()
     connection.save(update_fields=["status", "responded_at"])
+
+
+# --- Messages ---
+
+
+def conversation_for(user, pk):
+    """The accepted connection `pk` if `user` is one of its two people, else None."""
+    return (
+        Connection.objects.filter(
+            Q(requester=user) | Q(addressee=user),
+            pk=pk,
+            status=Connection.Status.ACCEPTED,
+        )
+        .select_related(
+            "requester__profile",
+            "requester__photo",
+            "addressee__profile",
+            "addressee__photo",
+        )
+        .first()
+    )
+
+
+def conversations_of(user):
+    """Each accepted connection of `user` with its latest message and unread count.
+
+    Returns a list of (connection, last_message or None, unread_count), most recent activity first.
+    """
+    connections = list(
+        Connection.objects.filter(
+            Q(requester=user) | Q(addressee=user), status=Connection.Status.ACCEPTED
+        )
+        .select_related(
+            "requester__profile",
+            "requester__photo",
+            "addressee__profile",
+            "addressee__photo",
+        )
+        .annotate(
+            last_message_id=Subquery(
+                Message.objects.filter(connection=OuterRef("pk"))
+                .order_by("-id")
+                .values("id")[:1]
+            )
+        )
+    )
+    last = Message.objects.in_bulk(
+        [c.last_message_id for c in connections if c.last_message_id]
+    )
+    unread = dict(
+        Message.objects.filter(connection__in=connections, read_at__isnull=True)
+        .exclude(sender=user)
+        .values_list("connection")
+        .annotate(total=Count("id"))
+    )
+    rows = [(c, last.get(c.last_message_id), unread.get(c.id, 0)) for c in connections]
+    rows.sort(
+        key=lambda r: r[1].created_at if r[1] else r[0].responded_at, reverse=True
+    )
+    return rows
+
+
+def messages_in(connection, before=None, limit=50):
+    """(messages oldest first, has_more): the newest `limit` messages, or the ones before id `before`."""
+    queryset = connection.messages.order_by("-id")
+    if before is not None:
+        queryset = queryset.filter(id__lt=before)
+    page = list(queryset[: limit + 1])
+    return page[:limit][::-1], len(page) > limit
+
+
+def send_message(connection, sender, body):
+    return Message.objects.create(connection=connection, sender=sender, body=body)
+
+
+def mark_read(connection, reader):
+    """Mark everything the other person sent as read. Returns how many were unread."""
+    return (
+        connection.messages.filter(read_at__isnull=True)
+        .exclude(sender=reader)
+        .update(read_at=timezone.now())
+    )
