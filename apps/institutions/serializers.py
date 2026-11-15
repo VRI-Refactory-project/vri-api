@@ -7,6 +7,7 @@ from apps.accounts.serializers import (
     BaseRegistrationSerializer,
     PlusPhoneNumberField,
     clean_full_name,
+    ensure_phone_unused,
 )
 from apps.interpreters.models import ScheduledSession
 from apps.realtime.call_status import display_status
@@ -262,14 +263,7 @@ class OwnProfileUpdateSerializer(serializers.Serializer):
         return clean_full_name(value)
 
     def validate_phone_number(self, value):
-        others = User.objects.filter(phone_number=value).exclude(
-            pk=self.context["user"].pk
-        )
-        if others.exists():
-            raise serializers.ValidationError(
-                "An account with this phone number already exists."
-            )
-        return value
+        return ensure_phone_unused(value, current_user=self.context["user"])
 
 
 # --- What an institution's administrators see of its staff's sessions -------------------------------

@@ -27,7 +27,7 @@ from apps.core.permissions import (
     user_staff_membership,
 )
 from apps.interpreters.models import ScheduledSession
-from apps.service_requests.models import ServiceRequest
+from apps.service_requests.models import OPEN_STATUSES, ServiceRequest
 
 from . import staff
 from .models import InstitutionProfile, InstitutionStaff, InstitutionStatus
@@ -506,12 +506,8 @@ class InstitutionSessionListView(APIView):
 
     permission_classes = [IsInstitutionAdmin]
 
-    ACTIVE = (
-        ServiceRequest.Status.CREATED,
-        ServiceRequest.Status.PENDING,
-        ServiceRequest.Status.OFFERED,
-        ServiceRequest.Status.ASSIGNED,
-    )
+    # Still looking for an interpreter, or with one now.
+    ACTIVE = (*OPEN_STATUSES, ServiceRequest.Status.ASSIGNED)
 
     @extend_schema(
         tags=["Institution Sessions"],
