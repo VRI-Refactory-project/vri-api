@@ -289,11 +289,7 @@ def with_verification_status(queryset):
 
 def search_filter(text):
     """Match name, email or phone number. A local number (0772...) also matches +256772..."""
-    match = (
-        Q(full_name__icontains=text)
-        | Q(email__icontains=text)
-        | Q(phone_number__icontains=text)
-    )
+    match = Q(full_name__icontains=text) | Q(email__icontains=text) | Q(phone_number__icontains=text)
     digits = text.replace(" ", "")
     if digits.isdigit() and digits.startswith("0") and len(digits) > 1:
         match |= Q(phone_number__icontains=digits.lstrip("0"))
@@ -309,9 +305,7 @@ class AdminUserListView(APIView):
         tags=["Administration Users"],
         summary="List users (administrators only)",
         parameters=[
-            OpenApiParameter(
-                "search", OpenApiTypes.STR, description="Name, email or phone number."
-            ),
+            OpenApiParameter("search", OpenApiTypes.STR, description="Name, email or phone number."),
             OpenApiParameter(
                 "role",
                 OpenApiTypes.STR,
@@ -484,3 +478,39 @@ class AdminUserDeleteView(APIView):
             user.delete()
 
         return Response({"detail": f"{name} deleted."}, status=status.HTTP_204_NO_CONTENT)
+
+
+class AdminUserDetailView(APIView):
+    """Retrieve or update a single user."""
+
+    permission_classes = [IsAdminRole]
+
+    def patch(self, request, pk):
+        user = get_object_or_404(User, pk=pk)
+
+        # Only allow updating these fields
+        name = request.data.get("name")
+        email = request.data.get("email")
+        phone = request.data.get("phone")
+
+        if name is not None:
+            user.full_name = name.strip()
+        if email is not None:
+            user.email = email.strip()
+        if phone is not None:
+            user.phone_number = phone.strip()
+
+        user.save(update_fields=["full_name", "email", "phone_number"])
+
+        return Response(
+            {
+                "id": user.pk,
+                "full_name": user.full_name,
+                "email": user.email or "",
+                "phone_number": str(user.phone_number),
+                "role": user.role,
+                "verification_status": "verified",  # simplified for now
+                "created_at": user.date_joined,
+                "last_login": user.last_login,
+            }
+        )

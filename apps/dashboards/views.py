@@ -76,7 +76,6 @@ AdminDashboardSerializer = inline_serializer(
         "top_session_types": serializers.ListField(child=serializers.DictField()),
         "performance": serializers.DictField(),
         "unread_notifications": serializers.IntegerField(),
-        # 👇 NEW: Real interpreter availability fields
         "available_interpreters": serializers.IntegerField(),
         "offline_interpreters": serializers.IntegerField(),
     },
@@ -309,7 +308,6 @@ class AdminDashboardView(APIView):
             read_at__isnull=True,
         ).count()
 
-        # 👇 NEW: Real interpreter availability breakdown
         interpreters_qs = InterpreterProfile.objects.filter(
             verification_status=VerificationStatus.APPROVED,
             user__is_active=True,
@@ -355,7 +353,6 @@ class AdminDashboardView(APIView):
                     "completion_trend": "+4%",
                 },
                 "unread_notifications": unread_notifications,
-                # 👇 NEW: Real availability
                 "available_interpreters": available_interpreters,
                 "offline_interpreters": offline_interpreters,
             }

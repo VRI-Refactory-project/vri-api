@@ -7,6 +7,7 @@ from .user_list import (
     AdminUserApproveView,
     AdminUserDeactivateView,
     AdminUserDeleteView,
+    AdminUserDetailView,
 )
 from .views import (
     AdminChangePasswordView,
@@ -54,4 +55,5 @@ urlpatterns = [
         AdminInstitutionDeactivateView.as_view(),
         name="admin-institution-deactivate",
     ),
+    path("users/<int:pk>/", AdminUserDetailView.as_view(), name="admin-user-detail"),
 ]
