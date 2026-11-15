@@ -2,7 +2,12 @@ from django.urls import path
 
 from apps.institutions.views import ApproveInstitutionView, RejectInstitutionView
 
-from .user_list import AdminUserListView
+from .user_list import (
+    AdminUserListView,
+    AdminUserApproveView,
+    AdminUserDeactivateView,
+    AdminUserDeleteView,
+)
 from .views import (
     AdminChangePasswordView,
     AdminInstitutionDeactivateView,
@@ -21,6 +26,9 @@ urlpatterns = [
         name="admin-change-password",
     ),
     path("users/", AdminUserListView.as_view(), name="admin-users"),
+    path("users/<int:pk>/approve/", AdminUserApproveView.as_view(), name="admin-user-approve"),
+    path("users/<int:pk>/deactivate/", AdminUserDeactivateView.as_view(), name="admin-user-deactivate"),
+    path("users/<int:pk>/delete/", AdminUserDeleteView.as_view(), name="admin-user-delete"),
     path(
         "institutions/",
         AdminInstitutionListView.as_view(),
