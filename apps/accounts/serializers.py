@@ -41,6 +41,19 @@ def clean_full_name(value):
     return name
 
 
+def ensure_phone_unused(value, current_user=None):
+    """Blocks a phone number that another account already uses. `current_user` is left out of the check, so
+    someone saving their own unchanged number is not refused."""
+    others = User.objects.filter(phone_number=value)
+    if current_user is not None:
+        others = others.exclude(pk=current_user.pk)
+    if others.exists():
+        raise serializers.ValidationError(
+            "An account with this phone number already exists."
+        )
+    return value
+
+
 class UserSerializer(serializers.ModelSerializer):
     """Public view of a user. Reuse this inside role-specific profile responses."""
 
@@ -129,11 +142,7 @@ class BaseRegistrationSerializer(serializers.Serializer):
         return clean_full_name(value)
 
     def validate_phone_number(self, value):
-        if User.objects.filter(phone_number=value).exists():
-            raise serializers.ValidationError(
-                "An account with this phone number already exists."
-            )
-        return value
+        return ensure_phone_unused(value)
 
     def validate_email(self, value):
         if not value:
