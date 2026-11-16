@@ -7,6 +7,7 @@ from rest_framework.test import APITestCase
 
 from apps.community.models import Connection
 from apps.users.models import UserProfile
+from apps.notifications.models import Notification
 
 User = get_user_model()
 
@@ -278,3 +279,35 @@ class CancelAndRemoveTests(CommunityBase):
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(Connection.objects.count(), 1)
+
+
+class NotificationTests(CommunityBase):
+    def test_asking_someone_to_connect_notifies_them(self):
+        self.ask(self.sarah)
+
+        notification = Notification.objects.get()
+        self.assertEqual(notification.user, self.sarah)
+        self.assertEqual(
+            notification.category, Notification.Category.CONNECTION_REQUEST
+        )
+
+    def test_accepting_notifies_the_person_who_asked(self):
+        self.ask(self.sarah)
+        request_id = Connection.objects.get().id
+        self.client.force_authenticate(self.sarah)
+        self.client.post(reverse("community:request-accept", args=[request_id]))
+
+        notification = Notification.objects.get(
+            category=Notification.Category.CONNECTION_ACCEPTED
+        )
+        self.assertEqual(notification.user, self.me)
+
+    def test_declining_tells_nobody(self):
+        self.ask(self.sarah)
+        request_id = Connection.objects.get().id
+        self.client.force_authenticate(self.sarah)
+        self.client.post(reverse("community:request-decline", args=[request_id]))
+
+        # Only the original "new request" notification exists, and it went to Sarah.
+        self.assertEqual(Notification.objects.count(), 1)
+        self.assertFalse(Notification.objects.filter(user=self.me).exists())
