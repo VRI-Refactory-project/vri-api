@@ -270,12 +270,15 @@ class OwnProfileUpdateSerializer(serializers.Serializer):
 
 
 def _staff_fields(user):
-    """Who in the institution a session belongs to. The department is saved as the job title."""
-    membership = user.institution_staff
+    """Who in the institution a session belongs to. The department is saved as the job title.
+    Sessions stay with the institution they were made for (V2-013), so the person may no longer be a
+    staff member: then there is no staff id or department."""
+    # A missing one-to-one raises an AttributeError subclass, so getattr's default covers it.
+    membership = getattr(user, "institution_staff", None)
     return {
-        "id": membership.id,
+        "id": membership.id if membership else None,
         "name": user.full_name,
-        "department": membership.job_title,
+        "department": membership.job_title if membership else "",
     }
 
 

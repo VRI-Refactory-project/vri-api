@@ -390,6 +390,7 @@ class InstitutionDashboardTests(TestCase):
 
         return ServiceRequest.objects.create(
             requester=requester,
+            institution=self.institution,  # as create_request() tags staff requests (V2-013)
             status=status,
         )
 
@@ -523,6 +524,7 @@ class InstitutionDashboardTests(TestCase):
 
         ServiceRequest.objects.create(
             requester=other_user,
+            institution=other_institution,
             status=ServiceRequest.Status.COMPLETED,
         )
 

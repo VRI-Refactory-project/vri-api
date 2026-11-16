@@ -7,6 +7,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from apps.core.permissions import user_institution
 from apps.service_requests.models import ServiceRequest
 from apps.service_requests.test_offers import make_interpreter
 
@@ -32,6 +33,8 @@ def make_request(
     made = timezone.make_aware(datetime.combine(day, time(hour)))
     request = ServiceRequest.objects.create(
         requester=requester,
+        # Tagged as create_request() does for staff (V2-013).
+        institution=user_institution(requester),
         interpreter=interpreter,
         status=request_status,
         specialisation_required=kind,
