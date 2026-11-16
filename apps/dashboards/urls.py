@@ -79,4 +79,3 @@ urlpatterns = [
         name="dashboard-admin-audit-logs",
     ),
 ]
-

@@ -925,7 +925,6 @@
 #             return Response({"error": "Invalid or expired token."}, status=400)
 
 
-
 """Dashboard data for each roles.
 
 Deaf, interpreter, and administrator dashboard endpoints are restricted
