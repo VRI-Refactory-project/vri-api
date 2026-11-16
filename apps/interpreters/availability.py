@@ -2,7 +2,7 @@ from datetime import time, timedelta
 
 from django.utils import timezone
 
-from .models import DateException, VerificationStatus, WeeklyAvailability
+from .models import DateException, VerificationStatus, WeeklyAvailability, InterpreterAvailability
 
 # Used when an interpreter has not saved a row for a weekday yet.
 # Placeholder default: Monday to Friday, 08:00 to 17:00. Confirm with the team.
@@ -67,8 +67,23 @@ def unavailable_reason(interpreter, now=None):
     if not interpreter.is_available:
         return "switched_off"
 
-    # Otherwise look at today's hours (date exception, then default week).
+    # Saved availability periods take priority over weekly schedules.
+    has_saved_periods = InterpreterAvailability.objects.filter(
+        interpreter=interpreter
+    ).exists()
+
+    if has_saved_periods:
+        available_now = InterpreterAvailability.objects.filter(
+            interpreter=interpreter,
+            start_at__lte=now,
+            end_at__gt=now,
+        ).exists()
+
+        return None if available_now else "outside_hours"
+
+    # Otherwise use today's hours (date exception, then weekly schedule).
     available, start, end = hours_for(interpreter, now.date())
+
     if not available or start is None or end is None:
         return "day_off"
 

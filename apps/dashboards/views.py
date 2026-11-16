@@ -57,6 +57,7 @@ from apps.notifications.models import Notification
 from apps.realtime.models import VideoSession
 from apps.service_requests.models import ServiceRequest
 from apps.users.photos import photo_path
+from apps.interpreters.availability import unavailable_reason
 
 User = get_user_model()
 
@@ -391,6 +392,48 @@ class AdminDashboardView(APIView):
                 "offline_interpreters": offline_interpreters,
             }
         )
+
+
+class AdminInterpreterAvailabilityView(APIView):
+    """Current availability of approved, active interpreters."""
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request):
+        profiles = (
+            InterpreterProfile.objects.filter(
+                verification_status=VerificationStatus.APPROVED,
+                user__is_active=True,
+            )
+            .select_related("user")
+            .order_by("user__full_name")
+        )
+
+        interpreters = []
+
+        for profile in profiles:
+            reason = unavailable_reason(profile)
+
+            interpreters.append({
+                "id": profile.pk,
+                "name": profile.user.full_name,
+                "photo_url": photo_path(profile.user),
+                "is_available": profile.is_available,
+                "available_now": reason is None,
+                "reason": reason,
+            })
+
+        available = sum(
+            1 for interpreter in interpreters
+            if interpreter["available_now"]
+        )
+
+        return Response({
+            "total": len(interpreters),
+            "available": available,
+            "unavailable": len(interpreters) - available,
+            "interpreters": interpreters,
+        })
 
 
 class AdminUpcomingSessionsView(APIView):
