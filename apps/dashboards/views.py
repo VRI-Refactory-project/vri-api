@@ -6,14 +6,27 @@ by shared permission classes in apps/core/permissions.py.
 """
 
 from datetime import date, timedelta
+from io import BytesIO
 
 from django.contrib.auth import get_user_model
 from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.text import slugify
 from drf_spectacular.utils import extend_schema, inline_serializer
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import (
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 from rest_framework import serializers
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -29,7 +42,11 @@ from apps.core.permissions import (
     IsDeafUser,
     user_staff_membership,
 )
-from apps.institutions.models import InstitutionProfile, InstitutionStatus
+from apps.institutions.models import (
+    InstitutionProfile,
+    InstitutionStaff,
+    InstitutionStatus,
+)
 from apps.interpreters.models import (
     InterpreterProfile,
     ScheduledSession,
@@ -135,6 +152,23 @@ InstitutionDashboardSerializer = inline_serializer(
         ),
     },
 )
+
+
+class InstitutionUsageFilterSerializer(serializers.Serializer):
+    start_date = serializers.DateField(required=False)
+    end_date = serializers.DateField(required=False)
+    staff_id = serializers.IntegerField(required=False, min_value=1)
+
+    def validate(self, attrs):
+        start_date = attrs.get("start_date")
+        end_date = attrs.get("end_date")
+
+        if start_date and end_date and start_date > end_date:
+            raise serializers.ValidationError({
+                "end_date": "End date must be on or after start date."
+            })
+
+        return attrs
 
 
 class DeafDashboardView(APIView):
@@ -549,6 +583,267 @@ class InstitutionDashboardView(APIView):
                 },
             }
         )
+
+
+class InstitutionUsageView(APIView):
+    """Usage analytics for the authenticated institution."""
+
+    permission_classes = [HasInstitutionalRole]
+
+    @extend_schema(
+        tags=["Dashboards"],
+        summary="Institutional VRI usage analytics",
+        responses={
+            200: serializers.DictField(),
+        },
+    )
+    def get(self, request):
+        membership = user_staff_membership(request.user)
+
+        if membership is None:
+            raise PermissionDenied(
+                "Your account is not linked to an institution."
+            )
+
+        institution = membership.institution
+
+        # Validate query parameters.
+        filter_serializer = InstitutionUsageFilterSerializer(
+            data=request.query_params
+        )
+        filter_serializer.is_valid(raise_exception=True)
+
+        filters = filter_serializer.validated_data
+
+        # Retrieve only sessions belonging to this institution.
+        sessions = VideoSession.objects.filter(
+            service_request__requester__institution_staff__institution=institution
+        )
+
+        # Apply date filters.
+        if filters.get("start_date"):
+            sessions = sessions.filter(
+                created_at__date__gte=filters["start_date"]
+            )
+
+        if filters.get("end_date"):
+            sessions = sessions.filter(
+                created_at__date__lte=filters["end_date"]
+            )
+
+        # Apply staff filter.
+        staff_id = filters.get("staff_id")
+
+        if staff_id is not None:
+            staff_member = InstitutionStaff.objects.filter(
+                pk=staff_id,
+                institution=institution,
+            ).first()
+
+            if staff_member is None:
+                raise ValidationError({
+                    "staff_id": (
+                        "This staff member does not belong to your institution."
+                    )
+                })
+
+            sessions = sessions.filter(
+                service_request__requester__institution_staff=staff_member
+            )
+
+        # Aggregate session counts by type.
+        session_types = (
+            sessions
+            .values("service_request__specialisation_required")
+            .annotate(count=Count("id"))
+            .order_by("-count")
+        )
+
+        formatted_session_types = [
+            {
+                "type": item["service_request__specialisation_required"],
+                "count": item["count"],
+            }
+            for item in session_types
+        ]
+
+        # Aggregate session usage by staff member.
+        staff_usage = (
+            sessions
+            .annotate(
+                staff_id=F(
+                    "service_request__requester__institution_staff__id"
+                ),
+                staff_name=F(
+                    "service_request__requester__full_name"
+                ),
+            )
+            .values("staff_id", "staff_name")
+            .annotate(session_count=Count("id"))
+            .order_by("-session_count")
+        )
+
+        formatted_staff_usage = [
+            {
+                "staff_id": item["staff_id"],
+                "staff_name": item["staff_name"],
+                "session_count": item["session_count"],
+            }
+            for item in staff_usage
+        ]
+
+        return Response({
+            "total_sessions": sessions.count(),
+            "session_types": formatted_session_types,
+            "staff_usage": formatted_staff_usage,
+            "filters": {
+                "start_date": filters.get("start_date"),
+                "end_date": filters.get("end_date"),
+                "staff_id": staff_id,
+            },
+        })
+
+
+class InstitutionDashboardPDFExportView(APIView):
+    """Generate a PDF report for the signed-in institution."""
+
+    permission_classes = [HasInstitutionalRole]
+
+    @extend_schema(
+        tags=["Dashboards"],
+        summary="Export institutional dashboard analytics as PDF",
+        responses={200: {"type": "string", "format": "binary"}},
+    )
+    def get(self, request):
+        # Reuse the existing dashboard data and its institution-level filtering.
+        dashboard_response = InstitutionDashboardView().get(request)
+        data = dashboard_response.data
+
+        institution = data["institution"]
+        staff = data["staff_summary"]
+        analytics = data["session_analytics"]
+
+        buffer = BytesIO()
+
+        document = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=40,
+            leftMargin=40,
+            topMargin=40,
+            bottomMargin=40,
+        )
+
+        styles = getSampleStyleSheet()
+        story = []
+
+        # Report heading
+        story.append(
+            Paragraph(
+                "Institution Analytics Report",
+                styles["Title"],
+            )
+        )
+        story.append(Spacer(1, 12))
+
+        story.append(
+            Paragraph(
+                f"<b>Institution:</b> {institution['organisation_name']}",
+                styles["Normal"],
+            )
+        )
+        story.append(
+            Paragraph(
+                f"<b>Organisation type:</b> {institution['organisation_type']}",
+                styles["Normal"],
+            )
+        )
+        story.append(
+            Paragraph(
+                f"<b>Status:</b> {institution['status']}",
+                styles["Normal"],
+            )
+        )
+        story.append(
+            Paragraph(
+                f"<b>Generated:</b> {timezone.localtime().strftime('%d %B %Y, %H:%M')}",
+                styles["Normal"],
+            )
+        )
+        story.append(Spacer(1, 20))
+
+        # Staff summary
+        story.append(Paragraph("Staff Summary", styles["Heading2"]))
+
+        staff_table = Table(
+            [
+                ["Metric", "Count"],
+                ["Total staff", staff["total"]],
+                ["Active staff", staff["active"]],
+                ["Revoked staff", staff["revoked"]],
+            ],
+            colWidths=[300, 150],
+        )
+
+        # Session analytics
+        story.append(Spacer(1, 20))
+        story.append(Paragraph("Session Analytics", styles["Heading2"]))
+
+        analytics_rows = [
+            ["Metric", "Count"],
+            ["Total requests", analytics["total_requests"]],
+            ["Pending requests", analytics["pending_requests"]],
+            ["Assigned requests", analytics["assigned_requests"]],
+            ["Completed requests", analytics["completed_requests"]],
+            ["Cancelled requests", analytics["cancelled_requests"]],
+            ["Failed requests", analytics["failed_requests"]],
+            ["Total video sessions", analytics["total_video_sessions"]],
+            ["Waiting video sessions", analytics["waiting_video_sessions"]],
+            ["Connecting video sessions", analytics["connecting_video_sessions"]],
+            ["Connected video sessions", analytics["connected_video_sessions"]],
+            ["Ended video sessions", analytics["ended_video_sessions"]],
+            ["Failed video sessions", analytics["failed_video_sessions"]],
+            [
+                "Average call duration (seconds)",
+                analytics["average_call_duration_seconds"],
+            ],
+        ]
+
+        analytics_table = Table(
+            analytics_rows,
+            colWidths=[300, 150],
+        )
+
+        for table in (staff_table, analytics_table):
+            table.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#173B57")),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                        ("PADDING", (0, 0), (-1, -1), 8),
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ]
+                )
+            )
+
+        story.append(staff_table)
+        story.append(analytics_table)
+
+        document.build(story)
+
+        pdf = buffer.getvalue()
+        buffer.close()
+
+        filename = (
+            f"{slugify(institution['organisation_name']) or 'institution'}"
+            "-analytics-report.pdf"
+        )
+
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+        return response
 
 
 class AdminLogoutSerializer(serializers.Serializer):
