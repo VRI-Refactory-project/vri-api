@@ -1810,12 +1810,12 @@ class AdminAuditLogsView(APIView):
     def get(self, request):
         # Fetch the latest 50 audit logs
         logs = AuditLog.objects.all().order_by("-created_at")[:50]
-        
+
         data = []
         for log in logs:
             # Format the event string to look nicer (e.g. "ADMIN_SIGN_IN" -> "Admin Sign In")
             formatted_action = log.event.replace("_", " ").title() if log.event else "Unknown Action"
-            
+
             # Format the date
             timestamp = timezone.localtime(log.created_at).strftime("%b %d, %Y %H:%M")
 
@@ -1825,7 +1825,7 @@ class AdminAuditLogsView(APIView):
                 "meta": f"By {log.user.full_name if log.user else 'System'} • {timestamp}",
                 "source": "admin" if log.user and log.user.role == "admin" else "system",
             })
-            
+
         return Response(data)
 
 
