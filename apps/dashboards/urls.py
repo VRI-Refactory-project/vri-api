@@ -1,5 +1,7 @@
 from django.urls import path
 
+from apps.institutions.views import InstitutionUsageExportView
+
 from . import admin_stats, views
 
 urlpatterns = [
@@ -58,14 +60,11 @@ urlpatterns = [
         views.InstitutionDashboardView.as_view(),
         name="dashboard-institution",
     ),
-    path(
-        "institution/usage/",
-        views.InstitutionUsageView.as_view(),
-        name="dashboard-institution-usage",
-    ),
+    # The usage PDF lives with the usage figures it is built from (apps/institutions); the web app
+    # already downloads it from this address.
     path(
         "institution/export/",
-        views.InstitutionDashboardPDFExportView.as_view(),
+        InstitutionUsageExportView.as_view(),
         name="dashboard-institution-export",
     ),
     path(

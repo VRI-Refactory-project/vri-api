@@ -2,8 +2,10 @@ import logging
 
 from django.db import transaction
 from django.db.models import Q
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.text import slugify
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import serializers, status
@@ -29,7 +31,7 @@ from apps.core.permissions import (
 from apps.interpreters.models import ScheduledSession
 from apps.service_requests.models import OPEN_STATUSES, ServiceRequest
 
-from . import staff, usage
+from . import staff, usage, usage_pdf
 from .models import InstitutionProfile, InstitutionStaff, InstitutionStatus
 from .serializers import (
     InstitutionDocumentUploadSerializer,
@@ -583,6 +585,21 @@ class InstitutionScheduledSessionListView(APIView):
         return Response(InstitutionScheduledSessionSerializer(queryset, many=True).data)
 
 
+USAGE_PARAMETERS = [
+    OpenApiParameter(
+        "from",
+        OpenApiTypes.DATE,
+        description="First day (YYYY-MM-DD, Kampala time). Default: 6 days before `to`.",
+    ),
+    OpenApiParameter(
+        "to",
+        OpenApiTypes.DATE,
+        description="Last day, included. Default: today. At most 366 days in all.",
+    ),
+    *STAFF_FILTERS,
+]
+
+
 class InstitutionUsageView(APIView):
     """V2-029: how much the institution used VRI in a period, for its administrators' Analytics page."""
 
@@ -591,19 +608,7 @@ class InstitutionUsageView(APIView):
     @extend_schema(
         tags=["Institution Sessions"],
         summary="My institution's VRI usage",
-        parameters=[
-            OpenApiParameter(
-                "from",
-                OpenApiTypes.DATE,
-                description="First day (YYYY-MM-DD, Kampala time). Default: 6 days before `to`.",
-            ),
-            OpenApiParameter(
-                "to",
-                OpenApiTypes.DATE,
-                description="Last day, included. Default: today. At most 366 days in all.",
-            ),
-            *STAFF_FILTERS,
-        ],
+        parameters=USAGE_PARAMETERS,
         responses={
             200: InstitutionUsageSerializer,
             400: OpenApiResponse(
@@ -613,19 +618,71 @@ class InstitutionUsageView(APIView):
         },
     )
     def get(self, request):
-        params = request.query_params
-        start, end = usage.parse_period(params)
-        institution = user_institution(request.user)
-        requests = filter_by_staff(
-            ServiceRequest.objects.filter(
-                requester__institution_staff__institution=institution
-            ),
-            params,
-            "requester",
-        )
-        members = filter_by_staff(institution.staff.all(), params, "user")
-        data = usage.institution_usage(requests, members, start, end)
+        _, data = usage_for(request)
         return Response(InstitutionUsageSerializer(data).data)
+
+
+def usage_for(request):
+    """The signed-in admin's institution and its usage for the query's period, staff and department."""
+    params = request.query_params
+    start, end = usage.parse_period(params)
+    institution = user_institution(request.user)
+    requests = filter_by_staff(
+        ServiceRequest.objects.filter(
+            requester__institution_staff__institution=institution
+        ),
+        params,
+        "requester",
+    )
+    members = filter_by_staff(institution.staff.all(), params, "user")
+    return institution, usage.institution_usage(requests, members, start, end)
+
+
+def describe_staff_filters(institution, params):
+    """The staff and department filters in words, for the PDF: "All staff, all departments"."""
+    staff_id = params.get("staff")
+    member = (
+        institution.staff.select_related("user").filter(pk=staff_id).first()
+        if staff_id
+        else None
+    )
+    who = member.user.full_name if member else "All staff"
+    department = params.get("department", "").strip() or "all departments"
+    return f"{who}, {department}"
+
+
+class InstitutionUsageExportView(APIView):
+    """V2-029: the Analytics page as a PDF, for the same period, staff and department filters."""
+
+    permission_classes = [IsInstitutionAdmin]
+
+    @extend_schema(
+        tags=["Institution Sessions"],
+        summary="Download my institution's VRI usage report (PDF)",
+        parameters=USAGE_PARAMETERS,
+        responses={
+            (200, "application/pdf"): OpenApiTypes.BINARY,
+            400: OpenApiResponse(
+                description="A date is not valid, `from` is after `to`, or the period is too long."
+            ),
+            403: STAFF_ERRORS[403],
+        },
+    )
+    def get(self, request):
+        institution, data = usage_for(request)
+        pdf = usage_pdf.render_usage_pdf(
+            institution.organisation_name,
+            data,
+            describe_staff_filters(institution, request.query_params),
+        )
+        period = data["period"]
+        filename = (
+            f"{slugify(institution.organisation_name) or 'institution'}"
+            f"-usage-{period['from']}-to-{period['to']}.pdf"
+        )
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
     # --- V2-046: Delete Institution (Platform Administrators Only) --------------------------------------
 
