@@ -61,13 +61,29 @@ def relationships_for(me, people):
     return result
 
 
+def _create_request(requester, target):
+    """Save the request and tell the person who was asked."""
+    connection = Connection.objects.create(requester=requester, addressee=target)
+    create_notification(
+        user=target,
+        title="New connection request",
+        body=f"{requester.full_name} wants to connect with you.",
+        category=Notification.Category.CONNECTION_REQUEST,
+        data={
+            "url": "/dashboard/deaf/messages/community",
+            "connection_id": connection.id,
+        },
+    )
+    return connection
+
+
 def send_request(requester, target):
     """Ask `target` to connect. Returns (connection, accepted_straight_away)."""
     if target.id == requester.id:
         raise CannotConnect("You cannot connect with yourself.")
     existing = between(requester, target)
     if existing is None:
-        return Connection.objects.create(requester=requester, addressee=target), False
+        return _create_request(requester, target), False
     if existing.status == Connection.Status.ACCEPTED:
         raise CannotConnect("You are already connected.")
     if existing.requester_id == requester.id:
@@ -78,13 +94,23 @@ def send_request(requester, target):
         return existing, True
     # They declined a request from this person earlier; a fresh request from the other side is fine.
     existing.delete()
-    return Connection.objects.create(requester=requester, addressee=target), False
+    return _create_request(requester, target), False
 
 
 def accept(connection):
     connection.status = Connection.Status.ACCEPTED
     connection.responded_at = timezone.now()
     connection.save(update_fields=["status", "responded_at"])
+    create_notification(
+        user=connection.requester,
+        title="Connection accepted",
+        body=f"{connection.addressee.full_name} accepted your request.",
+        category=Notification.Category.CONNECTION_ACCEPTED,
+        data={
+            "url": f"/dashboard/deaf/messages?c={connection.id}",
+            "connection_id": connection.id,
+        },
+    )
 
 
 def decline(connection):

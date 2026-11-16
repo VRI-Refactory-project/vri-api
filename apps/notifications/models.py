@@ -31,6 +31,8 @@ class Notification(models.Model):
         OFFER_REMINDER = "offer_reminder", "Offer expiry reminder"
         CHAT_MESSAGE = "chat_message", "Chat message"
         GENERAL = "general", "General"
+        CONNECTION_REQUEST = "connection_request", "Connection request"
+        CONNECTION_ACCEPTED = "connection_accepted", "Connection accepted"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
