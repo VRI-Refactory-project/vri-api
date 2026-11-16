@@ -73,4 +73,10 @@ urlpatterns = [
         views.AdminSessionStatsView.as_view(),
         name="admin-session-stats",
     ),
+    path(
+        "admin/audit-logs/",
+        views.AdminAuditLogsView.as_view(),
+        name="dashboard-admin-audit-logs",
+    ),
 ]
+
