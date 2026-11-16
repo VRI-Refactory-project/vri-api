@@ -74,4 +74,3 @@ urlpatterns = [
         name="admin-session-stats",
     ),
 ]
-
