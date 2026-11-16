@@ -58,4 +58,14 @@ urlpatterns = [
         views.InstitutionDashboardView.as_view(),
         name="dashboard-institution",
     ),
+    path(
+        "institution/usage/",
+        views.InstitutionUsageView.as_view(),
+        name="dashboard-institution-usage",
+    ),
+    path(
+        "institution/export/",
+        views.InstitutionDashboardPDFExportView.as_view(),
+        name="dashboard-institution-export",
+    ),
 ]
