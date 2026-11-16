@@ -5,6 +5,7 @@ from rest_framework import status
 
 from apps.community.models import Connection, Message
 from apps.community.test_connections import CommunityBase, make_user
+from apps.notifications.models import Notification
 
 
 class MessagingBase(CommunityBase):
@@ -211,3 +212,18 @@ class PagingTests(MessagingBase):
         response = self.client.get(self.url("messages"), {"limit": "lots"})
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class NotificationTests(MessagingBase):
+    def test_sending_a_message_notifies_the_other_person(self):
+        self.send("Are you free tomorrow?")
+
+        notification = Notification.objects.get()
+        self.assertEqual(notification.user, self.sarah)
+        self.assertEqual(notification.category, Notification.Category.CHAT_MESSAGE)
+        self.assertEqual(notification.data["connection_id"], self.link.id)
+
+    def test_the_sender_is_not_notified(self):
+        self.send("Hello")
+
+        self.assertFalse(Notification.objects.filter(user=self.me).exists())

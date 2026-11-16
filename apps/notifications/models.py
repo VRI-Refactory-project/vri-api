@@ -29,6 +29,7 @@ class Notification(models.Model):
     class Category(models.TextChoices):
         INCOMING_REQUEST = "incoming_request", "Incoming request"
         OFFER_REMINDER = "offer_reminder", "Offer expiry reminder"
+        CHAT_MESSAGE = "chat_message", "Chat message"
         GENERAL = "general", "General"
 
     user = models.ForeignKey(
