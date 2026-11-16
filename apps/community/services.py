@@ -5,6 +5,8 @@ from django.db.models import Count, OuterRef, Q, Subquery
 from django.utils import timezone
 
 from .models import Connection, Message
+from apps.notifications.models import Notification
+from apps.notifications.services import create_notification
 
 User = get_user_model()
 
@@ -161,7 +163,26 @@ def messages_in(connection, before=None, limit=50):
 
 
 def send_message(connection, sender, body):
-    return Message.objects.create(connection=connection, sender=sender, body=body)
+    message = Message.objects.create(connection=connection, sender=sender, body=body)
+
+    # The conversation has two people; the one who did not send this is the receiver.
+    receiver = (
+        connection.addressee
+        if connection.requester_id == sender.id
+        else connection.requester
+    )
+
+    create_notification(
+        user=receiver,
+        title=f"New message from {sender.full_name}",
+        body=body[:100],
+        category=Notification.Category.CHAT_MESSAGE,
+        data={
+            "url": f"/dashboard/deaf/messages?c={connection.id}",
+            "connection_id": connection.id,
+        },
+    )
+    return message
 
 
 def mark_read(connection, reader):
