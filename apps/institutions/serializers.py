@@ -344,6 +344,74 @@ class InstitutionScheduledSessionSerializer(serializers.ModelSerializer):
         return _staff_fields(obj.deaf_user)
 
 
+# --- V2-029: how much the institution uses VRI (built by apps/institutions/usage.py) ------------------
+
+
+# Built with type() because "from" is a Python keyword and cannot be written as a class attribute.
+UsagePeriodSerializer = type(
+    "UsagePeriodSerializer",
+    (serializers.Serializer,),
+    {"from": serializers.DateField(), "to": serializers.DateField()},
+)
+
+
+class UsageTotalsSerializer(serializers.Serializer):
+    sessions = serializers.IntegerField(help_text="Requests made in the period.")
+    previous_period_sessions = serializers.IntegerField(
+        help_text="Requests made in the same number of days just before the period."
+    )
+    completed = serializers.IntegerField()
+    completion_rate = serializers.IntegerField(
+        help_text="Completed, as a % of sessions."
+    )
+    total_minutes = serializers.IntegerField(
+        help_text="Interpreted minutes, all sessions."
+    )
+    avg_duration_minutes = serializers.IntegerField(
+        help_text="Per session that had an interpreter and ended."
+    )
+
+
+class UsageTypeSerializer(serializers.Serializer):
+    type = serializers.CharField()
+    label = serializers.CharField()
+    count = serializers.IntegerField()
+
+
+class UsageOutcomeSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    label = serializers.CharField()
+    count = serializers.IntegerField()
+
+
+class UsageDepartmentSerializer(serializers.Serializer):
+    department = serializers.CharField(
+        help_text="Empty when the staff member has none."
+    )
+    count = serializers.IntegerField()
+
+
+class UsageDaySerializer(serializers.Serializer):
+    date = serializers.DateField()
+    count = serializers.IntegerField()
+
+
+class UsageStaffSerializer(serializers.Serializer):
+    total = serializers.IntegerField(help_text="Staff with access.")
+    used_vri = serializers.IntegerField(help_text="Of those, how many made a request.")
+    not_used = serializers.IntegerField()
+
+
+class InstitutionUsageSerializer(serializers.Serializer):
+    period = UsagePeriodSerializer()
+    totals = UsageTotalsSerializer()
+    by_type = UsageTypeSerializer(many=True)
+    by_outcome = UsageOutcomeSerializer(many=True)
+    by_department = UsageDepartmentSerializer(many=True)
+    over_time = UsageDaySerializer(many=True, help_text="Every day of the period.")
+    staff = UsageStaffSerializer()
+
+
 class InstitutionDocumentUploadSerializer(serializers.Serializer):
     document = serializers.FileField()
 

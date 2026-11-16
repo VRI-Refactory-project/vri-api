@@ -66,6 +66,11 @@ urlpatterns = [
         name="institution-scheduled-sessions",
     ),
     path(
+        "me/usage/",
+        views.InstitutionUsageView.as_view(),
+        name="institution-usage",
+    ),
+    path(
         "me/document/",
         InstitutionDocumentUploadView.as_view(),
         name="institution-document-upload",
