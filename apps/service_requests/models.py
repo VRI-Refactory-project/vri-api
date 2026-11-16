@@ -29,6 +29,16 @@ class ServiceRequest(models.Model):
         on_delete=models.CASCADE,
         related_name="service_requests",
     )
+    # V2-013: the institution a staff member asked on behalf of; empty for Deaf users. Saved when the
+    # request is made, so the institution keeps its history even if the staff member later leaves it.
+    # Deleting the institution keeps the request (interpreters still need their history) and clears this.
+    institution = models.ForeignKey(
+        "institutions.InstitutionProfile",
+        on_delete=models.SET_NULL,
+        related_name="service_requests",
+        null=True,
+        blank=True,
+    )
     # The interpreter who accepted the request (ASSIGNED). While OFFERED, the offers in RequestOffer
     # are open to several interpreters at once, so this stays empty until one of them accepts.
     interpreter = models.ForeignKey(

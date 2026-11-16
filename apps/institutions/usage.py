@@ -94,7 +94,12 @@ def institution_usage(requests, members, start, end):
 
     by_type = _counts(in_period, "specialisation_required")
     per_day = _counts(in_period.annotate(day=TruncDate("created_at")), "day")
-    by_department = _counts(in_period, "requester__institution_staff__job_title")
+    # A requester who is no longer a staff member (None) counts with "no department" ("").
+    by_department = {}
+    for department, n in _counts(
+        in_period, "requester__institution_staff__job_title"
+    ).items():
+        by_department[department or ""] = by_department.get(department or "", 0) + n
 
     # Staff who still have access; someone revoked since is left out of both figures.
     active_members = members.filter(is_active=True)

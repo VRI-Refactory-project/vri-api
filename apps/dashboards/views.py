@@ -444,10 +444,8 @@ class InstitutionDashboardView(APIView):
         institution = staff_membership.institution
         staff_members = institution.staff.all()
 
-        # Requests created by users who belong to this institution.
-        institution_requests = ServiceRequest.objects.filter(
-            requester__institution_staff__institution=institution
-        )
+        # Requests made on behalf of this institution (V2-013 saves it on each request).
+        institution_requests = ServiceRequest.objects.filter(institution=institution)
 
         # Actual video sessions associated with those requests.
         institution_sessions = VideoSession.objects.filter(

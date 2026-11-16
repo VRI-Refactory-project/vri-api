@@ -67,7 +67,7 @@ class ServiceRequestListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         return self.request.user.service_requests.select_related(
-            "requester", "interpreter", "interpreter__user"
+            "requester", "institution", "interpreter", "interpreter__user"
         ).all()
 
     def list(self, request, *args, **kwargs):
@@ -282,7 +282,9 @@ class InterpreterOfferListView(APIView):
             outcome=RequestOffer.Outcome.PENDING,
             service_request__status=ServiceRequest.Status.OFFERED,
             expires_at__gt=timezone.now(),
-        ).select_related("service_request__requester")
+        ).select_related(
+            "service_request__requester", "service_request__institution"
+        )
         return Response(InterpreterOfferSerializer(offers, many=True).data)
 
 

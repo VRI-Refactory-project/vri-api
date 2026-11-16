@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from apps.audit import services as audit
 from apps.audit.models import AuditLog
+from apps.core.permissions import user_institution
 from apps.interpreters.models import InterpreterProfile, Specialisation
 from apps.interpreters.routing import pick_candidates
 from apps.notifications.models import Notification
@@ -183,6 +184,8 @@ def create_request(
         with transaction.atomic():
             service_request = ServiceRequest.objects.create(
                 requester=requester,
+                # Staff ask on behalf of their institution (V2-013); Deaf users have none.
+                institution=user_institution(requester),
                 specialisation_required=specialisation_required,
                 description=description,
                 priority=priority,

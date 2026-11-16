@@ -534,7 +534,7 @@ class InstitutionSessionListView(APIView):
     def get(self, request):
         params = request.query_params
         queryset = ServiceRequest.objects.filter(
-            requester__institution_staff__institution=user_institution(request.user)
+            institution=user_institution(request.user)
         ).select_related("requester__institution_staff", "interpreter__user")
 
         state = params.get("state")
@@ -628,9 +628,7 @@ def usage_for(request):
     start, end = usage.parse_period(params)
     institution = user_institution(request.user)
     requests = filter_by_staff(
-        ServiceRequest.objects.filter(
-            requester__institution_staff__institution=institution
-        ),
+        ServiceRequest.objects.filter(institution=institution),
         params,
         "requester",
     )
