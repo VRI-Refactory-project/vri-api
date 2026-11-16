@@ -68,6 +68,11 @@ urlpatterns = [
         name="dashboard-institution-export",
     ),
     path(
+        "admin/sessions/",
+        views.AdminLiveSessionsView.as_view(),
+        name="admin-live-sessions",
+    ),
+    path(
         "admin/sessions-stats/",
         views.AdminSessionStatsView.as_view(),
         name="admin-session-stats",

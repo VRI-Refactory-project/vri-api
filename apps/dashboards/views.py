@@ -548,6 +548,48 @@ class InstitutionDashboardView(APIView):
         )
 
 
+class AdminLiveSessionsView(APIView):
+    """The calls that are starting or running right now, for the admin's Sessions page."""
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request):
+        calls = (
+            VideoSession.objects.filter(
+                status__in=[
+                    VideoSession.Status.WAITING,
+                    VideoSession.Status.CONNECTING,
+                    VideoSession.Status.CONNECTED,
+                ]
+            )
+            .select_related(
+                "service_request__requester", "service_request__institution"
+            )
+            .order_by("-created_at")[:50]
+        )
+
+        data = []
+        for call in calls:
+            request_row = call.service_request
+            started = timezone.localtime(call.connected_at or call.created_at)
+            data.append(
+                {
+                    "id": request_row.id,
+                    "sector": (
+                        request_row.institution.organisation_name
+                        if request_row.institution_id
+                        else "Individual"
+                    ),
+                    "participant_name": request_row.requester.full_name,
+                    "status": call.get_status_display(),
+                    "started_at": started.strftime("%H:%M"),
+                    "connection": "stable",
+                }
+            )
+
+        return Response(data)
+
+
 class AdminSessionStatsView(APIView):
     """Real-time stats for the admin's Live Sessions page."""
 
