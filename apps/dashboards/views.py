@@ -843,6 +843,39 @@ class InstitutionDashboardPDFExportView(APIView):
         return response
 
 
+class AdminSessionStatsView(APIView):
+    """Real-time stats for the admin's Live Sessions page."""
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request):
+        # 1. Live now (Connected sessions)
+        live_now = VideoSession.objects.filter(
+            status=VideoSession.Status.CONNECTED
+        ).count()
+
+        # 2. Connecting (Waiting or Connecting sessions)
+        connecting = VideoSession.objects.filter(
+            status__in=[
+                VideoSession.Status.WAITING,
+                VideoSession.Status.CONNECTING,
+            ]
+        ).count()
+
+        # 3. Needs Attention (Failed sessions)
+        needs_attention = VideoSession.objects.filter(
+            status=VideoSession.Status.FAILED
+        ).count()
+
+        return Response({
+            "liveNow": live_now,
+            "liveStable": live_now,  # Assume all connected are stable for now
+            "connecting": connecting,
+            "connectingAverageSeconds": 0,  # Can be calculated later
+            "needsAttention": needs_attention,
+        })
+
+
 class AdminLogoutSerializer(serializers.Serializer):
     refresh = serializers.CharField(
         required=True,

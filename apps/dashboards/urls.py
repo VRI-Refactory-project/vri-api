@@ -68,4 +68,10 @@ urlpatterns = [
         views.InstitutionDashboardPDFExportView.as_view(),
         name="dashboard-institution-export",
     ),
+    path(
+        "admin/sessions-stats/",
+        views.AdminSessionStatsView.as_view(),
+        name="admin-session-stats",
+    ),
 ]
+
