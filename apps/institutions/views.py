@@ -29,7 +29,7 @@ from apps.core.permissions import (
 from apps.interpreters.models import ScheduledSession
 from apps.service_requests.models import OPEN_STATUSES, ServiceRequest
 
-from . import staff
+from . import staff, usage
 from .models import InstitutionProfile, InstitutionStaff, InstitutionStatus
 from .serializers import (
     InstitutionDocumentUploadSerializer,
@@ -37,6 +37,7 @@ from .serializers import (
     InstitutionScheduledSessionSerializer,
     InstitutionSerializer,
     InstitutionSessionSerializer,
+    InstitutionUsageSerializer,
     OwnProfileUpdateSerializer,
     StaffCreateSerializer,
     StaffSerializer,
@@ -580,6 +581,51 @@ class InstitutionScheduledSessionListView(APIView):
         )
         queryset = filter_by_staff(queryset, request.query_params, "deaf_user")
         return Response(InstitutionScheduledSessionSerializer(queryset, many=True).data)
+
+
+class InstitutionUsageView(APIView):
+    """V2-029: how much the institution used VRI in a period, for its administrators' Analytics page."""
+
+    permission_classes = [IsInstitutionAdmin]
+
+    @extend_schema(
+        tags=["Institution Sessions"],
+        summary="My institution's VRI usage",
+        parameters=[
+            OpenApiParameter(
+                "from",
+                OpenApiTypes.DATE,
+                description="First day (YYYY-MM-DD, Kampala time). Default: 6 days before `to`.",
+            ),
+            OpenApiParameter(
+                "to",
+                OpenApiTypes.DATE,
+                description="Last day, included. Default: today. At most 366 days in all.",
+            ),
+            *STAFF_FILTERS,
+        ],
+        responses={
+            200: InstitutionUsageSerializer,
+            400: OpenApiResponse(
+                description="A date is not valid, `from` is after `to`, or the period is too long."
+            ),
+            403: STAFF_ERRORS[403],
+        },
+    )
+    def get(self, request):
+        params = request.query_params
+        start, end = usage.parse_period(params)
+        institution = user_institution(request.user)
+        requests = filter_by_staff(
+            ServiceRequest.objects.filter(
+                requester__institution_staff__institution=institution
+            ),
+            params,
+            "requester",
+        )
+        members = filter_by_staff(institution.staff.all(), params, "user")
+        data = usage.institution_usage(requests, members, start, end)
+        return Response(InstitutionUsageSerializer(data).data)
 
     # --- V2-046: Delete Institution (Platform Administrators Only) --------------------------------------
 
