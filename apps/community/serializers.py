@@ -1,8 +1,10 @@
 from rest_framework import serializers
 
-from apps.users.photos import photo_path
+from apps.users.photos import InvalidPhoto, photo_path
 
 from . import services
+from .images import process_chat_image
+from .stickers import STICKER_IDS
 
 RELATIONSHIPS = [
     services.NONE,
@@ -61,7 +63,14 @@ class ConnectionSerializer(serializers.Serializer):
 
 class MessageSerializer(serializers.Serializer):
     id = serializers.IntegerField()
-    body = serializers.CharField()
+    body = serializers.CharField(allow_blank=True, help_text="Empty for a sticker.")
+    sticker = serializers.CharField(
+        allow_blank=True, help_text="A sticker id, or empty for a text message."
+    )
+    image_url = serializers.CharField(
+        allow_null=True,
+        help_text="Path of the attached photo (fetch it signed in), or null.",
+    )
     created_at = serializers.DateTimeField()
     sent_by_me = serializers.BooleanField()
     read = serializers.BooleanField(
@@ -73,6 +82,12 @@ def message_data(message, me):
     return {
         "id": message.id,
         "body": message.body,
+        "sticker": message.sticker,
+        "image_url": (
+            f"/api/v1/community/conversations/{message.connection_id}/messages/{message.id}/image/"
+            if message.has_image
+            else None
+        ),
         "created_at": message.created_at,
         "sent_by_me": message.sender_id == me.id,
         "read": message.read_at is not None,
@@ -96,4 +111,24 @@ class MessagePageSerializer(serializers.Serializer):
 
 
 class NewMessageSerializer(serializers.Serializer):
-    body = serializers.CharField(max_length=2000, trim_whitespace=True)
+    """Send text, a photo (with or without a caption) or a sticker. A sticker goes on its own."""
+
+    body = serializers.CharField(max_length=2000, trim_whitespace=True, required=False)
+    sticker = serializers.ChoiceField(choices=STICKER_IDS, required=False)
+    image = serializers.FileField(
+        required=False,
+        help_text="A photo, sent as a multipart form. JPG, PNG, WebP or GIF, up to 8 MB.",
+    )
+
+    def validate_image(self, upload):
+        try:
+            return process_chat_image(upload)
+        except InvalidPhoto as error:
+            raise serializers.ValidationError(str(error)) from None
+
+    def validate(self, attrs):
+        if attrs.get("sticker") and (attrs.get("body") or attrs.get("image")):
+            raise serializers.ValidationError("Send a sticker on its own.")
+        if not (attrs.get("body") or attrs.get("sticker") or attrs.get("image")):
+            raise serializers.ValidationError("Send a message, a photo or a sticker.")
+        return attrs

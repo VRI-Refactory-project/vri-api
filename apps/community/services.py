@@ -1,10 +1,11 @@
 """Rules for who can connect with whom. Views call these so the rules live in one place."""
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Count, OuterRef, Q, Subquery
 from django.utils import timezone
 
-from .models import Connection, Message
+from .models import Connection, Message, MessageImage
 from apps.notifications.models import Notification
 from apps.notifications.services import create_notification
 
@@ -188,8 +189,21 @@ def messages_in(connection, before=None, limit=50):
     return page[:limit][::-1], len(page) > limit
 
 
-def send_message(connection, sender, body):
-    message = Message.objects.create(connection=connection, sender=sender, body=body)
+def send_message(connection, sender, body="", sticker="", image=None):
+    """Save a message. `image` is (jpeg bytes, width, height) from images.process_chat_image, or None."""
+    with transaction.atomic():
+        message = Message.objects.create(
+            connection=connection,
+            sender=sender,
+            body=body,
+            sticker=sticker,
+            has_image=image is not None,
+        )
+        if image is not None:
+            data, width, height = image
+            MessageImage.objects.create(
+                message=message, data=data, width=width, height=height
+            )
 
     # The conversation has two people; the one who did not send this is the receiver.
     receiver = (
@@ -201,7 +215,7 @@ def send_message(connection, sender, body):
     create_notification(
         user=receiver,
         title=f"New message from {sender.full_name}",
-        body=body[:100],
+        body=body[:100] or ("Sent you a sticker" if sticker else "Sent you a photo"),
         category=Notification.Category.CHAT_MESSAGE,
         data={
             "url": f"/dashboard/deaf/messages?c={connection.id}",

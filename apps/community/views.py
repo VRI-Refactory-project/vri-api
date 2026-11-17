@@ -1,15 +1,16 @@
 from django.db.models import Q
-from django.http import Http404
+from django.http import Http404, HttpResponse
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.permissions import IsDeafUser
 
 from . import services
-from .models import Connection
+from .models import Connection, MessageImage
 from .serializers import (
     ConnectionSerializer,
     ConversationSerializer,
@@ -284,6 +285,8 @@ class ConversationListView(APIView):
 
 class MessageListView(APIView):
     permission_classes = [IsDeafUser]
+    # JSON for text and stickers; a multipart form when a photo goes with the message.
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     @extend_schema(
         tags=TAGS,
@@ -321,7 +324,11 @@ class MessageListView(APIView):
 
     @extend_schema(
         tags=TAGS,
-        summary="Send a message",
+        summary="Send a message, a photo or a sticker",
+        description=(
+            "Send JSON `{body}` or `{sticker}`, or a multipart form with `image` (and an optional "
+            "`body` as its caption)."
+        ),
         request=NewMessageSerializer,
         responses={201: MessageSerializer},
     )
@@ -330,11 +337,41 @@ class MessageListView(APIView):
         serializer = NewMessageSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         message = services.send_message(
-            connection, request.user, serializer.validated_data["body"]
+            connection,
+            request.user,
+            body=serializer.validated_data.get("body", ""),
+            sticker=serializer.validated_data.get("sticker", ""),
+            image=serializer.validated_data.get("image"),
         )
         return Response(
             message_data(message, request.user), status=status.HTTP_201_CREATED
         )
+
+
+class MessageImageView(APIView):
+    """The photo of one message. Only the two people in the conversation can open it."""
+
+    permission_classes = [IsDeafUser]
+
+    @extend_schema(
+        tags=TAGS,
+        summary="The photo of a message",
+        responses={(200, "image/jpeg"): bytes},
+    )
+    def get(self, request, pk, message_id):
+        connection = _conversation(request, pk)
+        photo = (
+            MessageImage.objects.filter(
+                message_id=message_id, message__connection=connection
+            )
+            .only("data")
+            .first()
+        )
+        if photo is None:
+            raise Http404
+        # The login middleware already marks every signed-in response "no-store", so the browser
+        # does not keep the photo; the web app keeps it in memory while the page is open.
+        return HttpResponse(bytes(photo.data), content_type="image/jpeg")
 
 
 class ConversationReadView(APIView):
