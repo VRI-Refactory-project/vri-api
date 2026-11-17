@@ -49,7 +49,7 @@ class Connection(models.Model):
 
 
 class Message(models.Model):
-    """One text message between two connected people.
+    """One message (text or a sticker) between two connected people.
 
     A conversation is the connection itself: there is one conversation per accepted connection, and
     removing the connection removes its messages.
@@ -65,7 +65,20 @@ class Message(models.Model):
         on_delete=models.CASCADE,
         related_name="community_messages_sent",
     )
-    body = models.TextField(max_length=MAX_LENGTH)
+    body = models.TextField(
+        max_length=MAX_LENGTH,
+        blank=True,
+        help_text="Empty for a sticker, and for a photo sent without a caption.",
+    )
+    sticker = models.CharField(
+        max_length=40,
+        blank=True,
+        help_text="The id of a sticker from apps.community.stickers; empty for a text message.",
+    )
+    has_image = models.BooleanField(
+        default=False,
+        help_text="A photo goes with this message (see MessageImage). Kept here so lists never load photos.",
+    )
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
     read_at = models.DateTimeField(
         null=True, blank=True, help_text="When the other person opened it."
@@ -76,4 +89,18 @@ class Message(models.Model):
         indexes = [models.Index(fields=["connection", "id"])]
 
     def __str__(self):
-        return f"{self.sender_id}: {self.body[:30]}"
+        return f"{self.sender_id}: {self.body[:30] or self.sticker}"
+
+
+class MessageImage(models.Model):
+    """The photo of a message, kept in the database as a JPEG (not on the server's disk)."""
+
+    message = models.OneToOneField(
+        Message, on_delete=models.CASCADE, related_name="image"
+    )
+    data = models.BinaryField()
+    width = models.PositiveIntegerField()
+    height = models.PositiveIntegerField()
+
+    def __str__(self):
+        return f"Photo of message {self.message_id}"
