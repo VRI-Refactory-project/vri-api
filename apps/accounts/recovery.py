@@ -318,7 +318,7 @@ def issue_code(user, purpose, target_user=None, ip=None):
         history.filter(
             target_user=target_user, used_at__isnull=True, expires_at__gt=now
         ).update(expires_at=now)
-        rc = RecoveryCode.objects.create(
+        _ = RecoveryCode.objects.create(
             user=user,
             target_user=target_user,
             purpose=purpose,
@@ -326,14 +326,13 @@ def issue_code(user, purpose, target_user=None, ip=None):
             expires_at=now + RecoveryCode.LIFETIME,
             requested_ip=ip,
         )
-        
     try:
         _send_code_email(user, code, purpose, target_user)
     except Exception:
         # Re-raise so callers know the send failed, but log it first.
         logger.exception("recovery_email_failed user=%s purpose=%s", user.pk, purpose)
         raise
-        
+
     logger.info(
         "recovery_code_sent user=%s purpose=%s target=%s ip=%s",
         user.pk,

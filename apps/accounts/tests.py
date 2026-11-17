@@ -824,10 +824,10 @@ class BaseAvailabilityModelAndSerializerTests(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-          email="provider@example.com",
-          phone_number="+256700000321",
-          password="securepassword123",
-          role="interpreter",
+            email="provider@example.com",
+            phone_number="+256700000321",
+            password="securepassword123",
+            role="interpreter",
         )
 
     def test_clean_method_raises_error_when_start_after_end(self):
@@ -858,10 +858,10 @@ class AvailabilityOverrideModelAndSerializerTests(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-          email="provider2@example.com",
-          phone_number="+256700000322",
-          password="securepassword123",
-          role="interpreter",
+            email="provider2@example.com",
+            phone_number="+256700000322",
+            password="securepassword123",
+            role="interpreter",
         )
         self.target_date = date(2026, 11, 25)
 
