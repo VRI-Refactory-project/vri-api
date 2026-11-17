@@ -876,6 +876,33 @@
 #         })
 
 
+# class AdminAuditLogsView(APIView):
+#     """Recent platform activity for the Audit Logs page."""
+
+#     permission_classes = [IsAdminRole]
+
+#     def get(self, request):
+#         # Fetch the latest 50 audit logs
+#         logs = AuditLog.objects.all().order_by("-created_at")[:50]
+
+#         data = []
+#         for log in logs:
+#             # Format the event string to look nicer (e.g. "ADMIN_SIGN_IN" -> "Admin Sign In")
+#             formatted_action = log.event.replace("_", " ").title() if log.event else "Unknown Action"
+
+#             # Format the date
+#             timestamp = timezone.localtime(log.created_at).strftime("%b %d, %Y %H:%M")
+
+#             data.append({
+#                 "id": str(log.id),
+#                 "action": formatted_action,
+#                 "meta": f"By {log.user.full_name if log.user else 'System'} • {timestamp}",
+#                 "source": "admin" if log.user and log.user.role == "admin" else "system",
+#             })
+
+#         return Response(data)
+
+
 # class AdminLogoutSerializer(serializers.Serializer):
 #     refresh = serializers.CharField(
 #         required=True,
@@ -1819,11 +1846,21 @@ class AdminAuditLogsView(APIView):
             # Format the date
             timestamp = timezone.localtime(log.created_at).strftime("%b %d, %Y %H:%M")
 
+            # Determine the source color based on the event
+            if "admin" in log.event or (log.user and log.user.role == "admin"):
+                source = "admin"
+            elif "institution" in log.event or "staff" in log.event:
+                source = "institution"
+            elif log.event in ["user_registered", "user_sign_out", "user_sign_in", "password_changed"]:
+                source = "user"
+            else:
+                source = "system"
+
             data.append({
                 "id": str(log.id),
                 "action": formatted_action,
                 "meta": f"By {log.user.full_name if log.user else 'System'} • {timestamp}",
-                "source": "admin" if log.user and log.user.role == "admin" else "system",
+                "source": source,
             })
 
         return Response(data)
