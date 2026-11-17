@@ -11,6 +11,6 @@ def log_new_user_registration(sender, instance, created, **kwargs):
     """Logs when a new user is created anywhere on the platform."""
     if created:
         AuditLog.objects.create(
-            user=instance, 
+            user=instance,
             event=AuditLog.Event.USER_REGISTERED
         )

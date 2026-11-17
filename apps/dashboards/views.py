@@ -1926,4 +1926,3 @@ class AdminLogoutView(APIView):
 
         except TokenError:
             return Response({"error": "Invalid or expired token."}, status=400)
-
