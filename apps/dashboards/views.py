@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 
 # """Dashboard data for each roles.
 
@@ -952,7 +951,6 @@
 #         except TokenError:
 #             return Response({"error": "Invalid or expired token."}, status=400)
 
-
 """Dashboard data for each roles.
 
 Deaf, interpreter, and administrator dashboard endpoints are restricted
@@ -960,12 +958,25 @@ by shared permission classes in apps/core/permissions.py.
 """
 
 from datetime import date, timedelta
+from io import BytesIO
 
 from django.contrib.auth import get_user_model
 from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.text import slugify
 from drf_spectacular.utils import extend_schema, inline_serializer
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import (
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
@@ -985,6 +996,7 @@ from apps.core.permissions import (
 )
 from apps.institutions.models import (
     InstitutionProfile,
+    InstitutionStaff,
     InstitutionStatus,
 )
 from apps.interpreters.models import (
@@ -1093,6 +1105,23 @@ InstitutionDashboardSerializer = inline_serializer(
 )
 
 
+class InstitutionUsageFilterSerializer(serializers.Serializer):
+    start_date = serializers.DateField(required=False)
+    end_date = serializers.DateField(required=False)
+    staff_id = serializers.IntegerField(required=False, min_value=1)
+
+    def validate(self, attrs):
+        start_date = attrs.get("start_date")
+        end_date = attrs.get("end_date")
+
+        if start_date and end_date and start_date > end_date:
+            raise serializers.ValidationError(
+                {"end_date": "End date must be on or after start date."}
+            )
+
+        return attrs
+
+
 class DeafDashboardView(APIView):
     """Everything the Deaf user's home screen needs in one request."""
 
@@ -1115,7 +1144,7 @@ class DeafDashboardView(APIView):
 
 
 def interpreter_card(profile):
-    """The public details of an interpreter that a Deaf user may see. No email or phone number."""
+    """The public details of an interpreter that a Deaf user may see."""
     specialisation = ", ".join(profile.specialisation_labels())
     return {
         "id": profile.pk,
@@ -1143,11 +1172,7 @@ InterpreterPublicProfileSerializer = inline_serializer(
 
 
 class AvailableInterpretersView(APIView):
-    """Interpreters a Deaf user could be connected to right now (the dashboard's list).
-
-    Uses the same rule as routing, so the list matches who can actually be offered a request.
-    Only public details are returned: no email or phone number.
-    """
+    """Interpreters a Deaf user could be connected to right now."""
 
     permission_classes = [IsDeafUser]
 
@@ -1167,10 +1192,7 @@ class AvailableInterpretersView(APIView):
 
 
 class InterpreterPublicProfileView(APIView):
-    """One interpreter's public profile, for the "View profile" button on the dashboard.
-
-    Any approved, active interpreter can be opened, whether or not they are available right now.
-    """
+    """One interpreter's public profile."""
 
     permission_classes = [IsDeafUser]
 
@@ -1317,11 +1339,7 @@ class AdminDashboardView(APIView):
 
 
 class AdminUpcomingSessionsView(APIView):
-    """Upcoming sessions for the admin dashboard.
-
-    Returns anything scheduled from today onward (excluding cancelled sessions),
-    ordered by date and time.
-    """
+    """Upcoming sessions for the admin dashboard."""
 
     permission_classes = [IsAdminRole]
 
@@ -1399,7 +1417,7 @@ class InstitutionDashboardView(APIView):
         institution = staff_membership.institution
         staff_members = institution.staff.all()
 
-        # Requests made on behalf of this institution (V2-013 saves it on each request).
+        # Requests made on behalf of this institution.
         institution_requests = ServiceRequest.objects.filter(institution=institution)
 
         # Actual video sessions associated with those requests.
@@ -1407,7 +1425,7 @@ class InstitutionDashboardView(APIView):
             service_request__in=institution_requests
         )
 
-        # Calculate duration only for calls that connected and subsequently ended.
+        # Calculate duration only for calls that connected and ended.
         completed_call_durations = institution_sessions.filter(
             connected_at__isnull=False,
             ended_at__isnull=False,
@@ -1450,7 +1468,6 @@ class InstitutionDashboardView(APIView):
                 },
                 "session_analytics": {
                     "total_requests": institution_requests.count(),
-
                     "pending_requests": institution_requests.filter(
                         status__in=[
                             ServiceRequest.Status.CREATED,
@@ -1458,53 +1475,284 @@ class InstitutionDashboardView(APIView):
                             ServiceRequest.Status.OFFERED,
                         ]
                     ).count(),
-
                     "assigned_requests": institution_requests.filter(
                         status=ServiceRequest.Status.ASSIGNED
                     ).count(),
-
                     "completed_requests": institution_requests.filter(
                         status=ServiceRequest.Status.COMPLETED
                     ).count(),
-
                     "cancelled_requests": institution_requests.filter(
                         status=ServiceRequest.Status.CANCELLED
                     ).count(),
-
                     "failed_requests": institution_requests.filter(
                         status=ServiceRequest.Status.FAILED
                     ).count(),
-
                     "total_video_sessions": institution_sessions.count(),
-
                     "waiting_video_sessions": institution_sessions.filter(
                         status=VideoSession.Status.WAITING
                     ).count(),
-
                     "connecting_video_sessions": institution_sessions.filter(
                         status=VideoSession.Status.CONNECTING
                     ).count(),
-
                     "connected_video_sessions": institution_sessions.filter(
                         status=VideoSession.Status.CONNECTED
                     ).count(),
-
                     "ended_video_sessions": institution_sessions.filter(
                         status=VideoSession.Status.ENDED
                     ).count(),
-
                     "failed_video_sessions": institution_sessions.filter(
                         status=VideoSession.Status.FAILED
                     ).count(),
-
                     "average_call_duration_seconds": average_call_duration_seconds,
                 },
             }
         )
 
 
+class InstitutionUsageView(APIView):
+    """Usage analytics for the authenticated institution."""
+
+    permission_classes = [HasInstitutionalRole]
+
+    @extend_schema(
+        tags=["Dashboards"],
+        summary="Institutional VRI usage analytics",
+        responses={200: serializers.DictField()},
+    )
+    def get(self, request):
+        membership = user_staff_membership(request.user)
+
+        if membership is None:
+            raise PermissionDenied("Your account is not linked to an institution.")
+
+        institution = membership.institution
+
+        # Validate query parameters.
+        filter_serializer = InstitutionUsageFilterSerializer(data=request.query_params)
+        filter_serializer.is_valid(raise_exception=True)
+
+        filters = filter_serializer.validated_data
+
+        # Retrieve only sessions belonging to this institution.
+        sessions = VideoSession.objects.filter(
+            service_request__requester__institution_staff__institution=institution
+        )
+
+        # Apply date filters.
+        if filters.get("start_date"):
+            sessions = sessions.filter(created_at__date__gte=filters["start_date"])
+
+        if filters.get("end_date"):
+            sessions = sessions.filter(created_at__date__lte=filters["end_date"])
+
+        # Apply staff filter.
+        staff_id = filters.get("staff_id")
+
+        if staff_id is not None:
+            staff_member = InstitutionStaff.objects.filter(
+                pk=staff_id,
+                institution=institution,
+            ).first()
+
+            if staff_member is None:
+                raise serializers.ValidationError(
+                    {
+                        "staff_id": (
+                            "This staff member does not belong to your institution."
+                        )
+                    }
+                )
+
+            sessions = sessions.filter(
+                service_request__requester__institution_staff=staff_member
+            )
+
+        # Aggregate session counts by type.
+        session_types = (
+            sessions.values("service_request__specialisation_required")
+            .annotate(count=Count("id"))
+            .order_by("-count")
+        )
+
+        formatted_session_types = [
+            {
+                "type": item["service_request__specialisation_required"],
+                "count": item["count"],
+            }
+            for item in session_types
+        ]
+
+        # Aggregate session usage by staff member.
+        staff_usage = (
+            sessions.annotate(
+                staff_id=F("service_request__requester__institution_staff__id"),
+                staff_name=F("service_request__requester__full_name"),
+            )
+            .values("staff_id", "staff_name")
+            .annotate(session_count=Count("id"))
+            .order_by("-session_count")
+        )
+
+        formatted_staff_usage = [
+            {
+                "staff_id": item["staff_id"],
+                "staff_name": item["staff_name"],
+                "session_count": item["session_count"],
+            }
+            for item in staff_usage
+        ]
+
+        return Response(
+            {
+                "total_sessions": sessions.count(),
+                "session_types": formatted_session_types,
+                "staff_usage": formatted_staff_usage,
+                "filters": {
+                    "start_date": filters.get("start_date"),
+                    "end_date": filters.get("end_date"),
+                    "staff_id": staff_id,
+                },
+            }
+        )
+
+
+class InstitutionDashboardPDFExportView(APIView):
+    """Generate a PDF report for the signed-in institution."""
+
+    permission_classes = [HasInstitutionalRole]
+
+    @extend_schema(
+        tags=["Dashboards"],
+        summary="Export institutional dashboard analytics as PDF",
+        responses={200: {"type": "string", "format": "binary"}},
+    )
+    def get(self, request):
+        # Reuse the existing dashboard data and its institution-level filtering.
+        dashboard_response = InstitutionDashboardView().get(request)
+        data = dashboard_response.data
+
+        institution = data["institution"]
+        staff = data["staff_summary"]
+        analytics = data["session_analytics"]
+
+        buffer = BytesIO()
+
+        document = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=40,
+            leftMargin=40,
+            topMargin=40,
+            bottomMargin=40,
+        )
+
+        styles = getSampleStyleSheet()
+        story = []
+
+        # Report heading
+        story.append(Paragraph("Institution Analytics Report", styles["Title"]))
+        story.append(Spacer(1, 12))
+
+        story.append(
+            Paragraph(
+                f"<b>Institution:</b> {institution['organisation_name']}",
+                styles["Normal"],
+            )
+        )
+        story.append(
+            Paragraph(
+                f"<b>Organisation type:</b> {institution['organisation_type']}",
+                styles["Normal"],
+            )
+        )
+        story.append(
+            Paragraph(
+                f"<b>Status:</b> {institution['status']}",
+                styles["Normal"],
+            )
+        )
+        story.append(
+            Paragraph(
+                f"<b>Generated:</b> "
+                f"{timezone.localtime().strftime('%d %B %Y, %H:%M')}",
+                styles["Normal"],
+            )
+        )
+        story.append(Spacer(1, 20))
+
+        # Staff summary
+        story.append(Paragraph("Staff Summary", styles["Heading2"]))
+
+        staff_table = Table(
+            [
+                ["Metric", "Count"],
+                ["Total staff", staff["total"]],
+                ["Active staff", staff["active"]],
+                ["Revoked staff", staff["revoked"]],
+            ],
+            colWidths=[300, 150],
+        )
+
+        # Session analytics
+        story.append(Spacer(1, 20))
+        story.append(Paragraph("Session Analytics", styles["Heading2"]))
+
+        analytics_rows = [
+            ["Metric", "Count"],
+            ["Total requests", analytics["total_requests"]],
+            ["Pending requests", analytics["pending_requests"]],
+            ["Assigned requests", analytics["assigned_requests"]],
+            ["Completed requests", analytics["completed_requests"]],
+            ["Cancelled requests", analytics["cancelled_requests"]],
+            ["Failed requests", analytics["failed_requests"]],
+            ["Total video sessions", analytics["total_video_sessions"]],
+            ["Waiting video sessions", analytics["waiting_video_sessions"]],
+            ["Connecting video sessions", analytics["connecting_video_sessions"]],
+            ["Connected video sessions", analytics["connected_video_sessions"]],
+            ["Ended video sessions", analytics["ended_video_sessions"]],
+            ["Failed video sessions", analytics["failed_video_sessions"]],
+            [
+                "Average call duration (seconds)",
+                analytics["average_call_duration_seconds"],
+            ],
+        ]
+
+        analytics_table = Table(analytics_rows, colWidths=[300, 150])
+
+        for table in (staff_table, analytics_table):
+            table.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#173B57")),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                        ("PADDING", (0, 0), (-1, -1), 8),
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ]
+                )
+            )
+
+        story.append(staff_table)
+        story.append(analytics_table)
+
+        document.build(story)
+
+        pdf = buffer.getvalue()
+        buffer.close()
+
+        filename = (
+            f"{slugify(institution['organisation_name']) or 'institution'}"
+            "-analytics-report.pdf"
+        )
+
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+        return response
+
+
 class AdminLiveSessionsView(APIView):
-    """The calls that are starting or running right now, for the admin's Sessions page."""
+    """The calls that are starting or running right now."""
 
     permission_classes = [IsAdminRole]
 
@@ -1569,13 +1817,15 @@ class AdminSessionStatsView(APIView):
             status=VideoSession.Status.FAILED
         ).count()
 
-        return Response({
-            "liveNow": live_now,
-            "liveStable": live_now,  # Assume all connected are stable for now
-            "connecting": connecting,
-            "connectingAverageSeconds": 0,  # Can be calculated later
-            "needsAttention": needs_attention,
-        })
+        return Response(
+            {
+                "liveNow": live_now,
+                "liveStable": live_now,
+                "connecting": connecting,
+                "connectingAverageSeconds": 0,
+                "needsAttention": needs_attention,
+            }
+        )
 
 
 class AdminAuditLogsView(APIView):
@@ -1589,28 +1839,44 @@ class AdminAuditLogsView(APIView):
 
         data = []
         for log in logs:
-            # Format the event string to look nicer (e.g. "ADMIN_SIGN_IN" -> "Admin Sign In")
-            formatted_action = log.event.replace("_", " ").title() if log.event else "Unknown Action"
+            # Format the event string to look nicer
+            formatted_action = (
+                log.event.replace("_", " ").title()
+                if log.event
+                else "Unknown Action"
+            )
 
             # Format the date
-            timestamp = timezone.localtime(log.created_at).strftime("%b %d, %Y %H:%M")
+            timestamp = timezone.localtime(log.created_at).strftime(
+                "%b %d, %Y %H:%M"
+            )
 
             # Determine the source color based on the event
             if "admin" in log.event or (log.user and log.user.role == "admin"):
                 source = "admin"
             elif "institution" in log.event or "staff" in log.event:
                 source = "institution"
-            elif log.event in ["user_registered", "user_sign_out", "user_sign_in", "password_changed"]:
+            elif log.event in [
+                "user_registered",
+                "user_sign_out",
+                "user_sign_in",
+                "password_changed",
+            ]:
                 source = "user"
             else:
                 source = "system"
 
-            data.append({
-                "id": str(log.id),
-                "action": formatted_action,
-                "meta": f"By {log.user.full_name if log.user else 'System'} • {timestamp}",
-                "source": source,
-            })
+            data.append(
+                {
+                    "id": str(log.id),
+                    "action": formatted_action,
+                    "meta": (
+                        f"By {log.user.full_name if log.user else 'System'}"
+                        f" • {timestamp}"
+                    ),
+                    "source": source,
+                }
+            )
 
         return Response(data)
 
@@ -1623,9 +1889,7 @@ class AdminLogoutSerializer(serializers.Serializer):
 
 
 class AdminLogoutView(APIView):
-    """
-    Logs out an administrator by blacklisting their refresh token and tracking it.
-    """
+    """Logs out an administrator by blacklisting their refresh token."""
 
     permission_classes = [IsAuthenticated]
 
@@ -1662,3 +1926,4 @@ class AdminLogoutView(APIView):
 
         except TokenError:
             return Response({"error": "Invalid or expired token."}, status=400)
+

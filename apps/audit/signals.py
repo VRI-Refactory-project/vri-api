@@ -5,6 +5,7 @@ from apps.audit.models import AuditLog
 
 User = get_user_model()
 
+
 @receiver(post_save, sender=User)
 def log_new_user_registration(sender, instance, created, **kwargs):
     """Logs when a new user is created anywhere on the platform."""

@@ -70,7 +70,6 @@
 #         return f"{self.get_event_display()} - {self.user} ({self.created_at:%Y-%m-%d %H:%M})"
 
 
-
 from django.conf import settings
 from django.db import models
 
