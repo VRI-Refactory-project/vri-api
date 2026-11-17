@@ -3,6 +3,7 @@
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from livekit import api
@@ -11,16 +12,51 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core.permissions import IsDeafUser, IsInterpreter
 from apps.realtime.lifecycle import process_livekit_event
 from apps.realtime.models import SessionFeedback, VideoSession
 from apps.realtime.quality import assess_connection_quality
 from apps.realtime.serializers import (
     ConnectionQualityTestSerializer,
     SessionFeedbackSerializer,
+    SessionHistorySerializer,
     TicketSerializer,
 )
 from apps.realtime.tickets import TICKET_MAX_AGE_SECONDS, issue_ticket
 from apps.service_requests.models import ServiceRequest, SessionInvitation
+
+
+class SessionHistoryView(APIView):
+    """GET /api/v1/sessions/history/: completed sessions belonging to the signed-in user."""
+
+    permission_classes = [IsAuthenticated, IsDeafUser | IsInterpreter]
+
+    @extend_schema(responses={200: SessionHistorySerializer(many=True)})
+    def get(self, request):
+        sessions = (
+            VideoSession.objects.filter(
+                status=VideoSession.Status.ENDED,
+                connected_at__isnull=False,
+                ended_at__isnull=False,
+            )
+            .filter(
+                Q(service_request__requester=request.user)
+                | Q(service_request__interpreter__user=request.user)
+            )
+            .select_related(
+                "service_request__requester",
+                "service_request__interpreter__user",
+            )
+            .order_by("-connected_at")
+        )
+
+        serializer = SessionHistorySerializer(
+            sessions,
+            many=True,
+            context={"request": request},
+        )
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class TicketView(APIView):
