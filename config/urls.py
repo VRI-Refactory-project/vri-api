@@ -11,6 +11,7 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from apps.realtime.views import SessionHistoryView
 from apps.service_requests.services import sweep
 from apps.service_requests.views import (
     InterpreterOffersView,
@@ -52,7 +53,12 @@ urlpatterns = [
         "api/v1/interpreters/me/sessions/",
         InterpreterSessionListView.as_view(),
         name="interpreter-session-list",
-    ),  # the sessions the signed-in interpreter took
+    ),
+    path(
+        "api/v1/sessions/history/",
+        SessionHistoryView.as_view(),
+        name="session-history",
+    ),  # V2-035, personal video session history
     path(
         "api/v1/interpreters/me/offers/",
         include("apps.service_requests.interpreter_urls"),

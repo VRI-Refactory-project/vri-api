@@ -10,6 +10,7 @@ from rest_framework.test import APITestCase
 
 from apps.accounts.models import User
 from apps.audit.models import AuditLog
+from apps.core.permissions import user_institution
 from apps.interpreters.models import ScheduledSession
 from apps.service_requests.models import ServiceRequest
 from apps.service_requests.test_offers import make_interpreter
@@ -50,6 +51,8 @@ def make_request(requester, request_status, interpreter=None, minutes=None):
     started = timezone.now() - timedelta(hours=1)
     return ServiceRequest.objects.create(
         requester=requester,
+        # Tagged as create_request() does for staff (V2-013).
+        institution=user_institution(requester),
         interpreter=interpreter,
         status=request_status,
         assigned_at=started if interpreter else None,

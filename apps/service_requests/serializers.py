@@ -1,6 +1,6 @@
+from drf_spectacular.utils import extend_schema_field, inline_serializer
 from rest_framework import serializers
 
-from apps.core.permissions import user_institution
 from apps.interpreters.models import Specialisation
 from apps.realtime.call_status import display_status
 from apps.service_requests.models import RequestOffer, ServiceRequest, SessionInvitation
@@ -22,12 +22,15 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
     interpreter = serializers.SerializerMethodField()
     # How the call is going (waiting, connecting, connected, ended, failed). Apps show this; `status` is unchanged.
     display_status = serializers.SerializerMethodField()
+    # V2-013: the institution a staff member asked for; null for Deaf users. Set by the server, never sent.
+    institution = serializers.SerializerMethodField()
 
     class Meta:
         model = ServiceRequest
         fields = (
             "id",
             "requester_id",
+            "institution",
             "interpreter_id",
             "interpreter",
             "specialisation_required",
@@ -45,6 +48,7 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
         read_only_fields = (
             "id",
             "requester_id",
+            "institution",
             "interpreter_id",
             "interpreter",
             "status",
@@ -59,6 +63,18 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
 
     def get_display_status(self, obj):
         return display_status(obj)
+
+    @extend_schema_field(
+        inline_serializer(
+            "RequestInstitution",
+            {"id": serializers.IntegerField(), "name": serializers.CharField()},
+            allow_null=True,
+        )
+    )
+    def get_institution(self, obj):
+        if obj.institution is None:
+            return None
+        return {"id": obj.institution.pk, "name": obj.institution.organisation_name}
 
     def get_interpreter_id(self, obj):
         if obj.status != ServiceRequest.Status.ASSIGNED:
@@ -181,10 +197,11 @@ class InterpreterOfferSerializer(serializers.Serializer):
         return title
 
     def get_institutionName(self, offer) -> str:
-        # Who is asking: their institution when they are institution staff, otherwise their name.
-        requester = offer.service_request.requester
-        institution = user_institution(requester)
-        return institution.organisation_name if institution else requester.full_name
+        # Who is asking: the institution a staff member asked for (V2-013), otherwise their name.
+        service_request = offer.service_request
+        if service_request.institution is not None:
+            return service_request.institution.organisation_name
+        return service_request.requester.full_name
 
     def get_sector(self, offer) -> str:
         return offer.service_request.get_specialisation_required_display()
