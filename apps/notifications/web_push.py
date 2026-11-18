@@ -29,6 +29,21 @@ def web_push_ready() -> bool:
     )
 
 
+def is_vapid_mismatch(exc: WebPushException) -> bool:
+    """Identify subscriptions created with a different VAPID key."""
+    response = getattr(exc, "response", None)
+    if getattr(response, "status_code", None) != 403:
+        return False
+
+    response_text = getattr(response, "text", "") or ""
+    error_message = (
+        "vapid credentials in the authorization header do not correspond "
+        "to the credentials used to create the subscriptions"
+    )
+
+    return error_message in response_text.lower()
+
+
 def send_web_push(notification):
     """Send a saved notification to every browser the person turned notifications on in."""
     if not web_push_ready():
@@ -66,14 +81,20 @@ def send_web_push(notification):
             )
         except WebPushException as exc:
             code = getattr(exc.response, "status_code", None)
-            if code in (
-                404,
-                410,
-            ):  # the browser dropped the subscription, so stop sending to it
+
+            if code in (404, 410) or is_vapid_mismatch(exc):
                 subscription.is_active = False
                 subscription.save(update_fields=["is_active", "updated_at"])
+
+                if is_vapid_mismatch(exc):
+                    logger.warning(
+                        "Deactivated browser subscription %s due to VAPID mismatch",
+                        subscription.pk,
+                    )
             else:
-                logger.exception("Web push failed for notification %s", notification.pk)
+                logger.exception(
+                    "Web push failed for notification %s", notification.pk
+                )
         except Exception:
             logger.exception("Web push failed for notification %s", notification.pk)
 
