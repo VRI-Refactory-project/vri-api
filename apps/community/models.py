@@ -68,7 +68,7 @@ class Message(models.Model):
     body = models.TextField(
         max_length=MAX_LENGTH,
         blank=True,
-        help_text="Empty for a sticker, and for a photo sent without a caption.",
+        help_text="Empty for a sticker, and for a photo or file sent without a caption.",
     )
     sticker = models.CharField(
         max_length=40,
@@ -78,6 +78,10 @@ class Message(models.Model):
     has_image = models.BooleanField(
         default=False,
         help_text="A photo goes with this message (see MessageImage). Kept here so lists never load photos.",
+    )
+    has_file = models.BooleanField(
+        default=False,
+        help_text="A document goes with this message (see MessageFile). Kept here so lists never load files.",
     )
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
     read_at = models.DateTimeField(
@@ -104,3 +108,18 @@ class MessageImage(models.Model):
 
     def __str__(self):
         return f"Photo of message {self.message_id}"
+
+
+class MessageFile(models.Model):
+    """The document of a message, kept in the database (not on the server's disk)."""
+
+    message = models.OneToOneField(
+        Message, on_delete=models.CASCADE, related_name="file"
+    )
+    name = models.CharField(max_length=100)
+    content_type = models.CharField(max_length=100)
+    size = models.PositiveIntegerField()
+    data = models.BinaryField()
+
+    def __str__(self):
+        return f"{self.name} ({self.size} bytes)"
