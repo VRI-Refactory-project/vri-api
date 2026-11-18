@@ -327,6 +327,7 @@ class InstitutionScheduledSessionSerializer(serializers.ModelSerializer):
     """One session a staff member booked ahead."""
 
     staff = serializers.SerializerMethodField()
+    interpreter_name = serializers.SerializerMethodField()
 
     class Meta:
         model = ScheduledSession
@@ -339,12 +340,18 @@ class InstitutionScheduledSessionSerializer(serializers.ModelSerializer):
             "session_type",
             "custom_session_type",
             "status",
+            "interpreter_name",
             "created_at",
         )
         read_only_fields = fields
 
     def get_staff(self, obj) -> dict:
         return _staff_fields(obj.deaf_user)
+
+    def get_interpreter_name(self, obj) -> str | None:
+        if obj.status == ScheduledSession.Status.CONFIRMED and obj.interpreter_id:
+            return obj.interpreter.user.full_name
+        return None
 
 
 # --- V2-029: how much the institution uses VRI (built by apps/institutions/usage.py) ------------------

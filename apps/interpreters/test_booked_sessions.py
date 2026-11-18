@@ -10,7 +10,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.interpreters.models import ScheduledSession
+from apps.interpreters.models import ScheduledSession, ScheduledSessionOffer
 from apps.service_requests.test_offers import make_interpreter, make_user
 
 User = get_user_model()
@@ -25,14 +25,22 @@ class BookedSessionListTests(APITestCase):
         self.client.force_authenticate(self.interpreter.user)
         self.tomorrow = timezone.localdate() + timedelta(days=1)
 
-    def book(self, *, day=None, at=time(9, 0), user=None, **extra):
-        return Booking.objects.create(
+    def book(self, *, day=None, at=time(9, 0), user=None, offered=True, **extra):
+        """A booking, offered to this interpreter unless `offered=False`."""
+        booking = Booking.objects.create(
             deaf_user=user or self.deaf,
             date=day or self.tomorrow,
             time=at,
             duration=extra.pop("duration", 45),
             **extra,
         )
+        if offered:
+            ScheduledSessionOffer.objects.create(
+                session=booking,
+                interpreter=self.interpreter,
+                offered_at=timezone.now(),
+            )
+        return booking
 
     def test_needs_a_signed_in_user(self):
         self.client.force_authenticate(None)
@@ -61,6 +69,37 @@ class BookedSessionListTests(APITestCase):
         self.assertEqual(item["duration"], 60)
         self.assertEqual(item["session_type_label"], "Medical / Healthcare")
         self.assertEqual(item["status"], "PENDING")
+        self.assertEqual(item["my_state"], "offered")
+
+    def test_only_shows_bookings_offered_to_or_confirmed_for_this_interpreter(self):
+        offered = self.book()
+        self.book(offered=False)
+        mine = self.book(offered=False, day=self.tomorrow + timedelta(days=1))
+        mine.interpreter = self.interpreter
+        mine.status = Booking.Status.CONFIRMED
+        mine.save()
+        other = make_interpreter()
+        taken = self.book(offered=False, day=self.tomorrow + timedelta(days=2))
+        taken.interpreter = other
+        taken.status = Booking.Status.CONFIRMED
+        taken.save()
+
+        data = self.client.get(self.url).data
+
+        self.assertEqual([i["id"] for i in data], [offered.pk, mine.pk])
+        self.assertEqual([i["my_state"] for i in data], ["offered", "confirmed"])
+
+    def test_a_declined_or_closed_offer_is_not_listed(self):
+        declined = self.book()
+        ScheduledSessionOffer.objects.filter(session=declined).update(
+            outcome=ScheduledSessionOffer.Outcome.DECLINED
+        )
+        closed = self.book(day=self.tomorrow + timedelta(days=1))
+        ScheduledSessionOffer.objects.filter(session=closed).update(
+            outcome=ScheduledSessionOffer.Outcome.WITHDRAWN
+        )
+
+        self.assertEqual(self.client.get(self.url).data, [])
 
     def test_never_includes_contact_details(self):
         self.book()
@@ -91,7 +130,9 @@ class BookedSessionListTests(APITestCase):
 
     def test_leaves_out_cancelled_bookings(self):
         self.book(status=Booking.Status.CANCELLED)
-        kept = self.book(status=Booking.Status.CONFIRMED)
+        kept = self.book(
+            status=Booking.Status.CONFIRMED, interpreter=self.interpreter, offered=False
+        )
 
         ids = [item["id"] for item in self.client.get(self.url).data]
 

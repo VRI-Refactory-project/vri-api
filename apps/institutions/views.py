@@ -578,7 +578,7 @@ class InstitutionScheduledSessionListView(APIView):
                 institution=user_institution(request.user),
                 date__gte=timezone.localdate(),
             )
-            .select_related("deaf_user__institution_staff")
+            .select_related("deaf_user__institution_staff", "interpreter__user")
             .order_by("date", "time")
         )
         queryset = filter_by_staff(queryset, request.query_params, "deaf_user")
