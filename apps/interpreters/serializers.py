@@ -1,5 +1,5 @@
 import os
-from datetime import date
+from datetime import date, datetime
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -10,6 +10,7 @@ from rest_framework import serializers
 from apps.accounts.serializers import BaseRegistrationSerializer
 from apps.users.photos import photo_path
 
+from . import scheduling
 from . import specialisations as library
 from .models import (
     AvailabilityPeriod,
@@ -541,9 +542,37 @@ class ScheduledSessionSerializer(serializers.ModelSerializer):
             "session_type",
             "custom_session_type",
             "status",
+            "interpreter_name",
+            "confirmed_at",
+            "can_join",
+            "no_show",
             "created_at",
         ]
-        read_only_fields = ["id", "status", "created_at"]
+        read_only_fields = [
+            "id",
+            "status",
+            "interpreter_name",
+            "confirmed_at",
+            "can_join",
+            "no_show",
+            "created_at",
+        ]
+
+    can_join = serializers.SerializerMethodField(
+        help_text="True while the call can be opened: confirmed, from 10 minutes before the start."
+    )
+
+    def get_can_join(self, obj) -> bool:
+        return scheduling.join_window_open(obj)
+
+    interpreter_name = serializers.SerializerMethodField(
+        help_text="Who will interpret it. Null until an interpreter has confirmed."
+    )
+
+    def get_interpreter_name(self, obj) -> str | None:
+        if obj.status == ScheduledSession.Status.CONFIRMED and obj.interpreter_id:
+            return obj.interpreter.user.full_name
+        return None
 
     def validate(self, data):
         # 1. Custom validation: Ensure "Other" has a custom text
@@ -555,6 +584,10 @@ class ScheduledSessionSerializer(serializers.ModelSerializer):
         # 2. Ensure the date is in the future
         if data.get("date") and data.get("date") < date.today():
             raise serializers.ValidationError({"date": "The date must be in the future."})
+        if data.get("date") and data.get("time"):
+            starts = timezone.make_aware(datetime.combine(data["date"], data["time"]))
+            if starts <= timezone.now():
+                raise serializers.ValidationError({"time": "That time has already passed."})
 
         return data
 
@@ -581,8 +614,25 @@ class BookedSessionSerializer(serializers.ModelSerializer):
             "session_type",
             "session_type_label",
             "status",
+            "my_state",
+            "can_join",
         ]
         read_only_fields = fields
+
+    can_join = serializers.SerializerMethodField(
+        help_text="True while the call can be opened: confirmed, from 10 minutes before the start."
+    )
+
+    def get_can_join(self, obj) -> bool:
+        return scheduling.join_window_open(obj)
+
+    my_state = serializers.SerializerMethodField(
+        help_text='"offered" while it waits for your answer, "confirmed" once it is yours.'
+    )
+
+    def get_my_state(self, obj) -> str:
+        profile = getattr(self.context.get("request").user, "interpreter_profile", None)
+        return "confirmed" if profile and obj.interpreter_id == profile.pk else "offered"
 
     def get_deaf_photo(self, obj) -> str | None:
         return photo_path(obj.deaf_user)

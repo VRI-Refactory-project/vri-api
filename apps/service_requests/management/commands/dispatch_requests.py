@@ -1,5 +1,6 @@
 from django.core.management.base import BaseCommand
 
+from apps.interpreters import scheduling
 from apps.service_requests.services import sweep
 
 
@@ -12,6 +13,10 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         result = sweep()
+        result.update(scheduling.sweep())
         self.stdout.write(
-            "expired={expired} offered={offered} failed={failed}".format(**result)
+            "expired={expired} offered={offered} failed={failed} "
+            "scheduled_offered={scheduled_offered} reminders_sent={reminders_sent} no_shows={no_shows}".format(
+                **result
+            )
         )

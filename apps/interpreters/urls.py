@@ -5,6 +5,11 @@ from .views import (
     AvailabilityPeriodViewSet,
     AvailabilityStatusView,
     CertificationUploadView,
+    BookedSessionAcceptView,
+    BookedSessionDeclineView,
+    BookedSessionReleaseView,
+    CancelScheduledSessionView,
+    StartBookedSessionCallView,
     CreateScheduledSessionView,
     DayAvailabilityView,
     ExceptionDetailView,
@@ -88,6 +93,31 @@ urlpatterns = [
         "booked-sessions/",
         InterpreterBookedSessionListView.as_view(),
         name="interpreter-booked-sessions",
+    ),
+    path(
+        "booked-sessions/<int:pk>/accept/",
+        BookedSessionAcceptView.as_view(),
+        name="booked-session-accept",
+    ),
+    path(
+        "booked-sessions/<int:pk>/decline/",
+        BookedSessionDeclineView.as_view(),
+        name="booked-session-decline",
+    ),
+    path(
+        "booked-sessions/<int:pk>/release/",
+        BookedSessionReleaseView.as_view(),
+        name="booked-session-release",
+    ),
+    path(
+        "sessions/booked/<int:pk>/cancel/",
+        CancelScheduledSessionView.as_view(),
+        name="booked-session-cancel",
+    ),
+    path(
+        "sessions/booked/<int:pk>/start/",
+        StartBookedSessionCallView.as_view(),
+        name="booked-session-start",
     ),
     path("", include(router.urls)),
 ]
