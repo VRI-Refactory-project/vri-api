@@ -5,7 +5,7 @@ from django.db import transaction
 from django.db.models import Count, OuterRef, Q, Subquery
 from django.utils import timezone
 
-from .models import Connection, Message, MessageImage
+from .models import Connection, Message, MessageFile, MessageImage
 from apps.notifications.models import Notification
 from apps.notifications.services import create_notification
 
@@ -189,8 +189,12 @@ def messages_in(connection, before=None, limit=50):
     return page[:limit][::-1], len(page) > limit
 
 
-def send_message(connection, sender, body="", sticker="", image=None):
-    """Save a message. `image` is (jpeg bytes, width, height) from images.process_chat_image, or None."""
+def send_message(connection, sender, body="", sticker="", image=None, file=None):
+    """Save a message.
+
+    `image` is (jpeg bytes, width, height) from images.process_chat_image, `file` is (bytes, name,
+    content type) from files.process_chat_file; either may be None.
+    """
     with transaction.atomic():
         message = Message.objects.create(
             connection=connection,
@@ -198,11 +202,21 @@ def send_message(connection, sender, body="", sticker="", image=None):
             body=body,
             sticker=sticker,
             has_image=image is not None,
+            has_file=file is not None,
         )
         if image is not None:
             data, width, height = image
             MessageImage.objects.create(
                 message=message, data=data, width=width, height=height
+            )
+        if file is not None:
+            data, name, content_type = file
+            MessageFile.objects.create(
+                message=message,
+                name=name,
+                content_type=content_type,
+                size=len(data),
+                data=data,
             )
 
     # The conversation has two people; the one who did not send this is the receiver.
@@ -215,7 +229,14 @@ def send_message(connection, sender, body="", sticker="", image=None):
     create_notification(
         user=receiver,
         title=f"New message from {sender.full_name}",
-        body=body[:100] or ("Sent you a sticker" if sticker else "Sent you a photo"),
+        body=body[:100]
+        or (
+            "Sent you a sticker"
+            if sticker
+            else "Sent you a photo"
+            if image is not None
+            else "Sent you a file"
+        ),
         category=Notification.Category.CHAT_MESSAGE,
         data={
             "url": f"/dashboard/deaf/messages?c={connection.id}",
