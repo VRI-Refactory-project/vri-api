@@ -210,7 +210,7 @@ def accept_offer(session_id, profile, *, now=None):
     now = now or timezone.now()
     with transaction.atomic():
         session = (
-            ScheduledSession.objects.select_for_update()
+            ScheduledSession.objects.select_for_update(of=("self",))
             .select_related("deaf_user")
             .get(pk=session_id)
         )
@@ -242,7 +242,9 @@ def decline_offer(session_id, profile, *, now=None):
     """The interpreter says no. If everyone has now said no, others who were not asked get the offer."""
     now = now or timezone.now()
     with transaction.atomic():
-        session = ScheduledSession.objects.select_for_update().get(pk=session_id)
+        session = ScheduledSession.objects.select_for_update(of=("self",)).get(
+            pk=session_id
+        )
         offer = session.offers.filter(interpreter=profile).first()
         if offer is None:
             raise BookingNotAvailable("This booking was not offered to you.")
@@ -263,7 +265,7 @@ def release_session(session_id, profile, *, now=None):
     now = now or timezone.now()
     with transaction.atomic():
         session = (
-            ScheduledSession.objects.select_for_update()
+            ScheduledSession.objects.select_for_update(of=("self",))
             .select_related("deaf_user")
             .get(pk=session_id)
         )
@@ -323,7 +325,7 @@ def start_call(session_id, user, *, now=None):
     now = now or timezone.now()
     with transaction.atomic():
         session = (
-            ScheduledSession.objects.select_for_update()
+            ScheduledSession.objects.select_for_update(of=("self",))
             .select_related("deaf_user", "interpreter__user", "service_request")
             .get(pk=session_id)
         )
@@ -385,7 +387,7 @@ def cancel_session(session_id, user, *, now=None):
     now = now or timezone.now()
     with transaction.atomic():
         session = (
-            ScheduledSession.objects.select_for_update()
+            ScheduledSession.objects.select_for_update(of=("self",))
             .select_related("interpreter__user")
             .get(pk=session_id)
         )
@@ -415,7 +417,7 @@ def assign_session(session_id, profile, *, now=None):
     now = now or timezone.now()
     with transaction.atomic():
         session = (
-            ScheduledSession.objects.select_for_update()
+            ScheduledSession.objects.select_for_update(of=("self",))
             .select_related("deaf_user")
             .get(pk=session_id)
         )
@@ -523,7 +525,7 @@ def send_due_reminders(*, now=None):
     ]:
         with transaction.atomic():
             session = (
-                ScheduledSession.objects.select_for_update()
+                ScheduledSession.objects.select_for_update(of=("self",))
                 .select_related("deaf_user", "interpreter__user")
                 .get(pk=session_id)
             )
@@ -617,7 +619,7 @@ def handle_no_shows(*, now=None):
             continue
         with transaction.atomic():
             session = (
-                ScheduledSession.objects.select_for_update()
+                ScheduledSession.objects.select_for_update(of=("self",))
                 .select_related("deaf_user", "interpreter__user", "service_request")
                 .get(pk=candidate.pk)
             )
