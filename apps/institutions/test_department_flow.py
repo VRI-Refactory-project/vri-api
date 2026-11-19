@@ -139,6 +139,20 @@ class InstitutionDepartmentFlowTests(APITestCase):
         )
         self.assertEqual(self.client.post(url, {"name": " emergency "}, format="json").status_code, 400)
         self.assertEqual(self.client.post(url, {"name": "  "}, format="json").status_code, 400)
+        other_institution_department = self.client.post(
+            url,
+            {"name": "Emergency"},
+            format="json",
+        )
+        self.assertEqual(other_institution_department.status_code, 400)
+        self.client.force_authenticate(self.other_admin)
+        same_name_other_institution = self.client.post(
+            url,
+            {"name": "Emergency"},
+            format="json",
+        )
+        self.assertEqual(same_name_other_institution.status_code, 201)
+        self.client.force_authenticate(self.admin)
         detail_url = reverse("institution-department-detail", args=[listed.data[0]["id"]])
         self.assertEqual(
             detail_url,
@@ -179,6 +193,13 @@ class InstitutionDepartmentFlowTests(APITestCase):
         membership = InstitutionStaff.objects.get(user=staff_user)
         self.assertFalse(department.is_active)
         self.assertEqual(membership.department_id, department.pk)
+        reused_name = self.client.post(
+            reverse("institution-departments"),
+            {"name": "Emergency"},
+            format="json",
+        )
+        self.assertEqual(reused_name.status_code, 201, reused_name.data)
+        self.assertNotEqual(reused_name.data["id"], department.pk)
         active_departments = self.client.get(reverse("institution-departments"))
         self.assertNotIn(department.pk, [row["id"] for row in active_departments.data])
         staff_detail = self.client.get(

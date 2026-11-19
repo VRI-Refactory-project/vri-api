@@ -85,6 +85,7 @@ class InstitutionDepartment(models.Model):
             models.UniqueConstraint(
                 models.functions.Lower("name"),
                 models.F("institution"),
+                condition=models.Q(is_active=True),
                 name="institution_department_name_ci_unique",
             )
         ]

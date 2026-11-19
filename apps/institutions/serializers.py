@@ -227,11 +227,18 @@ class DepartmentSerializer(serializers.ModelSerializer):
         value = value.strip()
         if not value:
             raise serializers.ValidationError("Department name cannot be blank.")
-        qs = InstitutionDepartment.objects.filter(institution=self.context["institution"], name__iexact=value)
-        if self.instance:
-            qs = qs.exclude(pk=self.instance.pk)
-        if qs.exists():
-            raise serializers.ValidationError("A department with this name already exists.")
+        if not self.instance or self.instance.is_active:
+            qs = InstitutionDepartment.objects.filter(
+                institution=self.context["institution"],
+                name__iexact=value,
+                is_active=True,
+            )
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError(
+                    "A department with this name already exists."
+                )
         return value
 
 
