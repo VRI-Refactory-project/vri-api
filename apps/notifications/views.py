@@ -1,3 +1,5 @@
+from .models import Notification
+from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
@@ -134,10 +136,7 @@ class NotificationPreferenceView(APIView):
         return Response(serializer.data)
 
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from django.utils import timezone
-from .models import Notification
+
 
 class NotificationMarkAllReadView(APIView):
     def post(self, request):
