@@ -1,5 +1,7 @@
 """V2-011: only the people on an accepted session can get a token for its call."""
 
+import json
+
 import jwt
 from django.contrib.auth import get_user_model
 from django.test import override_settings
@@ -67,7 +69,24 @@ class CallTokenTests(APITestCase):
         response = self.ask(self.interpreter.user)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(self.claims(response)["sub"], f"user-{self.interpreter.user.pk}")
+        self.assertEqual(
+            self.claims(response)["sub"], f"user-{self.interpreter.user.pk}"
+        )
+
+    # --- Names and tags in the call ---
+
+    def test_the_interpreter_is_tagged_and_everyone_may_rename_themselves(self):
+        self.accept()
+
+        interpreter_claims = self.claims(self.ask(self.interpreter.user))
+        deaf_claims = self.claims(self.ask(self.deaf))
+
+        self.assertEqual(
+            json.loads(interpreter_claims["metadata"]), {"role": "interpreter"}
+        )
+        self.assertEqual(json.loads(deaf_claims["metadata"]), {"role": "participant"})
+        self.assertTrue(interpreter_claims["video"]["canUpdateOwnMetadata"])
+        self.assertTrue(deaf_claims["video"]["canUpdateOwnMetadata"])
 
     # --- Who stays out ---
 
@@ -105,7 +124,9 @@ class CallTokenTests(APITestCase):
 
     def test_a_cancelled_session_cannot_be_joined(self):
         self.accept()
-        ServiceRequest.objects.filter(pk=self.service_request.pk).update(status=Status.CANCELLED)
+        ServiceRequest.objects.filter(pk=self.service_request.pk).update(
+            status=Status.CANCELLED
+        )
 
         response = self.ask(self.deaf)
 
