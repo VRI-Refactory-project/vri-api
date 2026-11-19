@@ -13,6 +13,15 @@ def room_name(service_request):
     return f"session-{service_request.pk}"
 
 
+# The platform role of an account, as the call screen names it under the person's name.
+_CALL_ROLES = {
+    "deaf_hoh": "deaf",
+    "interpreter": "interpreter",
+    "institution": "institution",
+    "admin": "admin",
+}
+
+
 def _role_metadata(role):
     """What the call screen reads to show a tag under someone's name. It is signed into the token,
     so a person can rename themselves but cannot give themselves another role."""
@@ -29,15 +38,11 @@ def create_call_token(service_request, user):
         can_publish_data=True,
         can_update_own_metadata=True,  # lets people rename themselves in the call
     )
-    interpreter = service_request.interpreter
-    is_interpreter = interpreter is not None and interpreter.user_id == user.pk
     return (
         api.AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
         .with_identity(f"user-{user.pk}")
         .with_name(user.full_name)
-        .with_metadata(
-            _role_metadata("interpreter" if is_interpreter else "participant")
-        )
+        .with_metadata(_role_metadata(_CALL_ROLES.get(user.role, "participant")))
         .with_ttl(timedelta(minutes=10))
         .with_grants(grants)
         .to_jwt()

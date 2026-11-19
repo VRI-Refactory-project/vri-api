@@ -75,7 +75,9 @@ class CallTokenTests(APITestCase):
 
     # --- Names and tags in the call ---
 
-    def test_the_interpreter_is_tagged_and_everyone_may_rename_themselves(self):
+    def test_each_person_is_tagged_with_their_platform_role_and_may_rename_themselves(
+        self,
+    ):
         self.accept()
 
         interpreter_claims = self.claims(self.ask(self.interpreter.user))
@@ -84,7 +86,7 @@ class CallTokenTests(APITestCase):
         self.assertEqual(
             json.loads(interpreter_claims["metadata"]), {"role": "interpreter"}
         )
-        self.assertEqual(json.loads(deaf_claims["metadata"]), {"role": "participant"})
+        self.assertEqual(json.loads(deaf_claims["metadata"]), {"role": "deaf"})
         self.assertTrue(interpreter_claims["video"]["canUpdateOwnMetadata"])
         self.assertTrue(deaf_claims["video"]["canUpdateOwnMetadata"])
 
