@@ -244,7 +244,10 @@ class InstitutionDepartmentListCreateView(APIView):
 
     def get(self, request):
         institution = user_institution(request.user)
-        rows = InstitutionDepartment.objects.filter(institution=institution)
+        rows = InstitutionDepartment.objects.filter(
+            institution=institution,
+            is_active=True,
+        )
         return Response(DepartmentSerializer(rows, many=True).data)
 
     def post(self, request):
@@ -273,8 +276,9 @@ class InstitutionDepartmentDetailView(APIView):
 
     def delete(self, request, pk):
         department = self._get(request, pk)
-        department.is_active = False
-        department.save(update_fields=["is_active"])
+        if department.is_active:
+            department.is_active = False
+            department.save(update_fields=["is_active"])
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

@@ -13,6 +13,7 @@ staticfiles/
 .coverage
 htmlcov/
 .DS_Store
+.venv312/
 
 # Local database backups
 backup_before_sprint2.sql
