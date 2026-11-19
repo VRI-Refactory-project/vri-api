@@ -218,7 +218,7 @@ class MyInstitutionView(RetrieveAPIView):
 
 
 class MyInstitutionProfileView(APIView):
-    permission_classes = [IsInstitutionAdmin]
+    permission_classes = [IsInstitutionAccountAdmin]
 
     def _profile(self, request):
         institution = user_institution(request.user)

@@ -204,6 +204,9 @@ class InstitutionSelfProfileSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         user_data = validated_data.pop("user", {})
+        if user_data.get("email", instance.user.email) != instance.user.email:
+            instance.user.email_verified_at = None
+            user_data["email_verified_at"] = None
         for field, value in validated_data.items():
             setattr(instance, field, value)
         for field, value in user_data.items():
