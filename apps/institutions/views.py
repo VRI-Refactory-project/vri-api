@@ -273,9 +273,8 @@ class InstitutionDepartmentDetailView(APIView):
 
     def delete(self, request, pk):
         department = self._get(request, pk)
-        if department.staff.exists():
-            raise ValidationError({"department": ["This department is assigned to staff and cannot be deleted."]})
-        department.delete()
+        department.is_active = False
+        department.save(update_fields=["is_active"])
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

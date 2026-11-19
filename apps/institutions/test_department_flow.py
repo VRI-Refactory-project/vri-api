@@ -134,12 +134,16 @@ class InstitutionDepartmentFlowTests(APITestCase):
         self.assertEqual(self.client.post(url, {"name": " emergency "}, format="json").status_code, 400)
         self.assertEqual(self.client.post(url, {"name": "  "}, format="json").status_code, 400)
         self.assertEqual(len(self.client.get(url).data), 1)
+        detail_url = reverse("institution-department-detail", args=[created.data["id"]])
+        renamed = self.client.patch(detail_url, {"name": "Maternity"}, format="json")
+        self.assertEqual(renamed.status_code, 200)
+        self.assertEqual(renamed.data["name"], "Maternity")
         other_department = InstitutionDepartment.objects.create(institution=self.other_institution, name="Other")
-        detail_url = reverse("institution-department-detail", args=[other_department.pk])
-        self.assertEqual(self.client.patch(detail_url, {"name": "Taken"}, format="json").status_code, 404)
-        self.assertEqual(self.client.delete(detail_url).status_code, 404)
+        foreign_url = reverse("institution-department-detail", args=[other_department.pk])
+        self.assertEqual(self.client.patch(foreign_url, {"name": "Taken"}, format="json").status_code, 404)
+        self.assertEqual(self.client.delete(foreign_url).status_code, 404)
 
-    def test_assigned_department_cannot_be_deleted(self):
+    def test_delete_deactivates_assigned_department_and_preserves_staff_assignment(self):
         department = InstitutionDepartment.objects.create(institution=self.institution, name="Emergency")
         staff_user = User.objects.create_user(
             "+256700000304",
@@ -155,8 +159,27 @@ class InstitutionDepartmentFlowTests(APITestCase):
             job_title=department.name,
         )
         response = self.client.delete(reverse("institution-department-detail", args=[department.pk]))
-        self.assertEqual(response.status_code, 400)
-        self.assertTrue(InstitutionDepartment.objects.filter(pk=department.pk).exists())
+        self.assertEqual(response.status_code, 204)
+        department.refresh_from_db()
+        membership = InstitutionStaff.objects.get(user=staff_user)
+        self.assertFalse(department.is_active)
+        self.assertEqual(membership.department_id, department.pk)
+        staff_detail = self.client.get(
+            reverse("institution-staff-detail", args=[membership.pk])
+        )
+        self.assertEqual(staff_detail.data["department_name"], "Emergency")
+
+    def test_delete_deactivates_unassigned_department(self):
+        department = InstitutionDepartment.objects.create(
+            institution=self.institution,
+            name="Unused",
+        )
+        response = self.client.delete(
+            reverse("institution-department-detail", args=[department.pk])
+        )
+        self.assertEqual(response.status_code, 204)
+        department.refresh_from_db()
+        self.assertFalse(department.is_active)
 
     @patch("apps.institutions.staff._send_login_details")
     def test_staff_creation_requires_active_department_from_same_institution(self, send_details):
