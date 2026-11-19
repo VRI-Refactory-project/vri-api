@@ -21,7 +21,13 @@ class Migration(migrations.Migration):
             ],
             options={
                 "ordering": ["name", "id"],
-                "constraints": [models.UniqueConstraint(models.functions.Lower("name"), fields=("institution",), name="institution_department_name_ci_unique")],
+                "constraints": [
+                    models.UniqueConstraint(
+                        models.functions.Lower("name"),
+                        models.F("institution"),
+                        name="institution_department_name_ci_unique",
+                    )
+                ],
             },
         ),
         migrations.AddField(

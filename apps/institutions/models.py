@@ -84,7 +84,7 @@ class InstitutionDepartment(models.Model):
         constraints = [
             models.UniqueConstraint(
                 models.functions.Lower("name"),
-                fields=["institution"],
+                models.F("institution"),
                 name="institution_department_name_ci_unique",
             )
         ]
