@@ -148,8 +148,22 @@ class InstitutionSelfProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = InstitutionProfile
-        fields = ["organisation_name", "name", "organisation_type", "type", "organisation_type_other", "email", "phone_number", "description"]
-        extra_kwargs = {"organisation_name": {"required": False}, "organisation_type": {"required": False}, "organisation_type_other": {"required": False}, "description": {"required": False}}
+        fields = [
+            "organisation_name",
+            "name",
+            "organisation_type",
+            "type",
+            "organisation_type_other",
+            "email",
+            "phone_number",
+            "description",
+        ]
+        extra_kwargs = {
+            "organisation_name": {"required": False},
+            "organisation_type": {"required": False},
+            "organisation_type_other": {"required": False},
+            "description": {"required": False},
+        }
 
     def to_internal_value(self, data):
         data = data.copy()
@@ -180,7 +194,9 @@ class InstitutionSelfProfileSerializer(serializers.ModelSerializer):
         if org_type == OrganisationType.OTHER:
             other = (other or "").strip()
             if not other:
-                raise serializers.ValidationError({"organisation_type_other": "Tell us what kind of institution this is."})
+                raise serializers.ValidationError(
+                    {"organisation_type_other": "Tell us what kind of institution this is."}
+                )
             attrs["organisation_type_other"] = other
         elif "organisation_type" in attrs or "organisation_type_other" in attrs:
             attrs["organisation_type_other"] = ""
@@ -278,7 +294,11 @@ class StaffCreateSerializer(BaseRegistrationSerializer):
 
     def validate_department_id(self, value):
         try:
-            department = InstitutionDepartment.objects.get(pk=value, institution=self.context["institution"], is_active=True)
+            department = InstitutionDepartment.objects.get(
+                pk=value,
+                institution=self.context["institution"],
+                is_active=True,
+            )
         except InstitutionDepartment.DoesNotExist:
             raise serializers.ValidationError("Choose an active department belonging to your institution.")
         self.department = department

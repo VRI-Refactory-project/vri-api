@@ -81,7 +81,13 @@ class InstitutionDepartment(models.Model):
 
     class Meta:
         ordering = ["name", "id"]
-        constraints = [models.UniqueConstraint(models.functions.Lower("name"), fields=["institution"], name="institution_department_name_ci_unique")]
+        constraints = [
+            models.UniqueConstraint(
+                models.functions.Lower("name"),
+                fields=["institution"],
+                name="institution_department_name_ci_unique",
+            )
+        ]
 
     def __str__(self):
         return self.name
@@ -112,7 +118,13 @@ class InstitutionStaff(models.Model):
         default="",
         help_text="e.g. Doctor, Police officer. Shown only; not a permission.",
     )
-    department = models.ForeignKey(InstitutionDepartment, null=True, blank=True, on_delete=models.SET_NULL, related_name="staff")
+    department = models.ForeignKey(
+        InstitutionDepartment,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="staff",
+    )
     is_active = models.BooleanField(default=True, db_index=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

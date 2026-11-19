@@ -262,7 +262,12 @@ class InstitutionDepartmentDetailView(APIView):
 
     def patch(self, request, pk):
         department = self._get(request, pk)
-        serializer = DepartmentSerializer(department, data=request.data, partial=True, context={"institution": department.institution})
+        serializer = DepartmentSerializer(
+            department,
+            data=request.data,
+            partial=True,
+            context={"institution": department.institution},
+        )
         serializer.is_valid(raise_exception=True)
         return Response(DepartmentSerializer(serializer.save()).data)
 
