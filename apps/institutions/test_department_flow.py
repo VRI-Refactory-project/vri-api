@@ -38,18 +38,66 @@ class InstitutionDepartmentFlowTests(APITestCase):
 
     def test_profile_returns_registration_data_and_persists_edits(self):
         url = reverse("institution-profile-me")
-        self.assertEqual(self.client.get(url).data["organisation_type_other"], "Clinic")
+        self.admin.email_verified_at = self.admin.date_joined
+        self.admin.save(update_fields=["email_verified_at"])
+        initial = self.client.get(url)
+        self.assertEqual(initial.status_code, 200)
+        self.assertEqual(initial.data["organisation_name"], "Example")
+        self.assertEqual(initial.data["organisation_type"], "OTHER")
+        self.assertEqual(initial.data["organisation_type_other"], "Clinic")
+        self.assertEqual(initial.data["email"], "admin301@example.com")
+        self.assertEqual(initial.data["phone_number"], "+256700000301")
         response = self.client.patch(
             url,
-            {"name": "Updated", "email": "new301@example.com", "description": "About us"},
+            {
+                "organisation_name": "Updated",
+                "organisation_type": "SCHOOL",
+                "email": "new301@example.com",
+                "phone_number": "+256700000309",
+                "description": "About us",
+            },
             format="json",
         )
         self.assertEqual(response.status_code, 200)
         self.institution.refresh_from_db()
         self.admin.refresh_from_db()
         self.assertEqual(self.institution.organisation_name, "Updated")
+        self.assertEqual(self.institution.organisation_type, "SCHOOL")
+        self.assertEqual(self.institution.organisation_type_other, "")
+        self.assertEqual(self.institution.description, "About us")
         self.assertEqual(self.admin.email, "new301@example.com")
-        self.assertEqual(response.data["name"], "Updated")
+        self.assertEqual(str(self.admin.phone_number), "+256700000309")
+        self.assertIsNone(self.admin.email_verified_at)
+        self.assertEqual(response.data["organisation_name"], "Updated")
+        self.assertEqual(response.data["email"], "new301@example.com")
+
+    def test_profile_validation_and_persistence_on_failure(self):
+        url = reverse("institution-profile-me")
+        other_user = User.objects.create_user(
+            "+256700000310",
+            "Test-password-123!",
+            full_name="Another User",
+            role=User.Role.INSTITUTION,
+            email="used@example.com",
+        )
+        for payload in (
+            {"organisation_name": "  "},
+            {"organisation_type": "INVALID"},
+            {"email": "not-an-email"},
+            {"email": "used@example.com"},
+            {"phone_number": "+256700000310"},
+            {"phone_number": "not-a-phone"},
+            {"organisation_type": "OTHER", "organisation_type_other": " "},
+        ):
+            with self.subTest(payload=payload):
+                response = self.client.patch(url, payload, format="json")
+                self.assertEqual(response.status_code, 400, response.data)
+        self.institution.refresh_from_db()
+        self.admin.refresh_from_db()
+        self.assertEqual(self.institution.organisation_name, "Example")
+        self.assertEqual(self.admin.email, "admin301@example.com")
+        self.assertEqual(str(self.admin.phone_number), "+256700000301")
+        self.assertEqual(other_user.email, "used@example.com")
 
     def test_profile_is_limited_to_admin_membership(self):
         staff_user = User.objects.create_user(
@@ -61,6 +109,23 @@ class InstitutionDepartmentFlowTests(APITestCase):
         InstitutionStaff.objects.create(institution=self.institution, user=staff_user, role=StaffRole.STAFF)
         self.client.force_authenticate(staff_user)
         self.assertEqual(self.client.get(reverse("institution-profile-me")).status_code, 403)
+
+    def test_profile_reads_and_updates_only_the_authenticated_admin_institution(self):
+        url = reverse("institution-profile-me")
+        self.client.force_authenticate(self.other_admin)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["organisation_name"], self.other_institution.organisation_name)
+        response = self.client.patch(url, {"organisation_name": "Second institution"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.institution.refresh_from_db()
+        self.other_institution.refresh_from_db()
+        self.assertEqual(self.institution.organisation_name, "Example")
+        self.assertEqual(self.other_institution.organisation_name, "Second institution")
+
+    def test_profile_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self.client.get(reverse("institution-profile-me")).status_code, 401)
 
     def test_departments_scoped_and_case_insensitive_unique(self):
         url = reverse("institution-departments")
