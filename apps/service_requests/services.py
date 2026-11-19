@@ -104,7 +104,7 @@ ALLOWED_TRANSITIONS = {
     Status.CREATED: {Status.PENDING, Status.OFFERED, Status.CANCELLED},
     Status.PENDING: {Status.OFFERED, Status.CANCELLED, Status.FAILED},
     Status.OFFERED: {Status.ASSIGNED, Status.OFFERED, Status.PENDING, Status.CANCELLED},
-    Status.ASSIGNED: {Status.COMPLETED},
+    Status.ASSIGNED: {Status.COMPLETED, Status.CANCELLED},
     Status.COMPLETED: set(),
     Status.CANCELLED: set(),
     Status.FAILED: set(),
@@ -317,14 +317,24 @@ def cancel_request(service_request, *, request=None):
         locked = ServiceRequest.objects.select_for_update().get(pk=service_request.pk)
         if locked.status == ServiceRequest.Status.CANCELLED:
             return locked
-        if locked.status not in OPEN_STATUSES:
+        # if locked.status not in OPEN_STATUSES:
+        if locked.status not in [*OPEN_STATUSES, ServiceRequest.Status.ASSIGNED]:
             raise NotCancellable
+        assigned_interpreter = locked.interpreter
         locked.status = ServiceRequest.Status.CANCELLED
         locked.cancelled_at = now
         locked.cancel_reason = ServiceRequest.CancelReason.REQUESTER_CANCELLED
         locked.interpreter = None
         locked.save()
         broadcast_status(locked)
+        if assigned_interpreter:
+            _notify(
+                assigned_interpreter.user,
+                "Session Cancelled",
+                "The requester has cancelled this session.",
+                {"request_id": locked.pk, "status": "CANCELLED"}
+            )
+            InterpreterProfile.objects.filter(pk=assigned_interpreter.pk).update(is_available=True)
         locked.offers.filter(outcome=RequestOffer.Outcome.PENDING).update(
             outcome=RequestOffer.Outcome.WITHDRAWN, responded_at=now
         )
