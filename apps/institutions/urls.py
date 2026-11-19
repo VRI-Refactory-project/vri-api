@@ -28,6 +28,9 @@ urlpatterns = [
     ),
     # Institution Administrator routes (Self-service)
     path("me/", views.MyInstitutionView.as_view(), name="institution-me"),
+    path("me/institution-profile/", views.MyInstitutionProfileView.as_view(), name="institution-profile-me"),
+    path("me/departments/", views.InstitutionDepartmentListCreateView.as_view(), name="institution-departments"),
+    path("me/departments/<int:pk>/", views.InstitutionDepartmentDetailView.as_view(), name="institution-department-detail"),
     path(
         "me/account/",
         InstitutionalAccountUpdateAPIView.as_view(),

@@ -14,7 +14,7 @@ from apps.realtime.call_status import display_status
 from apps.service_requests.models import ServiceRequest
 from apps.service_requests.serializers import session_duration_minutes
 
-from .models import InstitutionProfile, InstitutionStaff, OrganisationType, StaffRole
+from .models import InstitutionDepartment, InstitutionProfile, InstitutionStaff, OrganisationType, StaffRole
 
 User = get_user_model()
 
@@ -140,6 +140,82 @@ class InstitutionProfileUpdateSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class InstitutionSelfProfileSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source="organisation_name", read_only=True)
+    type = serializers.CharField(source="organisation_type", read_only=True)
+    email = serializers.EmailField(source="user.email", required=False)
+    phone_number = PlusPhoneNumberField(source="user.phone_number", required=False)
+
+    class Meta:
+        model = InstitutionProfile
+        fields = ["organisation_name", "name", "organisation_type", "type", "organisation_type_other", "email", "phone_number", "description"]
+        extra_kwargs = {"organisation_name": {"required": False}, "organisation_type": {"required": False}, "organisation_type_other": {"required": False}, "description": {"required": False}}
+
+    def to_internal_value(self, data):
+        data = data.copy()
+        if "organisation_name" not in data and "name" in data:
+            data["organisation_name"] = data["name"]
+        if "organisation_type" not in data and "type" in data:
+            data["organisation_type"] = data["type"]
+        return super().to_internal_value(data)
+
+    def validate_organisation_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Organisation name cannot be blank.")
+        return value
+
+    def validate_email(self, value):
+        value = value.strip().lower()
+        if User.objects.filter(email__iexact=value).exclude(pk=self.instance.user_id).exists():
+            raise serializers.ValidationError("An account with this email already exists.")
+        return value
+
+    def validate_phone_number(self, value):
+        return ensure_phone_unused(value, current_user=self.instance.user)
+
+    def validate(self, attrs):
+        org_type = attrs.get("organisation_type", self.instance.organisation_type)
+        other = attrs.get("organisation_type_other", self.instance.organisation_type_other)
+        if org_type == OrganisationType.OTHER:
+            other = (other or "").strip()
+            if not other:
+                raise serializers.ValidationError({"organisation_type_other": "Tell us what kind of institution this is."})
+            attrs["organisation_type_other"] = other
+        elif "organisation_type" in attrs or "organisation_type_other" in attrs:
+            attrs["organisation_type_other"] = ""
+        return attrs
+
+    def update(self, instance, validated_data):
+        user_data = validated_data.pop("user", {})
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        for field, value in user_data.items():
+            setattr(instance.user, field, value)
+        instance.save()
+        if user_data:
+            instance.user.save(update_fields=list(user_data))
+        return instance
+
+
+class DepartmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InstitutionDepartment
+        fields = ["id", "name", "is_active"]
+        read_only_fields = ["id", "is_active"]
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Department name cannot be blank.")
+        qs = InstitutionDepartment.objects.filter(institution=self.context["institution"], name__iexact=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("A department with this name already exists.")
+        return value
+
+
 # --- V2-006: staff accounts -------------------------------------------------------------------------
 
 
@@ -152,6 +228,8 @@ class StaffSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
     status = serializers.SerializerMethodField(help_text="ACTIVE or REVOKED.")
     last_login = serializers.DateTimeField(source="user.last_login", read_only=True)
+    department_name = serializers.SerializerMethodField()
+    job_title = serializers.SerializerMethodField()
 
     class Meta:
         model = InstitutionStaff
@@ -163,6 +241,7 @@ class StaffSerializer(serializers.ModelSerializer):
             "email",
             "role",
             "job_title",
+            "department_name",
             "status",
             "last_login",
             "created_at",
@@ -172,6 +251,12 @@ class StaffSerializer(serializers.ModelSerializer):
 
     def get_status(self, membership) -> str:
         return "REVOKED" if membership.is_revoked else "ACTIVE"
+
+    def get_department_name(self, membership):
+        return membership.department.name if membership.department_id else membership.job_title
+
+    def get_job_title(self, membership):
+        return self.get_department_name(membership)
 
 
 class StaffCreateSerializer(BaseRegistrationSerializer):
@@ -189,6 +274,15 @@ class StaffCreateSerializer(BaseRegistrationSerializer):
     job_title = serializers.CharField(
         max_length=100, required=False, allow_blank=True, default=""
     )
+    department_id = serializers.IntegerField(required=False, write_only=True)
+
+    def validate_department_id(self, value):
+        try:
+            department = InstitutionDepartment.objects.get(pk=value, institution=self.context["institution"], is_active=True)
+        except InstitutionDepartment.DoesNotExist:
+            raise serializers.ValidationError("Choose an active department belonging to your institution.")
+        self.department = department
+        return value
 
     def get_fields(self):
         fields = super().get_fields()
@@ -216,6 +310,7 @@ class StaffCreateSerializer(BaseRegistrationSerializer):
             user=user,
             role=self.staff_role,
             job_title=validated_data.get("job_title", "").strip(),
+            department=getattr(self, "department", None),
             created_by=self.context["request"].user,
         )
 
