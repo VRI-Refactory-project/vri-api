@@ -131,10 +131,19 @@ class InstitutionDepartmentFlowTests(APITestCase):
         url = reverse("institution-departments")
         created = self.client.post(url, {"name": "Emergency"}, format="json")
         self.assertEqual(created.status_code, 201)
+        listed = self.client.get(url)
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(
+            listed.data[0],
+            {"id": created.data["id"], "name": "Emergency", "is_active": True},
+        )
         self.assertEqual(self.client.post(url, {"name": " emergency "}, format="json").status_code, 400)
         self.assertEqual(self.client.post(url, {"name": "  "}, format="json").status_code, 400)
-        self.assertEqual(len(self.client.get(url).data), 1)
-        detail_url = reverse("institution-department-detail", args=[created.data["id"]])
+        detail_url = reverse("institution-department-detail", args=[listed.data[0]["id"]])
+        self.assertEqual(
+            detail_url,
+            f"/api/v1/institutions/me/departments/{listed.data[0]['id']}/",
+        )
         renamed = self.client.patch(detail_url, {"name": "Maternity"}, format="json")
         self.assertEqual(renamed.status_code, 200)
         self.assertEqual(renamed.data["name"], "Maternity")
@@ -158,12 +167,20 @@ class InstitutionDepartmentFlowTests(APITestCase):
             department=department,
             job_title=department.name,
         )
-        response = self.client.delete(reverse("institution-department-detail", args=[department.pk]))
+        listed = self.client.get(reverse("institution-departments"))
+        department_id = next(
+            row["id"] for row in listed.data if row["name"] == department.name
+        )
+        response = self.client.delete(
+            reverse("institution-department-detail", args=[department_id])
+        )
         self.assertEqual(response.status_code, 204)
         department.refresh_from_db()
         membership = InstitutionStaff.objects.get(user=staff_user)
         self.assertFalse(department.is_active)
         self.assertEqual(membership.department_id, department.pk)
+        active_departments = self.client.get(reverse("institution-departments"))
+        self.assertNotIn(department.pk, [row["id"] for row in active_departments.data])
         staff_detail = self.client.get(
             reverse("institution-staff-detail", args=[membership.pk])
         )
@@ -174,8 +191,10 @@ class InstitutionDepartmentFlowTests(APITestCase):
             institution=self.institution,
             name="Unused",
         )
+        listed = self.client.get(reverse("institution-departments"))
+        department_id = listed.data[0]["id"]
         response = self.client.delete(
-            reverse("institution-department-detail", args=[department.pk])
+            reverse("institution-department-detail", args=[department_id])
         )
         self.assertEqual(response.status_code, 204)
         department.refresh_from_db()
