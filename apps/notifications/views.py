@@ -132,3 +132,15 @@ class NotificationPreferenceView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from django.utils import timezone
+from .models import Notification
+
+class NotificationMarkAllReadView(APIView):
+    def post(self, request):
+        # Updates all unread notifications for this user to the current time
+        Notification.objects.filter(user=request.user, read_at__isnull=True).update(read_at=timezone.now())
+        return Response({"detail": "All notifications marked as read."})

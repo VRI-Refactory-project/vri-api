@@ -5,6 +5,7 @@ from apps.notifications.views import (
     NotificationMarkReadView,
     PushDeviceRegistrationView,
     NotificationPreferenceView,
+    NotificationMarkAllReadView,
 )
 from apps.notifications.web_push import WebPushKeyView, WebPushSubscriptionView
 
@@ -12,6 +13,11 @@ app_name = "notifications"
 
 urlpatterns = [
     path("", NotificationListView.as_view(), name="list"),
+    path(
+        "read-all/",
+        NotificationMarkAllReadView.as_view(),
+        name="mark-all-read",
+    ),
     path(
         "<int:pk>/read/",
         NotificationMarkReadView.as_view(),
