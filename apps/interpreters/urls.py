@@ -1,3 +1,4 @@
+
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
@@ -11,11 +12,12 @@ from .views import (
     ExceptionListView,
     InterpreterAvailabilityDetailView,
     InterpreterAvailabilityListCreateView,
+    InterpreterBookedSessionListView,
     InterpreterProfileDetailView,
+    InterpreterSessionHistoryView,
+    ListMyScheduledSessionsView,
     SpecialisationLibraryView,
     WeeklyScheduleView,
-    ListMyScheduledSessionsView,
-    InterpreterBookedSessionListView,
 )
 
 app_name = "interpreters"
@@ -33,6 +35,11 @@ urlpatterns = [
         "me/",
         InterpreterProfileDetailView.as_view(),
         name="interpreter-profile-detail",
+    ),
+    path(
+        "sessions/history/",
+        InterpreterSessionHistoryView.as_view(),
+        name="interpreter-session-history",
     ),
     path(
         "me/availability/",

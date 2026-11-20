@@ -9,10 +9,10 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
-    inline_serializer,
     OpenApiParameter,
     OpenApiResponse,
     extend_schema,
+    inline_serializer,
 )
 from rest_framework import generics, permissions, serializers, viewsets
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
@@ -26,6 +26,7 @@ from apps.core.permissions import (
     IsInterpreter,
     user_institution,
 )
+from apps.service_requests.models import ServiceRequest
 
 from . import specialisations as library
 from . import verification
@@ -50,6 +51,7 @@ from .serializers import (
     AvailabilityPeriodSerializer,
     AvailabilityStatusSerializer,
     AvailabilityStatusUpdateSerializer,
+    BookedSessionSerializer,
     CertificationDocumentSerializer,
     DayScheduleSerializer,
     DayUpdateSerializer,
@@ -57,11 +59,11 @@ from .serializers import (
     DecisionReasonRequiredSerializer,
     InterpreterAvailabilitySerializer,
     InterpreterProfileSerializer,
+    InterpreterSessionHistorySerializer,
     ManageInterpreterDetailSerializer,
     ManageInterpreterListSerializer,
     MonthExceptionsSerializer,
     MonthQuerySerializer,
-    BookedSessionSerializer,
     ScheduledSessionSerializer,
     WeekQuerySerializer,
     WeekScheduleSerializer,
@@ -644,4 +646,38 @@ class InterpreterBookedSessionListView(generics.ListAPIView):
             .filter(Q(date__gt=now.date()) | Q(date=now.date(), time__gte=now.time()))
             .select_related("deaf_user__photo")
             .order_by("date", "time")[:50]
+        )
+
+
+@extend_schema(
+    tags=["Interpreter Sessions"],
+    summary="Get interpreter session history",
+    description=(
+        "Returns sessions assigned to the authenticated interpreter, "
+        "including upcoming, completed, cancelled and failed sessions."
+    ),
+    responses={200: InterpreterSessionHistorySerializer(many=True)},
+)
+class InterpreterSessionHistoryView(generics.ListAPIView):
+    """
+    GET /api/v1/interpreters/sessions/history/
+
+    Returns sessions assigned to the authenticated interpreter.
+    """
+
+    serializer_class = InterpreterSessionHistorySerializer
+    permission_classes = (
+        permissions.IsAuthenticated,
+        IsInterpreter,
+    )
+    pagination_class = None
+
+    def get_queryset(self):
+        profile = get_interpreter_profile(self.request.user)
+
+        return (
+            ServiceRequest.objects
+            .filter(interpreter=profile)
+            .select_related("requester", "video_session")
+            .order_by("-created_at", "-id")
         )

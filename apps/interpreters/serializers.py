@@ -8,6 +8,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.accounts.serializers import BaseRegistrationSerializer
+from apps.service_requests.models import ServiceRequest
 from apps.users.photos import photo_path
 
 from . import specialisations as library
@@ -20,7 +21,6 @@ from .models import (
     VerificationDecision,
     VerificationStatus,
 )
-
 
 # The certificate types the sign-up form offers. Keep in step with CERTIFICATE_TYPES in
 # vri-web/src/pages/registration/certificateValidation.ts.
@@ -595,3 +595,75 @@ class BookedSessionSerializer(serializers.ModelSerializer):
         ):
             return obj.custom_session_type
         return obj.get_session_type_display()
+
+
+class InterpreterSessionHistorySerializer(serializers.ModelSerializer):
+    with_name = serializers.CharField(
+        source="requester.full_name",
+        read_only=True
+    )
+
+    session_type = serializers.CharField(
+        source="get_specialisation_required_display",
+        read_only=True
+    )
+
+    start = serializers.SerializerMethodField()
+    ended_at = serializers.SerializerMethodField()
+    duration_minutes = serializers.SerializerMethodField()
+
+    # ADD THIS LINE HERE
+    status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ServiceRequest
+        fields = (
+            "id",
+            "with_name",
+            "session_type",
+            "start",
+            "ended_at",
+            "duration_minutes",
+            "status",
+        )
+        read_only_fields = fields
+
+    def get_start(self, obj):
+        video = getattr(obj, "video_session", None)
+        return (
+            (video.connected_at if video else None)
+            or obj.assigned_at
+            or obj.created_at
+        )
+
+    def get_ended_at(self, obj):
+        video = getattr(obj, "video_session", None)
+        return (
+            (video.ended_at if video else None)
+            or obj.ended_at
+        )
+
+    def get_duration_minutes(self, obj):
+        video = getattr(obj, "video_session", None)
+
+        if not video or not video.connected_at:
+            return 0
+
+        ended_at = video.ended_at or obj.ended_at
+
+        if not ended_at:
+            return 0
+
+        seconds = (ended_at - video.connected_at).total_seconds()
+
+        return max(0, int(seconds // 60))
+
+    def get_status(self, obj):
+        mapping = {
+            ServiceRequest.Status.ASSIGNED: "upcoming",
+            ServiceRequest.Status.COMPLETED: "completed",
+            ServiceRequest.Status.CANCELLED: "cancelled",
+            ServiceRequest.Status.FAILED: "failed",
+        }
+
+        return mapping.get(obj.status, obj.status.lower())
