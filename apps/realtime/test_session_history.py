@@ -1,4 +1,3 @@
-
 """Tests for the V2-035 personal session history endpoint."""
 
 from datetime import timedelta
@@ -53,9 +52,7 @@ class SessionHistoryEndpointTests(APITestCase):
         video_session.status = VideoSession.Status.ENDED
         video_session.connected_at = connected_at
         video_session.ended_at = ended_at
-        video_session.save(
-            update_fields=["status", "connected_at", "ended_at"]
-        )
+        video_session.save(update_fields=["status", "connected_at", "ended_at"])
 
         return video_session
 
@@ -110,7 +107,7 @@ class SessionHistoryEndpointTests(APITestCase):
 
         self.assertEqual(
             session["date"],
-            self.video_session.connected_at.strftime("%Y-%m-%d"),
+            timezone.localtime(self.video_session.connected_at).strftime("%Y-%m-%d"),
         )
         self.assertIsNotNone(session["started_at"])
         self.assertIsNotNone(session["ended_at"])
@@ -143,9 +140,7 @@ class SessionHistoryEndpointTests(APITestCase):
         self.video_session.status = VideoSession.Status.WAITING
         self.video_session.connected_at = None
         self.video_session.ended_at = None
-        self.video_session.save(
-            update_fields=["status", "connected_at", "ended_at"]
-        )
+        self.video_session.save(update_fields=["status", "connected_at", "ended_at"])
 
         self.client.force_authenticate(self.deaf)
 
