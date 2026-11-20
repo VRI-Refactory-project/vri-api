@@ -241,3 +241,59 @@ class RegistrationEndpointTests(APITestCase):
         self.assertEqual(me.status_code, 200, me.data)
         self.assertEqual(me.data["full_name"], "Ruth Auma")
         self.assertEqual(me.data["verification_status"], "INACTIVE")
+
+
+class UnfinishedInterpreterSignupTests(APITestCase):
+    """An interpreter who never confirmed their email or uploaded a certificate does not own them."""
+
+    def setUp(self):
+        cache.clear()
+        self.url = reverse("auth-register-interpreter")
+        self.data = {
+            "full_name": "Ruth Auma",
+            "phone_number": "0772000111",
+            "email": "ruth@example.com",
+            "password": PASSWORD,
+        }
+
+    def test_the_same_email_can_sign_up_again_before_it_was_confirmed(self):
+        first = self.client.post(self.url, self.data, format="json")
+        self.assertEqual(first.status_code, 201, first.data)
+        again = self.client.post(self.url, self.data, format="json")
+        self.assertEqual(again.status_code, 201, again.data)
+        self.assertEqual(User.objects.filter(email="ruth@example.com").count(), 1)
+        self.assertNotEqual(first.data["user"]["id"], again.data["user"]["id"])
+
+    def test_availability_checks_treat_an_unfinished_sign_up_as_free(self):
+        self.client.post(self.url, self.data, format="json")
+        email = self.client.get(
+            reverse("auth-email-availability"), {"email": "ruth@example.com"}
+        )
+        phone = self.client.get(
+            reverse("auth-phone-availability"), {"phone": "0772000111"}
+        )
+        self.assertTrue(email.data["available"])
+        self.assertTrue(phone.data["available"])
+
+    def test_a_confirmed_email_is_still_taken(self):
+        res = self.client.post(self.url, self.data, format="json")
+        user = User.objects.get(pk=res.data["user"]["id"])
+        user.email_verified_at = timezone.now()
+        user.save(update_fields=["email_verified_at"])
+        again = self.client.post(self.url, self.data, format="json")
+        self.assertEqual(again.status_code, 400)
+        self.assertIn("email", again.data)
+
+    def test_an_interpreter_who_uploaded_a_certificate_is_still_taken(self):
+        from django.core.files.base import ContentFile
+        from apps.interpreters.models import CertificationDocument
+
+        res = self.client.post(self.url, self.data, format="json")
+        profile = InterpreterProfile.objects.get(user_id=res.data["user"]["id"])
+        CertificationDocument.objects.create(
+            interpreter=profile,
+            document=ContentFile(b"%PDF-1.4", name="cert.pdf"),
+            document_name="cert.pdf",
+        )
+        again = self.client.post(self.url, self.data, format="json")
+        self.assertEqual(again.status_code, 400)

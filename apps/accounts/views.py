@@ -62,7 +62,7 @@ from .serializers import (
     check_new_password,
 )
 from .sms import send_sms
-from .utils import find_user_by_identifier
+from .utils import email_in_use, find_user_by_identifier, phone_in_use
 
 import secrets
 from django.contrib.auth.hashers import make_password
@@ -299,7 +299,7 @@ class EmailAvailabilityView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        exists = User.objects.filter(email__iexact=email).exists()
+        exists = email_in_use(email)
         return Response({"available": not exists})
 
 
@@ -336,7 +336,7 @@ class PhoneAvailabilityView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        exists = User.objects.filter(phone_number=phone).exists()
+        exists = phone_in_use(phone)
         return Response({"available": not exists})
 
 
