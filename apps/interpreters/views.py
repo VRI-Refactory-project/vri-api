@@ -663,6 +663,7 @@ class InterpreterSessionHistoryView(generics.ListAPIView):
     GET /api/v1/interpreters/sessions/history/
 
     Returns sessions assigned to the authenticated interpreter.
+    Only assigned, completed, cancelled and failed requests are included.
     """
 
     serializer_class = InterpreterSessionHistorySerializer
@@ -677,7 +678,15 @@ class InterpreterSessionHistoryView(generics.ListAPIView):
 
         return (
             ServiceRequest.objects
-            .filter(interpreter=profile)
+            .filter(
+                interpreter=profile,
+                status__in=[
+                    ServiceRequest.Status.ASSIGNED,
+                    ServiceRequest.Status.COMPLETED,
+                    ServiceRequest.Status.CANCELLED,
+                    ServiceRequest.Status.FAILED,
+                ],
+            )
             .select_related("requester", "video_session")
             .order_by("-created_at", "-id")
         )
