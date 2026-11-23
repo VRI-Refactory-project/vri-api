@@ -3,7 +3,7 @@ from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Avg, Count, F, Q
+from django.db.models import Avg, Count, Q
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -145,16 +145,19 @@ class InterpreterProfileMetricsView(APIView):
 
     def get(self, request):
         profile, _ = InterpreterProfile.objects.get_or_create(user=request.user)
-        from apps.realtime.models import SessionFeedback
+        from apps.realtime.ratings import deaf_completed_session_feedback
 
-        ratings = SessionFeedback.objects.filter(
-            interpreter=profile,
-            submitted_by_id=F("video_session__service_request__requester_id"),
-        )
+        ratings = deaf_completed_session_feedback().filter(interpreter=profile)
         average = ratings.aggregate(value=Avg("rating"))["value"]
-        completed = ServiceRequest.objects.filter(
-            interpreter=profile, status=ServiceRequest.Status.COMPLETED
-        ).count()
+        completed = (
+            ServiceRequest.objects.filter(
+                interpreter=profile,
+                status=ServiceRequest.Status.COMPLETED,
+                video_session__status="ended",
+            )
+            .distinct()
+            .count()
+        )
         return Response(
             {
                 "average_rating": float(average) if average is not None else None,

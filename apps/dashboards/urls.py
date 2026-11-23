@@ -31,6 +31,11 @@ urlpatterns = [
         name="dashboard-admin-user-growth",
     ),
     path(
+        "admin/interpreter-performance/",
+        admin_stats.AdminInterpreterPerformanceView.as_view(),
+        name="dashboard-admin-interpreter-performance",
+    ),
+    path(
         "admin/sessions-activity/",
         admin_stats.AdminSessionsActivityView.as_view(),
         name="dashboard-admin-sessions-activity",
