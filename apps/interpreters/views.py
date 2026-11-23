@@ -821,4 +821,3 @@ class InterpreterSessionHistoryView(generics.ListAPIView):
             .select_related("requester", "video_session")
             .order_by("-created_at", "-id")
         )
-
