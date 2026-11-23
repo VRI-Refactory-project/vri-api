@@ -114,6 +114,23 @@ Not signed in returns 401, a different role returns 403. The role is read from t
 a role change applies straight away. Superusers are checked by role like everyone else. To see the rules in Swagger,
 sign in, click **Authorize**, then try `GET /auth/me/access/{role}/` with each role.
 
+## Interpreter profile metrics
+
+`GET /api/v1/interpreters/me/profile/` returns rating and completed-session aggregates for the
+authenticated interpreter:
+
+```json
+{
+  "average_rating": 4.75,
+  "completed_sessions": 12
+}
+```
+
+`average_rating` is `null` until a Deaf requester rates one of the interpreter's completed
+sessions. `completed_sessions` counts distinct assigned service requests in `COMPLETED` state;
+cancelled, missed, failed and active sessions are not included. The endpoint is available only to
+authenticated interpreter accounts.
+
 ## Interpreter verification (admins)
 
 New interpreters start as `INACTIVE` (pending review). Admins review their certificates and decide. Every decision

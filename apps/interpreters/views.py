@@ -3,7 +3,7 @@ from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Avg, Count, F, Q
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -28,9 +28,8 @@ from apps.core.permissions import (
 )
 from apps.service_requests.models import ServiceRequest
 
-from . import scheduling
+from . import scheduling, verification
 from . import specialisations as library
-from . import verification
 from .availability import (
     monday_of,
     month_exceptions,
@@ -122,6 +121,46 @@ class InterpreterProfileDetailView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         profile, _ = InterpreterProfile.objects.get_or_create(user=self.request.user)
         return profile
+
+
+@extend_schema(
+    tags=["Interpreter Profile Management"],
+    summary="Get current interpreter rating and completed session count",
+    description=(
+        "Returns public aggregate metrics for the authenticated interpreter. "
+        "Ratings are calculated from feedback submitted by session requesters."
+    ),
+    responses={
+        200: inline_serializer(
+            "InterpreterProfileMetrics",
+            {
+                "average_rating": serializers.FloatField(allow_null=True),
+                "completed_sessions": serializers.IntegerField(),
+            },
+        )
+    },
+)
+class InterpreterProfileMetricsView(APIView):
+    permission_classes = (permissions.IsAuthenticated, IsInterpreter)
+
+    def get(self, request):
+        profile, _ = InterpreterProfile.objects.get_or_create(user=request.user)
+        from apps.realtime.models import SessionFeedback
+
+        ratings = SessionFeedback.objects.filter(
+            interpreter=profile,
+            submitted_by_id=F("video_session__service_request__requester_id"),
+        )
+        average = ratings.aggregate(value=Avg("rating"))["value"]
+        completed = ServiceRequest.objects.filter(
+            interpreter=profile, status=ServiceRequest.Status.COMPLETED
+        ).count()
+        return Response(
+            {
+                "average_rating": float(average) if average is not None else None,
+                "completed_sessions": completed,
+            }
+        )
 
 
 @extend_schema(summary="List or create interpreter availability periods")
@@ -628,10 +667,13 @@ class ListMyScheduledSessionsView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return ScheduledSession.objects.filter(
-            deaf_user=self.request.user,
-            date__gte=date.today()
-        ).select_related("interpreter__user").order_by('date', 'time')
+        return (
+            ScheduledSession.objects.filter(
+                deaf_user=self.request.user, date__gte=date.today()
+            )
+            .select_related("interpreter__user")
+            .order_by("date", "time")
+        )
 
 
 class InterpreterBookedSessionListView(generics.ListAPIView):
@@ -683,9 +725,7 @@ def _answer(request, pk, action):
         session = action(pk, profile)
     except scheduling.BookingNotAvailable as error:
         raise ValidationError({"detail": str(error)}) from None
-    return Response(
-        BookedSessionSerializer(session, context={"request": request}).data
-    )
+    return Response(BookedSessionSerializer(session, context={"request": request}).data)
 
 
 class BookedSessionAcceptView(APIView):
@@ -808,8 +848,7 @@ class InterpreterSessionHistoryView(generics.ListAPIView):
         profile = get_interpreter_profile(self.request.user)
 
         return (
-            ServiceRequest.objects
-            .filter(
+            ServiceRequest.objects.filter(
                 interpreter=profile,
                 status__in=[
                     ServiceRequest.Status.ASSIGNED,

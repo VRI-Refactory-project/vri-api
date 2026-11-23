@@ -1,16 +1,14 @@
-
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
     AvailabilityPeriodViewSet,
     AvailabilityStatusView,
-    CertificationUploadView,
     BookedSessionAcceptView,
     BookedSessionDeclineView,
     BookedSessionReleaseView,
     CancelScheduledSessionView,
-    StartBookedSessionCallView,
+    CertificationUploadView,
     CreateScheduledSessionView,
     DayAvailabilityView,
     ExceptionDetailView,
@@ -19,9 +17,11 @@ from .views import (
     InterpreterAvailabilityListCreateView,
     InterpreterBookedSessionListView,
     InterpreterProfileDetailView,
+    InterpreterProfileMetricsView,
     InterpreterSessionHistoryView,
     ListMyScheduledSessionsView,
     SpecialisationLibraryView,
+    StartBookedSessionCallView,
     WeeklyScheduleView,
 )
 
@@ -40,6 +40,11 @@ urlpatterns = [
         "me/",
         InterpreterProfileDetailView.as_view(),
         name="interpreter-profile-detail",
+    ),
+    path(
+        "me/profile/",
+        InterpreterProfileMetricsView.as_view(),
+        name="interpreter-profile-metrics",
     ),
     path(
         "sessions/history/",
