@@ -79,6 +79,7 @@ urlpatterns = [
         include("apps.institutions.urls"),
     ),  # V2-005, the institution's own data
     path("api/v1/community/", include("apps.community.urls")),  # Deaf users connecting
+    path("api/v1/wallet/", include("apps.wallet.urls")),  # Wallet, top-ups, payouts
     path("api/v1/auth/", include("apps.users.urls")),  # Web Registration endpoint
     path(
         "api/v1/administration/",

@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "apps.service_requests",
     "apps.realtime",
     "apps.community",
+    "apps.wallet",
 ]
 
 MIDDLEWARE = [
@@ -292,3 +293,14 @@ SPECTACULAR_SETTINGS = {
     "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
     "REDOC_DIST": "SIDECAR",
 }
+
+# --- Wallet and payments (Flutterwave, Uganda mobile money) ---
+# Leave the keys empty and payments stay switched off: the wallet answers "not available yet".
+# Use the sandbox (_TEST) keys until the client's business has passed Flutterwave's KYC.
+FLUTTERWAVE_SECRET_KEY = env("FLUTTERWAVE_SECRET_KEY", default="")
+FLUTTERWAVE_BASE_URL = env("FLUTTERWAVE_BASE_URL", default="https://api.flutterwave.com/v3")
+# The "secret hash" you type into Flutterwave's webhook settings; they send it back in `verif-hash`.
+FLUTTERWAVE_WEBHOOK_HASH = env("FLUTTERWAVE_WEBHOOK_HASH", default="")
+# Whole UGX.
+WALLET_MIN_AMOUNT = env.int("WALLET_MIN_AMOUNT", default=1000)
+WALLET_MAX_TOPUP = env.int("WALLET_MAX_TOPUP", default=2000000)
