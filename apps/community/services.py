@@ -5,6 +5,7 @@ from django.db import transaction
 from django.db.models import Count, OuterRef, Q, Subquery
 from django.utils import timezone
 
+from . import events
 from .models import Connection, Message, MessageFile, MessageImage
 from apps.notifications.models import Notification
 from apps.notifications.services import create_notification
@@ -168,7 +169,9 @@ def conversations_of(user):
         [c.last_message_id for c in connections if c.last_message_id]
     )
     unread = dict(
-        Message.objects.filter(connection__in=connections, read_at__isnull=True)
+        Message.objects.filter(
+            connection__in=connections, read_at__isnull=True, deleted_at__isnull=True
+        )
         .exclude(sender=user)
         .values_list("connection")
         .annotate(total=Count("id"))
@@ -243,13 +246,44 @@ def send_message(connection, sender, body="", sticker="", image=None, file=None)
             "connection_id": connection.id,
         },
     )
+    events.announce_message(connection, message)
+    return message
+
+
+def delete_message(connection, message, by):
+    """Take a message back for both people. Only the person who sent it can.
+
+    The text, sticker, photo and file are removed; the row stays so the chat can show "message deleted".
+    Deleting twice is fine and does nothing the second time.
+    """
+    if message.sender_id != by.id:
+        raise CannotConnect("You can only delete your own messages.")
+    if message.deleted_at is not None:
+        return message
+    with transaction.atomic():
+        MessageImage.objects.filter(message=message).delete()
+        MessageFile.objects.filter(message=message).delete()
+        message.body = ""
+        message.sticker = ""
+        message.has_image = False
+        message.has_file = False
+        message.deleted_at = timezone.now()
+        message.save(
+            update_fields=["body", "sticker", "has_image", "has_file", "deleted_at"]
+        )
+        events.announce_deleted(connection, message.id)
     return message
 
 
 def mark_read(connection, reader):
     """Mark everything the other person sent as read. Returns how many were unread."""
-    return (
-        connection.messages.filter(read_at__isnull=True)
-        .exclude(sender=reader)
-        .update(read_at=timezone.now())
-    )
+    unread = connection.messages.filter(
+        read_at__isnull=True, deleted_at__isnull=True
+    ).exclude(sender=reader)
+    ids = list(unread.values_list("id", flat=True))
+    if not ids:
+        return 0
+    with transaction.atomic():
+        count = connection.messages.filter(id__in=ids).update(read_at=timezone.now())
+        events.announce_read(connection, reader, ids)
+    return count

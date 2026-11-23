@@ -1,9 +1,10 @@
 from django.db.models import Q
 from django.http import Http404, HttpResponse
+from django.shortcuts import get_object_or_404
 from django.utils.http import content_disposition_header
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -11,7 +12,7 @@ from rest_framework.views import APIView
 from apps.core.permissions import IsDeafUser
 
 from . import services
-from .models import Connection, MessageFile, MessageImage
+from .models import Connection, Message, MessageFile, MessageImage
 from .serializers import (
     ConnectionSerializer,
     ConversationSerializer,
@@ -348,6 +349,29 @@ class MessageListView(APIView):
         return Response(
             message_data(message, request.user), status=status.HTTP_201_CREATED
         )
+
+
+class MessageDetailView(APIView):
+    permission_classes = [IsDeafUser]
+
+    @extend_schema(
+        tags=TAGS,
+        summary="Delete a message you sent, for both people",
+        description=(
+            "The text, sticker, photo and file are removed and the message stays in the chat marked "
+            "`deleted`. Only the sender can do this. Deleting it again is fine."
+        ),
+        request=None,
+        responses={200: MessageSerializer},
+    )
+    def delete(self, request, pk, message_id):
+        connection = _conversation(request, pk)
+        message = get_object_or_404(Message, pk=message_id, connection=connection)
+        try:
+            message = services.delete_message(connection, message, request.user)
+        except services.CannotConnect as error:
+            raise PermissionDenied(str(error)) from None
+        return Response(message_data(message, request.user))
 
 
 class MessageImageView(APIView):

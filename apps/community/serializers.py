@@ -84,6 +84,9 @@ class MessageSerializer(serializers.Serializer):
     read = serializers.BooleanField(
         help_text="The other person has opened it. Only meaningful for messages you sent."
     )
+    deleted = serializers.BooleanField(
+        help_text="The sender took it back. Show \"This message was deleted\"; there is nothing else in it."
+    )
 
 
 def _file_data(message):
@@ -112,6 +115,7 @@ def message_data(message, me):
         "created_at": message.created_at,
         "sent_by_me": message.sender_id == me.id,
         "read": message.read_at is not None,
+        "deleted": message.deleted_at is not None,
     }
 
 

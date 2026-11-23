@@ -609,3 +609,107 @@ class FileTests(MessagingBase):
         response = self.send_file(sticker="heart")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class DeletingMessageTests(MessagingBase):
+    def sent(self, body="hello"):
+        return Message.objects.get(pk=self.send(body).data["id"])
+
+    def delete(self, message, user=None):
+        if user:
+            self.client.force_authenticate(user)
+        return self.client.delete(
+            reverse(
+                "community:message-detail", args=[self.link.id, message.id]
+            )
+        )
+
+    def test_the_sender_deletes_it_for_both_people(self):
+        message = self.sent("oops")
+
+        response = self.delete(message)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["deleted"])
+        self.assertEqual(response.data["body"], "")
+        self.client.force_authenticate(self.sarah)
+        listed = self.messages()["messages"][0]
+        self.assertTrue(listed["deleted"])
+        self.assertEqual(listed["body"], "")
+
+    def test_only_the_sender_can_delete(self):
+        message = self.sent()
+
+        response = self.delete(message, user=self.sarah)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        message.refresh_from_db()
+        self.assertIsNone(message.deleted_at)
+        self.assertEqual(message.body, "hello")
+
+    def test_a_stranger_gets_nothing(self):
+        message = self.sent()
+
+        response = self.delete(message, user=self.daniel)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_a_message_from_another_conversation_is_not_found(self):
+        other = Connection.objects.create(
+            requester=self.sarah,
+            addressee=self.daniel,
+            status=Connection.Status.ACCEPTED,
+        )
+        elsewhere = Message.objects.create(
+            connection=other, sender=self.me, body="not here"
+        )
+
+        response = self.delete(elsewhere)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_deleting_twice_is_fine(self):
+        message = self.sent()
+        self.delete(message)
+
+        self.assertEqual(self.delete(message).status_code, status.HTTP_200_OK)
+
+    def test_a_deleted_photo_and_file_are_removed_from_the_database(self):
+        message = Message.objects.create(
+            connection=self.link, sender=self.me, has_image=True, has_file=True
+        )
+        MessageImage.objects.create(message=message, data=b"x", width=1, height=1)
+        MessageFile.objects.create(
+            message=message, name="a.pdf", content_type="application/pdf", size=1, data=b"x"
+        )
+
+        self.delete(message)
+
+        self.assertFalse(MessageImage.objects.filter(message=message).exists())
+        self.assertFalse(MessageFile.objects.filter(message=message).exists())
+        message.refresh_from_db()
+        self.assertFalse(message.has_image or message.has_file)
+
+    def test_a_sticker_is_deleted_too(self):
+        message = Message.objects.get(pk=self.send_sticker("thumbs_up").data["id"])
+
+        self.delete(message)
+
+        message.refresh_from_db()
+        self.assertEqual(message.sticker, "")
+        self.assertIsNotNone(message.deleted_at)
+
+    def test_a_deleted_message_is_no_longer_unread(self):
+        self.send("unread then taken back")
+        message = Message.objects.get()
+        self.delete(message)
+
+        self.client.force_authenticate(self.sarah)
+        row = next(
+            c
+            for c in self.client.get(reverse("community:conversations")).data
+            if c["id"] == self.link.id
+        )
+
+        self.assertEqual(row["unread_count"], 0)
+        self.assertTrue(row["last_message"]["deleted"])

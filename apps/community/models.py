@@ -87,6 +87,14 @@ class Message(models.Model):
     read_at = models.DateTimeField(
         null=True, blank=True, help_text="When the other person opened it."
     )
+    deleted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The sender took it back. Its text, sticker, photo and file are gone; "
+            "the row stays so the chat shows it was deleted."
+        ),
+    )
 
     class Meta:
         ordering = ["created_at", "id"]
