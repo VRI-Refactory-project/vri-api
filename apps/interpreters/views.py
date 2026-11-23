@@ -652,11 +652,22 @@ class CreateScheduledSessionView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
+        data = serializer.validated_data
         # Attach the currently logged-in user as the deaf_user; staff bookings also belong to their institution.
-        session = serializer.save(
-            deaf_user=self.request.user,
-            institution=user_institution(self.request.user),
-        )
+        with transaction.atomic():
+            # Presses of Save that arrive together queue up on this lock, so the clash check below sees
+            # the booking the first press made.
+            get_user_model().objects.select_for_update().get(pk=self.request.user.pk)
+            try:
+                scheduling.ensure_no_clash(
+                    self.request.user, data["date"], data["time"], data["duration"]
+                )
+            except scheduling.BookingNotAvailable as error:
+                raise ValidationError({"time": str(error)}) from None
+            session = serializer.save(
+                deaf_user=self.request.user,
+                institution=user_institution(self.request.user),
+            )
         # Offer it to the interpreters who are free for that slot. Nobody being free yet is fine: it
         # stays pending and is offered again when someone is, or an admin assigns it.
         scheduling.offer_session(session)
