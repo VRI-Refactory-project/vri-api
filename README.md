@@ -131,6 +131,15 @@ sessions. `completed_sessions` counts distinct assigned service requests in `COM
 cancelled, missed, failed and active sessions are not included. The endpoint is available only to
 authenticated interpreter accounts.
 
+`GET` and `PATCH /api/v1/interpreters/me/` also expose `years_experience` as an integer or `null`.
+Setting it stores the entered years and the current date; each later GET adds full years elapsed.
+Send `null` to clear the value.
+
+Administrators can retrieve `GET /api/v1/dashboard/admin/interpreter-performance/` for overall
+rating totals, the last 12 months of monthly trends, per-interpreter aggregates, and up to 25 recent
+low ratings. Only Deaf requester ratings for ended sessions whose requests are `COMPLETED` are
+included. The response contains no Deaf user identity or profile information.
+
 ## Interpreter verification (admins)
 
 New interpreters start as `INACTIVE` (pending review). Admins review their certificates and decide. Every decision

@@ -53,6 +53,8 @@ class InterpreterProfile(models.Model):
         default="",
         help_text="Custom specialisation text when 'OTHER' is selected.",
     )
+    years_experience_value = models.PositiveIntegerField(null=True, blank=True)
+    years_experience_set_at = models.DateTimeField(null=True, blank=True)
     specialisations = models.JSONField(
         default=list,
         blank=True,

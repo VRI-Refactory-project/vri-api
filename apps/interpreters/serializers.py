@@ -90,7 +90,9 @@ class SpecialisationListField(serializers.ListField):
     """A list of values from the specialisation library. Duplicates are dropped."""
 
     def __init__(self, **kwargs):
-        kwargs.setdefault("child", serializers.ChoiceField(choices=library.SPECIALISATION_LIBRARY))
+        kwargs.setdefault(
+            "child", serializers.ChoiceField(choices=library.SPECIALISATION_LIBRARY)
+        )
         kwargs.setdefault("allow_empty", False)
         super().__init__(**kwargs)
 
@@ -101,7 +103,9 @@ class SpecialisationListField(serializers.ListField):
 def check_other_text(selected, other_text):
     if "OTHER" in selected and not (other_text or "").strip():
         raise serializers.ValidationError(
-            {"specialisation_other": "Please specify your specialisation when 'Other' is selected."}
+            {
+                "specialisation_other": "Please specify your specialisation when 'Other' is selected."
+            }
         )
     text = (other_text or "").strip()
     if "OTHER" in selected and not any(ch.isalpha() for ch in text):
@@ -112,6 +116,9 @@ def check_other_text(selected, other_text):
 
 class InterpreterProfileSerializer(serializers.ModelSerializer):
     specialisations = SpecialisationListField(required=False)
+    years_experience = serializers.IntegerField(
+        min_value=0, allow_null=True, required=False
+    )
     certifications = CertificationDocumentSerializer(many=True, read_only=True)
     full_name = serializers.CharField(source="user.full_name", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
@@ -129,6 +136,7 @@ class InterpreterProfileSerializer(serializers.ModelSerializer):
             "specialisation_other",
             "sign_languages",
             "working_hours_schedule",
+            "years_experience",
             "certifications",
             "created_at",
         )
@@ -145,10 +153,47 @@ class InterpreterProfileSerializer(serializers.ModelSerializer):
             )
         return value
 
+    def validate_years_experience(self, value):
+        if isinstance(value, (bool, float)):
+            raise serializers.ValidationError("Use a whole number of years.")
+        return value
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data["specialisations"] = instance.all_specialisations()
+        data["years_experience"] = self._current_experience(instance)
         return data
+
+    def _current_experience(self, instance):
+        base = instance.years_experience_value
+        if base is None:
+            return None
+        elapsed = 0
+        if instance.years_experience_set_at is not None:
+            start = timezone.localtime(instance.years_experience_set_at).date()
+            today = timezone.localdate()
+            elapsed = today.year - start.year
+            try:
+                anniversary = start.replace(year=today.year)
+            except ValueError:  # February 29 in a non-leap year.
+                anniversary = start.replace(year=today.year, day=28)
+            if today < anniversary:
+                elapsed -= 1
+        return base + elapsed
+
+    def update(self, instance, validated_data):
+        experience = validated_data.pop("years_experience", serializers.empty)
+        if experience is not serializers.empty:
+            instance.years_experience_value = experience
+            instance.years_experience_set_at = (
+                timezone.now() if experience is not None else None
+            )
+        instance = super().update(instance, validated_data)
+        if experience is not serializers.empty:
+            instance.save(
+                update_fields=["years_experience_value", "years_experience_set_at"]
+            )
+        return instance
 
     def validate(self, attrs):
         # The old single `specialisation` field still works: it becomes a one-item list.
@@ -243,7 +288,11 @@ class InterpreterRegistrationSerializer(BaseRegistrationSerializer):
         attrs = super().validate(attrs)
         selected = attrs.get("specialisations")
         if not selected:
-            selected = [attrs["specialisation"]] if attrs.get("specialisation") else ["GENERAL"]
+            selected = (
+                [attrs["specialisation"]]
+                if attrs.get("specialisation")
+                else ["GENERAL"]
+            )
         check_other_text(selected, attrs.get("specialisation_other"))
         attrs["specialisations"] = selected
         return attrs
@@ -254,7 +303,9 @@ class InterpreterRegistrationSerializer(BaseRegistrationSerializer):
             user=user,
             specialisations=selected,
             specialisation=library.primary_for(selected),
-            specialisation_other=(validated_data.get("specialisation_other") or "").strip(),
+            specialisation_other=(
+                validated_data.get("specialisation_other") or ""
+            ).strip(),
         )
 
 
@@ -520,9 +571,7 @@ class AvailabilityPeriodSerializer(serializers.ModelSerializer):
                 instance.clean()
             except DjangoValidationError as exc:
                 raise serializers.ValidationError(
-                    exc.message_dict
-                    if hasattr(exc, "message_dict")
-                    else exc.messages
+                    exc.message_dict if hasattr(exc, "message_dict") else exc.messages
                 ) from exc
 
         return data
@@ -583,11 +632,15 @@ class ScheduledSessionSerializer(serializers.ModelSerializer):
 
         # 2. Ensure the date is in the future
         if data.get("date") and data.get("date") < date.today():
-            raise serializers.ValidationError({"date": "The date must be in the future."})
+            raise serializers.ValidationError(
+                {"date": "The date must be in the future."}
+            )
         if data.get("date") and data.get("time"):
             starts = timezone.make_aware(datetime.combine(data["date"], data["time"]))
             if starts <= timezone.now():
-                raise serializers.ValidationError({"time": "That time has already passed."})
+                raise serializers.ValidationError(
+                    {"time": "That time has already passed."}
+                )
 
         return data
 
@@ -632,7 +685,9 @@ class BookedSessionSerializer(serializers.ModelSerializer):
 
     def get_my_state(self, obj) -> str:
         profile = getattr(self.context.get("request").user, "interpreter_profile", None)
-        return "confirmed" if profile and obj.interpreter_id == profile.pk else "offered"
+        return (
+            "confirmed" if profile and obj.interpreter_id == profile.pk else "offered"
+        )
 
     def get_deaf_photo(self, obj) -> str | None:
         return photo_path(obj.deaf_user)
@@ -648,14 +703,10 @@ class BookedSessionSerializer(serializers.ModelSerializer):
 
 
 class InterpreterSessionHistorySerializer(serializers.ModelSerializer):
-    with_name = serializers.CharField(
-        source="requester.full_name",
-        read_only=True
-    )
+    with_name = serializers.CharField(source="requester.full_name", read_only=True)
 
     session_type = serializers.CharField(
-        source="get_specialisation_required_display",
-        read_only=True
+        source="get_specialisation_required_display", read_only=True
     )
 
     start = serializers.SerializerMethodField()
@@ -681,17 +732,12 @@ class InterpreterSessionHistorySerializer(serializers.ModelSerializer):
     def get_start(self, obj):
         video = getattr(obj, "video_session", None)
         return (
-            (video.connected_at if video else None)
-            or obj.assigned_at
-            or obj.created_at
+            (video.connected_at if video else None) or obj.assigned_at or obj.created_at
         )
 
     def get_ended_at(self, obj):
         video = getattr(obj, "video_session", None)
-        return (
-            (video.ended_at if video else None)
-            or obj.ended_at
-        )
+        return (video.ended_at if video else None) or obj.ended_at
 
     def get_duration_minutes(self, obj):
         video = getattr(obj, "video_session", None)
