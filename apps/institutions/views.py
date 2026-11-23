@@ -25,14 +25,22 @@ from apps.core.permissions import (
     IsApprovedInstitution,
     IsInstitutionAccountAdmin,
     IsInstitutionAdmin,
+    IsInstitutionStaffMember,
     user_institution,
     user_staff_membership,
 )
 from apps.interpreters.models import ScheduledSession
 from apps.service_requests.models import OPEN_STATUSES, ServiceRequest
 
-from . import staff, usage, usage_pdf
-from .models import InstitutionDepartment, InstitutionProfile, InstitutionStaff, InstitutionStatus
+from . import staff, tutorial, usage, usage_pdf
+from .models import (
+    InstitutionDepartment,
+    InstitutionProfile,
+    InstitutionStaff,
+    InstitutionStatus,
+    StaffRole,
+    TutorialProgress,
+)
 from .serializers import (
     InstitutionDocumentUploadSerializer,
     InstitutionProfileUpdateSerializer,
@@ -46,6 +54,8 @@ from .serializers import (
     StaffCreateSerializer,
     StaffSerializer,
     StaffUpdateSerializer,
+    TutorialSerializer,
+    TutorialUpdateSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -570,11 +580,25 @@ def filter_by_staff(queryset, params, user_field):
     return queryset
 
 
-class InstitutionSessionListView(APIView):
-    """Every interpreter request made by the institution's staff, newest first. Staff who were revoked
-    are included so the history stays complete. Reading this list never changes a request."""
+def visible_sessions(user):
+    """The sessions this institution member may see (V2-030). Administrators see every request their
+    institution's staff made, including staff who have since left, so the history stays complete.
+    Everyone else sees only their own: another staff member's sessions are private to them."""
+    membership = user_staff_membership(user)
+    queryset = ServiceRequest.objects.filter(institution=membership.institution).select_related(
+        "requester__institution_staff", "interpreter__user", "scheduled_session"
+    )
+    if membership.role != StaffRole.ADMIN:
+        queryset = queryset.filter(requester=user)
+    return queryset
 
-    permission_classes = [IsInstitutionAdmin]
+
+class InstitutionSessionListView(APIView):
+    """Interpreter requests made at the institution, newest first: every staff member's for an
+    administrator, only your own for anyone else (V2-030). Metadata only, never what was said.
+    Reading this list never changes a request."""
+
+    permission_classes = [IsApprovedInstitution]
 
     # Still looking for an interpreter, or with one now.
     ACTIVE = (*OPEN_STATUSES, ServiceRequest.Status.ASSIGNED)
@@ -600,9 +624,7 @@ class InstitutionSessionListView(APIView):
     )
     def get(self, request):
         params = request.query_params
-        queryset = ServiceRequest.objects.filter(
-            institution=user_institution(request.user)
-        ).select_related("requester__institution_staff", "interpreter__user")
+        queryset = visible_sessions(request.user)
 
         state = params.get("state")
         if state == "active":
@@ -623,6 +645,82 @@ class InstitutionSessionListView(APIView):
             )
 
         return Response(InstitutionSessionSerializer(queryset, many=True).data)
+
+
+class InstitutionSessionDetailView(RetrieveAPIView):
+    """One past or current session, with the same rule as the list: an administrator may open any of
+    the institution's sessions, anyone else only their own. Anything else is a 404, so nobody can
+    learn that another person's session exists (V2-030)."""
+
+    permission_classes = [IsApprovedInstitution]
+    serializer_class = InstitutionSessionSerializer
+
+    @extend_schema(tags=["Institution Sessions"], summary="One of my institution's sessions")
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+    def get_queryset(self):
+        return visible_sessions(self.request.user)
+
+
+class StaffTutorialView(APIView):
+    """The first-sign-in tutorial for institution staff (V2-065): the steps, and how far this person
+    got. Progress belongs to the signed-in staff member; nobody can read or change anyone else's."""
+
+    permission_classes = [IsInstitutionStaffMember]
+
+    def _progress(self, request):
+        progress, _ = TutorialProgress.objects.get_or_create(
+            staff=user_staff_membership(request.user)
+        )
+        return progress
+
+    @staticmethod
+    def _body(progress):
+        return TutorialSerializer(
+            {
+                "steps": tutorial.STAFF_TUTORIAL,
+                "step": progress.step,
+                "completed": progress.completed_at is not None,
+                "skipped": progress.skipped_at is not None,
+                "show": progress.is_open,
+            }
+        ).data
+
+    @extend_schema(
+        tags=["Institution Staff"],
+        summary="My tutorial and my progress",
+        responses={200: TutorialSerializer},
+    )
+    def get(self, request):
+        return Response(self._body(self._progress(request)))
+
+    @extend_schema(
+        tags=["Institution Staff"],
+        summary="Save my tutorial progress",
+        request=TutorialUpdateSerializer,
+        responses={200: TutorialSerializer},
+    )
+    def patch(self, request):
+        data = TutorialUpdateSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        progress = self._progress(request)
+        now = timezone.now()
+
+        if "step" in data.validated_data:
+            # A step past the end is kept at the last one, so an old app cannot break it.
+            progress.step = min(data.validated_data["step"], tutorial.LAST_STEP)
+        action = data.validated_data.get("action")
+        if action == "complete":
+            progress.completed_at = now
+        elif action == "skip":
+            progress.skipped_at = now
+        elif action == "restart":
+            progress.step = 0
+            progress.completed_at = None
+            progress.skipped_at = None
+        progress.save()
+        return Response(self._body(progress))
 
 
 class InstitutionScheduledSessionListView(APIView):

@@ -160,3 +160,29 @@ class InstitutionStaff(models.Model):
     @property
     def is_revoked(self):
         return self.revoked_at is not None
+
+
+class TutorialProgress(models.Model):
+    """How far a staff member got through the first-sign-in tutorial (V2-065).
+
+    One row per membership, made the first time the tutorial is opened. The tutorial shows until it
+    is finished or skipped; replaying it from Help starts it again.
+    """
+
+    staff = models.OneToOneField(
+        InstitutionStaff, on_delete=models.CASCADE, related_name="tutorial"
+    )
+    step = models.PositiveSmallIntegerField(
+        default=0, help_text="The step the person is on, counting from 0."
+    )
+    completed_at = models.DateTimeField(null=True, blank=True)
+    skipped_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def is_open(self):
+        """True while the tutorial should still show by itself."""
+        return self.completed_at is None and self.skipped_at is None
+
+    def __str__(self):
+        return f"Tutorial for {self.staff}"

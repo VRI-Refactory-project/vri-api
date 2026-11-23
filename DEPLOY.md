@@ -1,5 +1,9 @@
 # Deploying the free demo (Render + Neon + Vercel)
 
+> **Production now runs on a DigitalOcean droplet** (deployed by `.github/workflows/deploy.yml` on
+> every push to `dev`). Its timed background work (the request queue, booked-session reminders and
+> closing abandoned calls) runs from cron there: see [docs/background-jobs.md](docs/background-jobs.md).
+
 This is a **demo/staging** setup on free tiers. For the pilot, use `config.settings.prod` and a
 paid host with a persistent disk and real email (see the limits at the bottom).
 

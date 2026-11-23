@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "apps.service_requests",
     "apps.realtime",
     "apps.community",
+    "apps.wallet",
 ]
 
 MIDDLEWARE = [
@@ -187,6 +188,10 @@ INTERPRETER_OFFER_REMINDER_LEAD_TIME = env.int(
 DISPATCH_REQUESTS_ON_HEALTH = env.bool("DISPATCH_REQUESTS_ON_HEALTH", default=False)
 # A waiting request is cancelled when the requester's app has not checked on it for this long (V2-009).
 # Placeholder until the product owner decides (REQUESTER_DISCONNECT_GRACE_WINDOW is TBD).
+# Booked sessions: close a booking and tell people when someone has not joined 10 minutes after the
+# start. It relies on LiveKit's webhook reaching the API (that is what records who joined), so switch
+# it off with BOOKED_SESSION_NO_SHOW=false if that webhook is not set up.
+BOOKED_SESSION_NO_SHOW = env.bool("BOOKED_SESSION_NO_SHOW", default=True)
 REQUESTER_DISCONNECT_GRACE_WINDOW = timedelta(
     seconds=env.int("REQUESTER_DISCONNECT_GRACE_WINDOW_SECONDS", default=120)
 )
@@ -288,3 +293,14 @@ SPECTACULAR_SETTINGS = {
     "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
     "REDOC_DIST": "SIDECAR",
 }
+
+# --- Wallet and payments (Flutterwave, Uganda mobile money) ---
+# Leave the keys empty and payments stay switched off: the wallet answers "not available yet".
+# Use the sandbox (_TEST) keys until the client's business has passed Flutterwave's KYC.
+FLUTTERWAVE_SECRET_KEY = env("FLUTTERWAVE_SECRET_KEY", default="")
+FLUTTERWAVE_BASE_URL = env("FLUTTERWAVE_BASE_URL", default="https://api.flutterwave.com/v3")
+# The "secret hash" you type into Flutterwave's webhook settings; they send it back in `verif-hash`.
+FLUTTERWAVE_WEBHOOK_HASH = env("FLUTTERWAVE_WEBHOOK_HASH", default="")
+# Whole UGX.
+WALLET_MIN_AMOUNT = env.int("WALLET_MIN_AMOUNT", default=1000)
+WALLET_MAX_TOPUP = env.int("WALLET_MAX_TOPUP", default=2000000)

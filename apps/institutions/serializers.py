@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.accounts.serializers import (
@@ -408,9 +409,11 @@ def _staff_fields(user):
 
 
 class InstitutionSessionSerializer(serializers.ModelSerializer):
-    """One interpreter request made by a staff member."""
+    """One interpreter request made by a staff member: metadata only (V2-030). Nothing that was said
+    in the session (chat, captions, recordings) is ever part of it."""
 
     staff = serializers.SerializerMethodField()
+    channel = serializers.SerializerMethodField()
     interpreter_name = serializers.SerializerMethodField()
     display_status = serializers.SerializerMethodField()
     duration_minutes = serializers.SerializerMethodField()
@@ -420,6 +423,7 @@ class InstitutionSessionSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "staff",
+            "channel",
             "interpreter_name",
             "specialisation_required",
             "priority",
@@ -435,6 +439,12 @@ class InstitutionSessionSerializer(serializers.ModelSerializer):
     def get_staff(self, obj) -> dict:
         return _staff_fields(obj.requester)
 
+    @extend_schema_field(serializers.ChoiceField(choices=["on_demand", "booked"]))
+    def get_channel(self, obj) -> str:
+        """How the session came about: asked for there and then, or booked ahead (V2-030)."""
+        # A missing reverse one-to-one raises an AttributeError subclass, so hasattr covers it.
+        return "booked" if hasattr(obj, "scheduled_session") else "on_demand"
+
     def get_interpreter_name(self, obj) -> str | None:
         # Only once an interpreter has taken the request; who it was offered to stays private.
         if obj.assigned_at is None or obj.interpreter is None:
@@ -446,6 +456,35 @@ class InstitutionSessionSerializer(serializers.ModelSerializer):
 
     def get_duration_minutes(self, obj) -> int | None:
         return session_duration_minutes(obj)
+
+
+class TutorialStepSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    title = serializers.CharField()
+    body = serializers.CharField()
+    target = serializers.CharField(allow_null=True)
+
+
+class TutorialSerializer(serializers.Serializer):
+    """The staff tutorial and how far this person got (V2-065)."""
+
+    steps = TutorialStepSerializer(many=True)
+    step = serializers.IntegerField()
+    completed = serializers.BooleanField()
+    skipped = serializers.BooleanField()
+    show = serializers.BooleanField(help_text="True while the tutorial should open by itself.")
+
+
+class TutorialUpdateSerializer(serializers.Serializer):
+    """Save the step reached, or finish, skip or restart the tutorial."""
+
+    step = serializers.IntegerField(required=False, min_value=0)
+    action = serializers.ChoiceField(choices=["complete", "skip", "restart"], required=False)
+
+    def validate(self, attrs):
+        if not attrs:
+            raise serializers.ValidationError("Send a step or an action.")
+        return attrs
 
 
 class InstitutionScheduledSessionSerializer(serializers.ModelSerializer):
