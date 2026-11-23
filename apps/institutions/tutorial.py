@@ -38,10 +38,10 @@ STAFF_TUTORIAL = (
         "id": "booked",
         "title": "Book ahead",
         "body": (
-            "Need an interpreter at a set time? Choose Book a session. Sessions you book show "
-            "here, with a button to join when it is time."
+            "Need an interpreter at a set time? Choose Schedule a session. The sessions you book "
+            "show under Booked sessions, with a button to join when it is time."
         ),
-        "target": "booked-sessions",
+        "target": "book-session",
     },
     {
         "id": "sessions",
