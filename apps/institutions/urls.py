@@ -68,6 +68,11 @@ urlpatterns = [
         name="institution-sessions",
     ),
     path(
+        "me/sessions/<int:pk>/",
+        views.InstitutionSessionDetailView.as_view(),
+        name="institution-session-detail",
+    ),
+    path(
         "me/scheduled-sessions/",
         views.InstitutionScheduledSessionListView.as_view(),
         name="institution-scheduled-sessions",
