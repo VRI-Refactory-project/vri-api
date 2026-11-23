@@ -458,6 +458,35 @@ class InstitutionSessionSerializer(serializers.ModelSerializer):
         return session_duration_minutes(obj)
 
 
+class TutorialStepSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    title = serializers.CharField()
+    body = serializers.CharField()
+    target = serializers.CharField(allow_null=True)
+
+
+class TutorialSerializer(serializers.Serializer):
+    """The staff tutorial and how far this person got (V2-065)."""
+
+    steps = TutorialStepSerializer(many=True)
+    step = serializers.IntegerField()
+    completed = serializers.BooleanField()
+    skipped = serializers.BooleanField()
+    show = serializers.BooleanField(help_text="True while the tutorial should open by itself.")
+
+
+class TutorialUpdateSerializer(serializers.Serializer):
+    """Save the step reached, or finish, skip or restart the tutorial."""
+
+    step = serializers.IntegerField(required=False, min_value=0)
+    action = serializers.ChoiceField(choices=["complete", "skip", "restart"], required=False)
+
+    def validate(self, attrs):
+        if not attrs:
+            raise serializers.ValidationError("Send a step or an action.")
+        return attrs
+
+
 class InstitutionScheduledSessionSerializer(serializers.ModelSerializer):
     """One session a staff member booked ahead."""
 
