@@ -17,7 +17,12 @@ from .models import (
     BaseAvailability,
     RecoveryCode,
 )
-from .utils import find_user_by_identifier
+from .utils import (
+    email_in_use,
+    find_user_by_identifier,
+    phone_in_use,
+    unfinished_signups,
+)
 
 User = get_user_model()
 
@@ -30,7 +35,8 @@ class PlusPhoneNumberField(PhoneNumberField):
 
 def clean_full_name(value):
     """The sign-up form's rule for names: letters from any alphabet, spaces, hyphens, apostrophes and full
-    stops. Blocks "12345" and markup such as "<b>x</b>". Returns the name with its spaces tidied."""
+    stops. Blocks "12345" and markup such as "<b>x</b>". Returns the name with its spaces tidied.
+    """
     name = " ".join(value.split())
     if len(name) < 2:
         raise serializers.ValidationError("That is too short.")
@@ -142,7 +148,12 @@ class BaseRegistrationSerializer(serializers.Serializer):
         return clean_full_name(value)
 
     def validate_phone_number(self, value):
-        return ensure_phone_unused(value)
+        # An unfinished interpreter sign-up does not own its number (see create()).
+        if phone_in_use(value):
+            raise serializers.ValidationError(
+                "An account with this phone number already exists."
+            )
+        return value
 
     def validate_email(self, value):
         if not value:
@@ -156,7 +167,7 @@ class BaseRegistrationSerializer(serializers.Serializer):
                 "Email address cannot contain only numbers before the @ symbol."
             )
 
-        if User.objects.filter(email__iexact=value).exists():
+        if email_in_use(value):
             raise serializers.ValidationError(
                 "An account with this email already exists."
             )
@@ -190,6 +201,12 @@ class BaseRegistrationSerializer(serializers.Serializer):
         if validated_data.pop("terms_accepted", False):
             user_data["terms_accepted_at"] = timezone.now()
         with transaction.atomic():
+            # Someone who started an interpreter sign-up but never confirmed their email or uploaded
+            # a certificate gives the email and number up, so a fresh sign-up can use them.
+            for old in unfinished_signups(
+                email=user_data.get("email"), phone=user_data.get("phone_number")
+            ):
+                old.delete()
             user = User.objects.create_user(role=self.role, **user_data)
             self.create_profile(user, validated_data)
 

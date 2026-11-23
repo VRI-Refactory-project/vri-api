@@ -1,8 +1,11 @@
 from rest_framework import serializers
 
-from apps.users.photos import photo_path
+from apps.users.photos import InvalidPhoto, photo_path
 
 from . import services
+from .files import InvalidFile, process_chat_file
+from .images import process_chat_image
+from .stickers import STICKER_IDS
 
 RELATIONSHIPS = [
     services.NONE,
@@ -59,9 +62,23 @@ class ConnectionSerializer(serializers.Serializer):
     connected_at = serializers.DateTimeField()
 
 
+class FileSerializer(serializers.Serializer):
+    name = serializers.CharField()
+    size = serializers.IntegerField(help_text="Bytes.")
+    url = serializers.CharField(help_text="Path to download it (fetch it signed in).")
+
+
 class MessageSerializer(serializers.Serializer):
     id = serializers.IntegerField()
-    body = serializers.CharField()
+    body = serializers.CharField(allow_blank=True, help_text="Empty for a sticker.")
+    sticker = serializers.CharField(
+        allow_blank=True, help_text="A sticker id, or empty for a text message."
+    )
+    image_url = serializers.CharField(
+        allow_null=True,
+        help_text="Path of the attached photo (fetch it signed in), or null.",
+    )
+    file = FileSerializer(allow_null=True, help_text="The attached document, or null.")
     created_at = serializers.DateTimeField()
     sent_by_me = serializers.BooleanField()
     read = serializers.BooleanField(
@@ -69,10 +86,29 @@ class MessageSerializer(serializers.Serializer):
     )
 
 
+def _file_data(message):
+    if not message.has_file:
+        return None
+    # `message.file` is one extra query per document; lists are short and documents are rare.
+    attached = message.file
+    return {
+        "name": attached.name,
+        "size": attached.size,
+        "url": f"/api/v1/community/conversations/{message.connection_id}/messages/{message.id}/file/",
+    }
+
+
 def message_data(message, me):
     return {
         "id": message.id,
         "body": message.body,
+        "sticker": message.sticker,
+        "image_url": (
+            f"/api/v1/community/conversations/{message.connection_id}/messages/{message.id}/image/"
+            if message.has_image
+            else None
+        ),
+        "file": _file_data(message),
         "created_at": message.created_at,
         "sent_by_me": message.sender_id == me.id,
         "read": message.read_at is not None,
@@ -96,4 +132,46 @@ class MessagePageSerializer(serializers.Serializer):
 
 
 class NewMessageSerializer(serializers.Serializer):
-    body = serializers.CharField(max_length=2000, trim_whitespace=True)
+    """Send text, a photo or a file (each with or without a caption) or a sticker. A sticker goes on its own."""
+
+    body = serializers.CharField(max_length=2000, trim_whitespace=True, required=False)
+    sticker = serializers.ChoiceField(choices=STICKER_IDS, required=False)
+    image = serializers.FileField(
+        required=False,
+        help_text="A photo, sent as a multipart form. JPG, PNG, WebP or GIF, up to 8 MB.",
+    )
+
+    def validate_image(self, upload):
+        try:
+            return process_chat_image(upload)
+        except InvalidPhoto as error:
+            raise serializers.ValidationError(str(error)) from None
+
+    file = serializers.FileField(
+        required=False,
+        help_text="A document, sent as a multipart form. PDF, Word, Excel, PowerPoint, TXT or CSV, up to 10 MB.",
+    )
+
+    def validate_file(self, upload):
+        try:
+            return process_chat_file(upload)
+        except InvalidFile as error:
+            raise serializers.ValidationError(str(error)) from None
+
+    def validate(self, attrs):
+        if attrs.get("sticker") and (
+            attrs.get("body") or attrs.get("image") or attrs.get("file")
+        ):
+            raise serializers.ValidationError("Send a sticker on its own.")
+        if attrs.get("image") and attrs.get("file"):
+            raise serializers.ValidationError("Send a photo or a file, not both.")
+        if not (
+            attrs.get("body")
+            or attrs.get("sticker")
+            or attrs.get("image")
+            or attrs.get("file")
+        ):
+            raise serializers.ValidationError(
+                "Send a message, a photo, a file or a sticker."
+            )
+        return attrs

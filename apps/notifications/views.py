@@ -1,3 +1,5 @@
+from .models import Notification
+from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
@@ -5,7 +7,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.notifications.models import Notification, PushDevice, NotificationPreference
+# from apps.notifications.models import Notification, PushDevice, NotificationPreference
+from apps.notifications.models import PushDevice, NotificationPreference
 from apps.notifications.serializers import (
     NotificationSerializer,
     PushDeviceRegistrationSerializer,
@@ -132,3 +135,10 @@ class NotificationPreferenceView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+class NotificationMarkAllReadView(APIView):
+    def post(self, request):
+        # Updates all unread notifications for this user to the current time
+        Notification.objects.filter(user=request.user, read_at__isnull=True).update(read_at=timezone.now())
+        return Response({"detail": "All notifications marked as read."})

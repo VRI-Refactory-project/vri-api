@@ -28,6 +28,7 @@ from apps.core.permissions import (
 )
 from apps.service_requests.models import ServiceRequest
 
+from . import scheduling
 from . import specialisations as library
 from . import verification
 from .availability import (
@@ -43,6 +44,7 @@ from .models import (
     InterpreterAvailability,
     InterpreterProfile,
     ScheduledSession,
+    ScheduledSessionOffer,
     VerificationDecision,
     VerificationStatus,
     WeeklyAvailability,
@@ -612,10 +614,13 @@ class CreateScheduledSessionView(generics.CreateAPIView):
 
     def perform_create(self, serializer):
         # Attach the currently logged-in user as the deaf_user; staff bookings also belong to their institution.
-        serializer.save(
+        session = serializer.save(
             deaf_user=self.request.user,
             institution=user_institution(self.request.user),
         )
+        # Offer it to the interpreters who are free for that slot. Nobody being free yet is fine: it
+        # stays pending and is offered again when someone is, or an admin assigns it.
+        scheduling.offer_session(session)
 
 
 class ListMyScheduledSessionsView(generics.ListAPIView):
@@ -626,27 +631,153 @@ class ListMyScheduledSessionsView(generics.ListAPIView):
         return ScheduledSession.objects.filter(
             deaf_user=self.request.user,
             date__gte=date.today()
-        ).order_by('date', 'time')
+        ).select_related("interpreter__user").order_by('date', 'time')
 
 
 class InterpreterBookedSessionListView(generics.ListAPIView):
-    """GET /api/v1/interpreters/booked-sessions/: the sessions Deaf users have booked that are still
-    to come, soonest first. Cancelled bookings and ones whose time has passed are left out.
-
-    Bookings are not assigned to an interpreter yet, so every interpreter sees the same list."""
+    """GET /api/v1/interpreters/booked-sessions/: the bookings still to come that are yours to
+    answer or that you have confirmed, soonest first. Each has a `my_state`: "offered" (waiting for
+    your answer) or "confirmed". Cancelled bookings and ones whose time has passed are left out."""
 
     serializer_class = BookedSessionSerializer
     permission_classes = [permissions.IsAuthenticated, IsInterpreter]
     pagination_class = None
 
     def get_queryset(self):
-        now = timezone.localtime()
-        return (
-            ScheduledSession.objects.exclude(status=ScheduledSession.Status.CANCELLED)
-            .filter(Q(date__gt=now.date()) | Q(date=now.date(), time__gte=now.time()))
-            .select_related("deaf_user__photo")
-            .order_by("date", "time")[:50]
+        profile = InterpreterProfile.objects.filter(user=self.request.user).first()
+        if profile is None:
+            return ScheduledSession.objects.none()
+        mine = Q(interpreter=profile, status=ScheduledSession.Status.CONFIRMED) | Q(
+            status=ScheduledSession.Status.PENDING,
+            offers__interpreter=profile,
+            offers__outcome=ScheduledSessionOffer.Outcome.PENDING,
         )
+        now = timezone.localtime()
+        today = now.date()
+        mine_now = ScheduledSession.objects.filter(
+            mine, date__gte=today - timedelta(days=1)
+        ).distinct()
+        # Not started yet, or confirmed and still inside its join window (so "Join call" stays).
+        shown = [
+            booking
+            for booking in mine_now.select_related("deaf_user__photo").order_by(
+                "date", "time"
+            )
+            if (
+                booking.starts_at > now
+                if booking.status == ScheduledSession.Status.PENDING
+                else (
+                    not booking.no_show
+                    and now <= booking.ends_at + scheduling.JOIN_LATE
+                )
+            )
+        ]
+        return shown[:50]
+
+
+def _answer(request, pk, action):
+    """Run one of the scheduling answers for the signed-in interpreter and return the booking."""
+    profile = get_object_or_404(InterpreterProfile, user=request.user)
+    get_object_or_404(ScheduledSession, pk=pk)
+    try:
+        session = action(pk, profile)
+    except scheduling.BookingNotAvailable as error:
+        raise ValidationError({"detail": str(error)}) from None
+    return Response(
+        BookedSessionSerializer(session, context={"request": request}).data
+    )
+
+
+class BookedSessionAcceptView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsInterpreter]
+
+    @extend_schema(
+        tags=["Interpreter"],
+        summary="Accept a booked session",
+        request=None,
+        responses={200: BookedSessionSerializer},
+    )
+    def post(self, request, pk):
+        return _answer(request, pk, scheduling.accept_offer)
+
+
+class BookedSessionDeclineView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsInterpreter]
+
+    @extend_schema(
+        tags=["Interpreter"],
+        summary="Decline a booked session",
+        request=None,
+        responses={200: BookedSessionSerializer},
+    )
+    def post(self, request, pk):
+        return _answer(request, pk, scheduling.decline_offer)
+
+
+class BookedSessionReleaseView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsInterpreter]
+
+    @extend_schema(
+        tags=["Interpreter"],
+        summary="Give back a booked session you had confirmed",
+        description="The booking goes back out to the other interpreters and the person who booked is told.",
+        request=None,
+        responses={200: BookedSessionSerializer},
+    )
+    def post(self, request, pk):
+        return _answer(request, pk, scheduling.release_session)
+
+
+class CancelScheduledSessionView(APIView):
+    """The person who booked takes the booking back."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["Interpreter"],
+        summary="Cancel a session I booked",
+        request=None,
+        responses={200: ScheduledSessionSerializer},
+    )
+    def post(self, request, pk):
+        get_object_or_404(ScheduledSession, pk=pk, deaf_user=request.user)
+        try:
+            session = scheduling.cancel_session(pk, request.user)
+        except scheduling.BookingNotAvailable as error:
+            raise ValidationError({"detail": str(error)}) from None
+        return Response(ScheduledSessionSerializer(session).data)
+
+
+class StartBookedSessionCallView(APIView):
+    """Open the call for a booking. The booker and the confirmed interpreter both use this."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["Interpreter"],
+        summary="Open the call for a booked session",
+        description="Returns the live request id both people join. Allowed from 10 minutes before the start.",
+        request=None,
+        responses={
+            200: inline_serializer(
+                "StartedCall", {"request_id": serializers.IntegerField()}
+            )
+        },
+    )
+    def post(self, request, pk):
+        # Anyone who is not on this booking gets 404, so they cannot tell it exists.
+        get_object_or_404(
+            ScheduledSession.objects.filter(
+                Q(deaf_user=request.user) | Q(interpreter__user=request.user)
+            ),
+            pk=pk,
+        )
+
+        try:
+            call = scheduling.start_call(pk, request.user)
+        except scheduling.BookingNotAvailable as error:
+            raise ValidationError({"detail": str(error)}) from None
+        return Response({"request_id": call.pk})
 
 
 @extend_schema(
@@ -690,3 +821,4 @@ class InterpreterSessionHistoryView(generics.ListAPIView):
             .select_related("requester", "video_session")
             .order_by("-created_at", "-id")
         )
+

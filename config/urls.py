@@ -11,6 +11,7 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from apps.interpreters import scheduling
 from apps.realtime.views import SessionHistoryView
 from apps.service_requests.services import sweep
 from apps.service_requests.views import (
@@ -35,6 +36,10 @@ def health(request):
             sweep()
         except Exception:
             logger.exception("Request queue sweep failed")
+        try:
+            scheduling.sweep()
+        except Exception:
+            logger.exception("Booked session sweep failed")
     return JsonResponse({"status": "ok"})
 
 

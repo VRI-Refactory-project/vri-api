@@ -32,10 +32,12 @@ from apps.interpreters.models import ScheduledSession
 from apps.service_requests.models import OPEN_STATUSES, ServiceRequest
 
 from . import staff, usage, usage_pdf
-from .models import InstitutionProfile, InstitutionStaff, InstitutionStatus
+from .models import InstitutionDepartment, InstitutionProfile, InstitutionStaff, InstitutionStatus
 from .serializers import (
     InstitutionDocumentUploadSerializer,
     InstitutionProfileUpdateSerializer,
+    InstitutionSelfProfileSerializer,
+    DepartmentSerializer,
     InstitutionScheduledSessionSerializer,
     InstitutionSerializer,
     InstitutionSessionSerializer,
@@ -213,6 +215,71 @@ class MyInstitutionView(RetrieveAPIView):
 
     def get_object(self):
         return user_institution(self.request.user)
+
+
+class MyInstitutionProfileView(APIView):
+    permission_classes = [IsInstitutionAccountAdmin]
+
+    def _profile(self, request):
+        institution = user_institution(request.user)
+        if institution is None:
+            from rest_framework.exceptions import NotFound
+            raise NotFound("No institution is associated with this account.")
+        return InstitutionProfile.objects.select_related("user").get(pk=institution.pk)
+
+    def get(self, request):
+        return Response(InstitutionSelfProfileSerializer(self._profile(request)).data)
+
+    def patch(self, request):
+        with transaction.atomic():
+            profile = self._profile(request)
+            serializer = InstitutionSelfProfileSerializer(profile, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            profile = serializer.save()
+        return Response(InstitutionSelfProfileSerializer(profile).data)
+
+
+class InstitutionDepartmentListCreateView(APIView):
+    permission_classes = [IsInstitutionAdmin]
+
+    def get(self, request):
+        institution = user_institution(request.user)
+        rows = InstitutionDepartment.objects.filter(
+            institution=institution,
+            is_active=True,
+        )
+        return Response(DepartmentSerializer(rows, many=True).data)
+
+    def post(self, request):
+        serializer = DepartmentSerializer(data=request.data, context={"institution": user_institution(request.user)})
+        serializer.is_valid(raise_exception=True)
+        department = serializer.save(institution=user_institution(request.user))
+        return Response(DepartmentSerializer(department).data, status=status.HTTP_201_CREATED)
+
+
+class InstitutionDepartmentDetailView(APIView):
+    permission_classes = [IsInstitutionAdmin]
+
+    def _get(self, request, pk):
+        return get_object_or_404(InstitutionDepartment, pk=pk, institution=user_institution(request.user))
+
+    def patch(self, request, pk):
+        department = self._get(request, pk)
+        serializer = DepartmentSerializer(
+            department,
+            data=request.data,
+            partial=True,
+            context={"institution": department.institution},
+        )
+        serializer.is_valid(raise_exception=True)
+        return Response(DepartmentSerializer(serializer.save()).data)
+
+    def delete(self, request, pk):
+        department = self._get(request, pk)
+        if department.is_active:
+            department.is_active = False
+            department.save(update_fields=["is_active"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @extend_schema(
@@ -578,7 +645,7 @@ class InstitutionScheduledSessionListView(APIView):
                 institution=user_institution(request.user),
                 date__gte=timezone.localdate(),
             )
-            .select_related("deaf_user__institution_staff")
+            .select_related("deaf_user__institution_staff", "interpreter__user")
             .order_by("date", "time")
         )
         queryset = filter_by_staff(queryset, request.query_params, "deaf_user")

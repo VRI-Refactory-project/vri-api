@@ -136,6 +136,8 @@ class GuestInvitationTests(APITestCase):
         claims = jwt.decode(response.data["token"], TEST_SECRET, algorithms=["HS256"])
         self.assertEqual(claims["sub"], f"guest-{invitation.pk}")
         self.assertEqual(claims["video"]["room"], room)  # this session's room only
+        self.assertEqual(json.loads(claims["metadata"]), {"role": "guest"})
+        self.assertTrue(claims["video"]["canUpdateOwnMetadata"])
         invitation.refresh_from_db()
         self.assertIsNotNone(invitation.joined_at)
 

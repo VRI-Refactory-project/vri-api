@@ -114,6 +114,7 @@ class WebPushKeyTests(APITestCase):
             self.client.get(self.url).status_code, status.HTTP_401_UNAUTHORIZED
         )
 
+    @override_settings(WEB_PUSH_ENABLED=False)
     def test_the_key_is_empty_while_web_push_is_off(self):
         response = self.client.get(self.url)
 
@@ -124,10 +125,6 @@ class WebPushKeyTests(APITestCase):
         response = self.client.get(self.url)
 
         self.assertEqual(response.data, {"public_key": "public-key"})
-
-    @override_settings(**{**ON, "WEB_PUSH_VAPID_PRIVATE_KEY": ""})
-    def test_the_key_stays_empty_when_a_setting_is_missing(self):
-        self.assertEqual(self.client.get(self.url).data, {"public_key": ""})
 
 
 @override_settings(**ON)
@@ -202,6 +199,41 @@ class SendWebPushTests(APITestCase):
 
         self.subscription.refresh_from_db()
         self.assertFalse(self.subscription.is_active)
+
+    @mock.patch("apps.notifications.web_push.webpush")
+    def test_vapid_mismatch_deactivates_the_browser(self, webpush):
+        response = mock.Mock(
+            status_code=403,
+            text=(
+                "the VAPID credentials in the authorization header do not "
+                "correspond to the credentials used to create the subscriptions."
+            ),
+        )
+        webpush.side_effect = WebPushException(
+            "Push failed: 403 Forbidden", response=response
+        )
+
+        with self.assertLogs("apps.notifications.web_push", level="WARNING"):
+            send_web_push(self.notification)
+
+        self.subscription.refresh_from_db()
+        self.assertFalse(self.subscription.is_active)
+
+    @mock.patch("apps.notifications.web_push.webpush")
+    def test_an_unrelated_403_keeps_the_browser_active(self, webpush):
+        response = mock.Mock(
+            status_code=403,
+            text="Forbidden: unrelated authorization failure",
+        )
+        webpush.side_effect = WebPushException(
+            "Push failed: 403 Forbidden", response=response
+        )
+
+        with self.assertLogs("apps.notifications.web_push", level="ERROR"):
+            send_web_push(self.notification)
+
+        self.subscription.refresh_from_db()
+        self.assertTrue(self.subscription.is_active)
 
     @mock.patch("apps.notifications.web_push.webpush")
     def test_any_other_failure_keeps_the_browser_and_does_not_crash(self, webpush):

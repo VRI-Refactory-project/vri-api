@@ -56,6 +56,10 @@ def _fail_if_stale(pk, now):
 
 def _stale_reason(video_session, now):
     """Why this call should be failed, or None when it is still allowed to happen."""
+    # A call opened for a booked session may be opened early and wait for the other person. Missing
+    # people are dealt with by the booked-session sweep (no-shows), not by these timers.
+    if hasattr(video_session.service_request, "scheduled_session"):
+        return None
     if video_session.status == VideoSession.Status.WAITING:
         cutoff = now - timedelta(seconds=settings.CALL_WAIT_TIMEOUT_SECONDS)
         return NO_JOIN if video_session.created_at < cutoff else None

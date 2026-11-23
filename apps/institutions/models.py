@@ -36,6 +36,7 @@ class InstitutionProfile(models.Model):
     )
     # What the institution is, in the registrant's own words. Only filled when the type is OTHER.
     organisation_type_other = models.CharField(max_length=100, blank=True, default="")
+    description = models.TextField(blank=True, default="")
     verification_document = models.FileField(
         upload_to="institution_documents/",
         blank=True,
@@ -73,6 +74,26 @@ class StaffRole(models.TextChoices):
     )  # sessions, interpreters, history; no staff management
 
 
+class InstitutionDepartment(models.Model):
+    institution = models.ForeignKey(InstitutionProfile, on_delete=models.CASCADE, related_name="departments")
+    name = models.CharField(max_length=100)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                models.functions.Lower("name"),
+                models.F("institution"),
+                condition=models.Q(is_active=True),
+                name="institution_department_name_ci_unique",
+            )
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class InstitutionStaff(models.Model):
     """A person's membership of an institution (V2-006, SRS 8.1 "Institution Staff").
 
@@ -97,6 +118,13 @@ class InstitutionStaff(models.Model):
         blank=True,
         default="",
         help_text="e.g. Doctor, Police officer. Shown only; not a permission.",
+    )
+    department = models.ForeignKey(
+        InstitutionDepartment,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="staff",
     )
     is_active = models.BooleanField(default=True, db_index=True)
     created_by = models.ForeignKey(

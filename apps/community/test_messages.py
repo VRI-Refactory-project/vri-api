@@ -1,9 +1,13 @@
 """Connected Deaf users messaging each other."""
 
+import io
+
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
+from PIL import Image
 from rest_framework import status
 
-from apps.community.models import Connection, Message
+from apps.community.models import Connection, Message, MessageFile, MessageImage
 from apps.community.test_connections import CommunityBase, make_user
 from apps.notifications.models import Notification
 
@@ -26,6 +30,11 @@ class MessagingBase(CommunityBase):
         if user:
             self.client.force_authenticate(user)
         return self.client.post(self.url("messages"), {"body": body}, format="json")
+
+    def send_sticker(self, sticker):
+        return self.client.post(
+            self.url("messages"), {"sticker": sticker}, format="json"
+        )
 
     def messages(self, **params):
         return self.client.get(self.url("messages"), params).data
@@ -214,6 +223,216 @@ class PagingTests(MessagingBase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
+class StickerTests(MessagingBase):
+    def test_a_sticker_is_saved_with_no_text(self):
+        response = self.send_sticker("thumbs_up")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["sticker"], "thumbs_up")
+        self.assertEqual(response.data["body"], "")
+        self.assertEqual(Message.objects.get().sticker, "thumbs_up")
+
+    def test_text_messages_have_no_sticker(self):
+        self.assertEqual(self.send("Hi").data["sticker"], "")
+
+    def test_an_unknown_sticker_is_refused(self):
+        self.assertEqual(
+            self.send_sticker("not_a_sticker").status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertEqual(Message.objects.count(), 0)
+
+    def test_text_and_a_sticker_together_or_neither_are_refused(self):
+        both = self.client.post(
+            self.url("messages"), {"body": "Hi", "sticker": "hello"}, format="json"
+        )
+        neither = self.client.post(self.url("messages"), {}, format="json")
+
+        self.assertEqual(both.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(neither.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_the_other_person_sees_the_sticker_and_it_counts_as_unread(self):
+        self.send_sticker("heart")
+
+        self.client.force_authenticate(self.sarah)
+        shown = self.messages()["messages"]
+        row = self.client.get(reverse("community:conversations")).data[0]
+
+        self.assertEqual(shown[0]["sticker"], "heart")
+        self.assertEqual(row["unread_count"], 1)
+        self.assertEqual(row["last_message"]["sticker"], "heart")
+
+    def test_the_other_person_is_notified_in_words(self):
+        self.send_sticker("party")
+
+        notification = Notification.objects.get()
+        self.assertEqual(notification.user, self.sarah)
+        self.assertEqual(notification.body, "Sent you a sticker")
+
+
+def picture(width=40, height=30, fmt="PNG", name="shot.png"):
+    out = io.BytesIO()
+    Image.new("RGB", (width, height), "teal").save(out, format=fmt)
+    return SimpleUploadedFile(name, out.getvalue(), content_type=f"image/{fmt.lower()}")
+
+
+class PhotoTests(MessagingBase):
+    def send_photo(self, upload=None, body=None, user=None):
+        if user:
+            self.client.force_authenticate(user)
+        data = {"image": upload or picture()}
+        if body is not None:
+            data["body"] = body
+        return self.client.post(self.url("messages"), data, format="multipart")
+
+    def image_url(self, message_id, conversation=None):
+        return reverse(
+            "community:message-image",
+            args=[conversation or self.link.id, message_id],
+        )
+
+    def test_a_photo_is_saved_and_has_a_link(self):
+        response = self.send_photo()
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["body"], "")
+        self.assertEqual(
+            response.data["image_url"], self.image_url(response.data["id"])
+        )
+        self.assertTrue(Message.objects.get().has_image)
+        self.assertEqual(MessageImage.objects.count(), 1)
+
+    def test_a_photo_can_carry_a_caption(self):
+        response = self.send_photo(body="  Look at this  ")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["body"], "Look at this")
+        self.assertIsNotNone(response.data["image_url"])
+
+    def test_messages_without_a_photo_have_no_link(self):
+        self.assertIsNone(self.send("Hi").data["image_url"])
+        self.assertIsNone(self.send_sticker("heart").data["image_url"])
+        self.assertFalse(MessageImage.objects.exists())
+
+    def test_a_big_photo_is_shrunk_and_saved_as_a_jpeg(self):
+        response = self.send_photo(picture(3200, 2400))
+
+        stored = MessageImage.objects.get()
+        shrunk = Image.open(io.BytesIO(bytes(stored.data)))
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(shrunk.format, "JPEG")
+        self.assertEqual(max(shrunk.size), 1600)
+        self.assertEqual((stored.width, stored.height), shrunk.size)
+
+    def test_a_small_photo_is_not_enlarged(self):
+        self.send_photo(picture(40, 30))
+
+        stored = MessageImage.objects.get()
+        self.assertEqual((stored.width, stored.height), (40, 30))
+
+    def test_something_that_is_not_a_picture_is_refused(self):
+        fake = SimpleUploadedFile("a.png", b"not a picture", content_type="image/png")
+
+        response = self.send_photo(fake)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Message.objects.count(), 0)
+
+    def test_a_photo_over_8_mb_is_refused(self):
+        huge = SimpleUploadedFile(
+            "big.jpg", b"0" * (8 * 1024 * 1024 + 1), content_type="image/jpeg"
+        )
+
+        response = self.send_photo(huge)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("8 MB", str(response.data))
+        self.assertEqual(Message.objects.count(), 0)
+
+    def test_a_sticker_cannot_travel_with_a_photo_or_text(self):
+        with_photo = self.client.post(
+            self.url("messages"),
+            {"image": picture(), "sticker": "heart"},
+            format="multipart",
+        )
+        with_text = self.client.post(
+            self.url("messages"), {"body": "Hi", "sticker": "heart"}, format="json"
+        )
+
+        self.assertEqual(with_photo.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(with_text.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Message.objects.count(), 0)
+
+    def test_both_people_can_open_the_photo(self):
+        sent = self.send_photo(picture(3200, 2400)).data
+
+        for user in (self.me, self.sarah):
+            self.client.force_authenticate(user)
+            response = self.client.get(self.image_url(sent["id"]))
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response["Content-Type"], "image/jpeg")
+            self.assertIn("no-store", response["Cache-Control"])
+            self.assertEqual(Image.open(io.BytesIO(response.content)).format, "JPEG")
+
+    def test_the_other_person_sees_the_link_in_the_chat_and_the_list(self):
+        sent = self.send_photo().data
+
+        self.client.force_authenticate(self.sarah)
+        shown = self.messages()["messages"][0]
+        row = self.client.get(reverse("community:conversations")).data[0]
+
+        self.assertEqual(shown["image_url"], self.image_url(sent["id"]))
+        self.assertEqual(row["last_message"]["image_url"], self.image_url(sent["id"]))
+        self.assertEqual(row["unread_count"], 1)
+
+    def test_strangers_and_signed_out_people_cannot_open_it(self):
+        sent = self.send_photo().data
+
+        self.client.force_authenticate(self.daniel)
+        self.assertEqual(
+            self.client.get(self.image_url(sent["id"])).status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        self.client.force_authenticate(None)
+        self.assertEqual(
+            self.client.get(self.image_url(sent["id"])).status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_a_photo_cannot_be_reached_through_another_conversation(self):
+        self.pending.delete()
+        other = Connection.objects.create(
+            requester=self.me, addressee=self.daniel, status=Connection.Status.ACCEPTED
+        )
+        sent = self.send_photo().data
+
+        response = self.client.get(self.image_url(sent["id"], conversation=other.id))
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_a_message_without_a_photo_has_no_image_page(self):
+        sent = self.send("Hi").data
+
+        response = self.client.get(self.image_url(sent["id"]))
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_the_other_person_is_notified_in_words(self):
+        self.send_photo()
+        self.send_photo(body="Sunset")
+
+        bodies = set(Notification.objects.values_list("body", flat=True))
+        self.assertEqual(bodies, {"Sent you a photo", "Sunset"})
+
+    def test_removing_the_connection_removes_the_photos(self):
+        self.send_photo()
+
+        self.link.delete()
+
+        self.assertFalse(MessageImage.objects.exists())
+
+
 class NotificationTests(MessagingBase):
     def test_sending_a_message_notifies_the_other_person(self):
         self.send("Are you free tomorrow?")
@@ -227,3 +446,166 @@ class NotificationTests(MessagingBase):
         self.send("Hello")
 
         self.assertFalse(Notification.objects.filter(user=self.me).exists())
+
+
+def document(
+    name="plan.pdf", content=b"%PDF-1.4 hello", content_type="application/pdf"
+):
+    return SimpleUploadedFile(name, content, content_type=content_type)
+
+
+class FileTests(MessagingBase):
+    def send_file(self, upload=None, body=None, **extra):
+        data = {"file": upload or document(), **extra}
+        if body is not None:
+            data["body"] = body
+        return self.client.post(self.url("messages"), data, format="multipart")
+
+    def file_url(self, message_id, conversation=None):
+        return reverse(
+            "community:message-file", args=[conversation or self.link.id, message_id]
+        )
+
+    def test_a_file_is_saved_with_its_name_size_and_link(self):
+        response = self.send_file()
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(
+            response.data["file"],
+            {
+                "name": "plan.pdf",
+                "size": len(b"%PDF-1.4 hello"),
+                "url": self.file_url(response.data["id"]),
+            },
+        )
+        self.assertEqual(response.data["body"], "")
+        self.assertTrue(Message.objects.get().has_file)
+        self.assertEqual(MessageFile.objects.count(), 1)
+
+    def test_a_file_can_carry_a_caption(self):
+        response = self.send_file(body="The agenda")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["body"], "The agenda")
+        self.assertIsNotNone(response.data["file"])
+
+    def test_other_messages_have_no_file(self):
+        self.assertIsNone(self.send("Hi").data["file"])
+        self.assertIsNone(self.send_sticker("heart").data["file"])
+        self.assertFalse(MessageFile.objects.exists())
+
+    def test_the_receiver_is_told_a_file_arrived(self):
+        self.send_file()
+
+        note = Notification.objects.get(user=self.sarah)
+        self.assertEqual(note.body, "Sent you a file")
+
+    def test_the_other_person_downloads_it_as_an_attachment(self):
+        message_id = self.send_file(document("My plan.pdf")).data["id"]
+        self.client.force_authenticate(self.sarah)
+
+        response = self.client.get(self.file_url(message_id))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"%PDF-1.4 hello")
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn("attachment", response["Content-Disposition"])
+        self.assertIn('filename="My plan.pdf"', response["Content-Disposition"])
+        self.assertEqual(response["X-Content-Type-Options"], "nosniff")
+
+    def test_a_name_with_accents_downloads_safely(self):
+        message_id = self.send_file(document("Pr\u00fcfung \u2713.pdf")).data["id"]
+        self.client.force_authenticate(self.sarah)
+
+        response = self.client.get(self.file_url(message_id))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("filename*=utf-8''", response["Content-Disposition"])
+
+    def test_strangers_cannot_download_it(self):
+        message_id = self.send_file().data["id"]
+        self.client.force_authenticate(self.daniel)
+
+        response = self.client.get(self.file_url(message_id))
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_an_unknown_message_has_no_file(self):
+        self.send_file()
+        self.client.force_authenticate(self.sarah)
+
+        response = self.client.get(self.file_url(99999))
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_a_text_message_has_no_file_to_download(self):
+        message_id = self.send("Hi").data["id"]
+        self.client.force_authenticate(self.sarah)
+
+        response = self.client.get(self.file_url(message_id))
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_a_program_is_refused(self):
+        response = self.send_file(document("setup.exe", b"MZ\x90\x00"))
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Message.objects.count(), 0)
+
+    def test_a_web_page_is_refused_so_it_can_never_run(self):
+        for name in ("page.html", "pic.svg", "app.js"):
+            response = self.send_file(document(name, b"<script>1</script>"))
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, name)
+
+    def test_a_disguised_file_is_refused(self):
+        for name, content in (
+            ("report.pdf", b"MZ not a pdf"),
+            ("report.docx", b"%PDF-1.4"),
+            ("old.doc", b"PK\x03\x04"),
+            ("data.txt", b"abc\x00def"),
+        ):
+            response = self.send_file(document(name, content))
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, name)
+
+    def test_office_and_text_files_are_accepted(self):
+        for name, content in (
+            ("a.docx", b"PK\x03\x04rest"),
+            ("a.xlsx", b"PK\x03\x04rest"),
+            ("a.pptx", b"PK\x03\x04rest"),
+            ("a.doc", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1rest"),
+            ("a.txt", "Habari yako ✓".encode()),
+            ("A.CSV", b"a,b\n1,2\n"),
+        ):
+            response = self.send_file(document(name, content))
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED, name)
+
+    def test_an_empty_or_huge_file_is_refused(self):
+        self.assertEqual(
+            self.send_file(document("a.pdf", b"")).status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        big = document("big.pdf", b"%PDF-" + b"0" * (10 * 1024 * 1024))
+        self.assertEqual(self.send_file(big).status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Message.objects.count(), 0)
+
+    def test_the_name_is_cleaned(self):
+        response = self.send_file(document("../../etc/secret.pdf"))
+
+        self.assertEqual(response.data["file"]["name"], "secret.pdf")
+
+    def test_a_long_name_is_shortened_but_keeps_its_ending(self):
+        response = self.send_file(document("a" * 300 + ".pdf"))
+
+        name = response.data["file"]["name"]
+        self.assertEqual(len(name), 100)
+        self.assertTrue(name.endswith(".pdf"))
+
+    def test_a_file_and_a_photo_cannot_go_together(self):
+        response = self.send_file(image=picture())
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_a_sticker_goes_alone(self):
+        response = self.send_file(sticker="heart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

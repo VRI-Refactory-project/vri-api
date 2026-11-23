@@ -379,7 +379,7 @@ class AdminUpcomingSessionsView(APIView):
         today = date.today()
 
         sessions_qs = (
-            ScheduledSession.objects.select_related("deaf_user")
+            ScheduledSession.objects.select_related("deaf_user", "interpreter__user")
             .filter(date__gte=today)
             .exclude(status="CANCELLED")
             .order_by("date", "time")[:50]
@@ -392,7 +392,7 @@ class AdminUpcomingSessionsView(APIView):
                     "id": s.pk,
                     "date": f"{s.date} at {s.time.strftime('%H:%M')}",
                     "client": s.deaf_user.full_name if s.deaf_user else "Unknown",
-                    "interpreter": "—",
+                    "interpreter": s.interpreter.user.full_name if s.interpreter_id else "—",
                     "session_type": s.session_type,
                     "status": s.status,
                 }

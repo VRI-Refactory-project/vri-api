@@ -1,8 +1,11 @@
+from datetime import datetime, timedelta
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, MaxValueValidator
 from django.db import models
+from django.utils import timezone
 
 User = get_user_model()
 
@@ -350,6 +353,45 @@ class ScheduledSession(models.Model):
         choices=Status.choices,
         default=Status.PENDING,
     )
+    # Who will interpret it. Set when an interpreter accepts (or an admin assigns one), and only then
+    # is the booking CONFIRMED.
+    interpreter = models.ForeignKey(
+        InterpreterProfile,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="assigned_sessions",
+    )
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    offered_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the booking was first offered to interpreters.",
+    )
+    # The live call opened for this booking, once someone starts it. Same call machinery as an
+    # on-demand request, so the video room, chat and end-of-call all work unchanged.
+    service_request = models.OneToOneField(
+        "service_requests.ServiceRequest",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="scheduled_session",
+    )
+
+    class NoShow(models.TextChoices):
+        INTERPRETER = "interpreter", "Interpreter did not join"
+        BOOKER = "booker", "Person who booked did not join"
+        BOTH = "both", "Nobody joined"
+
+    # Filled in when nobody (or only one side) joined by ten minutes after the start.
+    no_show = models.CharField(
+        max_length=12, choices=NoShow.choices, blank=True, default=""
+    )
+    reminders_sent = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Which reminders have gone out, e.g. ['day', 'soon']. Keeps each one to a single send.",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -359,3 +401,48 @@ class ScheduledSession(models.Model):
 
     def __str__(self):
         return f"{self.deaf_user.full_name} - {self.date} at {self.time} ({self.duration}m)"
+
+    @property
+    def starts_at(self):
+        """When it begins, as a timezone-aware datetime in the server's local time (Africa/Kampala)."""
+        return timezone.make_aware(datetime.combine(self.date, self.time))
+
+    @property
+    def ends_at(self):
+        return self.starts_at + timedelta(minutes=self.duration)
+
+
+class ScheduledSessionOffer(models.Model):
+    """A booking offered to one interpreter, and what they did about it."""
+
+    class Outcome(models.TextChoices):
+        PENDING = "PENDING", "Waiting for an answer"
+        ACCEPTED = "ACCEPTED", "Accepted"
+        DECLINED = "DECLINED", "Declined"
+        WITHDRAWN = "WITHDRAWN", "Closed (someone else took it, or it was cancelled)"
+
+    session = models.ForeignKey(
+        ScheduledSession, on_delete=models.CASCADE, related_name="offers"
+    )
+    interpreter = models.ForeignKey(
+        InterpreterProfile,
+        on_delete=models.CASCADE,
+        related_name="scheduled_session_offers",
+    )
+    outcome = models.CharField(
+        max_length=10, choices=Outcome.choices, default=Outcome.PENDING
+    )
+    offered_at = models.DateTimeField()
+    responded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["offered_at", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["session", "interpreter"],
+                name="one_offer_per_booking_and_interpreter",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.interpreter_id} -> booking {self.session_id} ({self.outcome})"
