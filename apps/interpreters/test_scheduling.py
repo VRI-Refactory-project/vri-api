@@ -62,8 +62,15 @@ class SchedulingBase(APITestCase):
         self.client.force_authenticate(self.deaf)
 
     def book(
-        self, at=time(10, 0), duration=45, session_type="medical", day=None, **extra
+        self,
+        at=time(10, 0),
+        duration=45,
+        session_type="medical",
+        day=None,
+        by=None,
+        **extra,
     ):
+        """Book a session as self.deaf, or as `by` (one person cannot hold two overlapping sessions)."""
         body = {
             "date": str(day or self.day),
             "time": at.strftime("%H:%M"),
@@ -73,9 +80,12 @@ class SchedulingBase(APITestCase):
         }
         if session_type == "other":
             body.setdefault("custom_session_type", "A family matter")
+        if by is not None:
+            self.client.force_authenticate(by)
         response = self.client.post(
             reverse("interpreters:schedule-session"), body, format="json"
         )
+        self.client.force_authenticate(self.deaf)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         return Booking.objects.get(pk=response.data["id"])
 
@@ -180,7 +190,9 @@ class OfferingTests(SchedulingBase):
         first = self.book(session_type="other", at=time(10, 0))
         scheduling.accept_offer(first.pk, busy)
 
-        second = self.book(session_type="other", at=time(10, 30))
+        second = self.book(
+            session_type="other", at=time(10, 30), by=make_user(User.Role.DEAF_HOH)
+        )
 
         self.assertEqual(
             list(second.offers.values_list("interpreter_id", flat=True)), [free.pk]
@@ -289,7 +301,12 @@ class AcceptingTests(SchedulingBase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_a_clash_with_a_session_they_already_hold_is_refused(self):
-        other = self.book(session_type="other", at=time(10, 15), day=self.day)
+        other = self.book(
+            session_type="other",
+            at=time(10, 15),
+            day=self.day,
+            by=make_user(User.Role.DEAF_HOH),
+        )
         scheduling.accept_offer(other.pk, self.first)
         # `first` was offered the booking before accepting the other one, so the offer still exists.
         response = self.answer(self.first, "accept", self.booking)
@@ -581,7 +598,9 @@ class AdminFollowUpTests(SchedulingBase):
         unapproved.verification_status = VerificationStatus.INACTIVE
         unapproved.save()
         busy = free_interpreter(self.day)
-        other = self.book(session_type="other", at=time(10, 15))
+        other = self.book(
+            session_type="other", at=time(10, 15), by=make_user(User.Role.DEAF_HOH)
+        )
         scheduling.assign_session(other.pk, busy)
 
         for profile in (unapproved, busy):
@@ -660,7 +679,9 @@ class NeedsAttentionTests(SchedulingBase):
             session_type="other", day=timezone.localdate() + timedelta(days=1)
         )
         scheduling.accept_offer(confirmed.pk, profile)
-        cancelled = self.book(day=timezone.localdate() + timedelta(days=1))
+        cancelled = self.book(
+            at=time(14, 0), day=timezone.localdate() + timedelta(days=1)
+        )
         scheduling.cancel_session(cancelled.pk, self.deaf)
 
         self.assertEqual(list(scheduling.unconfirmed()), [])
@@ -1053,6 +1074,14 @@ class NoShowTests(SchedulingBase):
 
         self.assertEqual(scheduling.handle_no_shows(now=self.late), 0)
 
+    @override_settings(BOOKED_SESSION_NO_SHOW=False)
+    def test_it_can_be_switched_off(self):
+        self.open_call(booker_in=True)
+
+        self.assertEqual(scheduling.handle_no_shows(now=self.late), 0)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.no_show, "")
+
     def test_it_is_dealt_with_once(self):
         scheduling.handle_no_shows(now=self.late)
         scheduling.handle_no_shows(now=self.late)
@@ -1106,3 +1135,53 @@ class NoShowTests(SchedulingBase):
         listing = self.client.get(reverse("interpreters:booked-sessions"))
 
         self.assertEqual(listing.data[0]["no_show"], "both")
+
+
+class DoubleBookingTests(SchedulingBase):
+    def post(self, at=time(10, 0), duration=45, **extra):
+        return self.client.post(
+            reverse("interpreters:schedule-session"),
+            {
+                "date": str(self.day),
+                "time": at.strftime("%H:%M"),
+                "duration": duration,
+                "session_type": "medical",
+                **extra,
+            },
+            format="json",
+        )
+
+    def test_pressing_save_twice_makes_one_booking(self):
+        self.assertEqual(self.post().status_code, status.HTTP_201_CREATED)
+
+        again = self.post()
+
+        self.assertEqual(again.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already have a session", again.data["time"][0])
+        self.assertEqual(Booking.objects.filter(deaf_user=self.deaf).count(), 1)
+
+    def test_a_partly_overlapping_booking_is_refused(self):
+        self.post(at=time(10, 0), duration=45)
+
+        response = self.post(at=time(10, 30), duration=30)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_a_session_straight_after_another_is_allowed(self):
+        self.post(at=time(10, 0), duration=45)
+
+        response = self.post(at=time(10, 45), duration=30)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_a_cancelled_booking_does_not_block_a_new_one(self):
+        first = self.book()
+        scheduling.cancel_session(first.pk, self.deaf)
+
+        self.assertEqual(self.post().status_code, status.HTTP_201_CREATED)
+
+    def test_someone_else_can_book_the_same_time(self):
+        self.post()
+        self.as_user(make_user(User.Role.DEAF_HOH))
+
+        self.assertEqual(self.post().status_code, status.HTTP_201_CREATED)

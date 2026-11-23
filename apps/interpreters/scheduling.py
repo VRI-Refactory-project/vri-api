@@ -81,6 +81,21 @@ def overlaps(session, other):
     return session.starts_at < other.ends_at and other.starts_at < session.ends_at
 
 
+def ensure_no_clash(user, day, at, duration):
+    """A person cannot book two sessions that overlap: pressing Save twice makes one booking.
+
+    Cancelled bookings do not count. Raises BookingNotAvailable with the message to show.
+    """
+    wanted = ScheduledSession(date=day, time=at, duration=duration)
+    around = ScheduledSession.objects.filter(
+        deaf_user=user,
+        status__in=[Status.PENDING, Status.CONFIRMED],
+        date__in=[day - timedelta(days=1), day, day + timedelta(days=1)],
+    )
+    if any(overlaps(wanted, other) for other in around):
+        raise BookingNotAvailable("You already have a session booked at that time.")
+
+
 def _confirmed_around(session, profile):
     """The interpreter's confirmed bookings on the days this one touches."""
     days = {session.starts_at.date(), session.ends_at.date()}
@@ -602,9 +617,13 @@ def handle_no_shows(*, now=None):
     closed, the interpreter is freed, and both are told. Each booking is dealt with once.
     Returns how many were handled.
     """
+    from django.conf import settings
+
     from apps.service_requests import services as requests
     from apps.service_requests.models import ServiceRequest
 
+    if not getattr(settings, "BOOKED_SESSION_NO_SHOW", True):
+        return 0
     now = now or timezone.localtime()
     today = timezone.localdate(now)
     candidates = ScheduledSession.objects.filter(

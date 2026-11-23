@@ -588,6 +588,14 @@ class ScheduledSessionSerializer(serializers.ModelSerializer):
             starts = timezone.make_aware(datetime.combine(data["date"], data["time"]))
             if starts <= timezone.now():
                 raise serializers.ValidationError({"time": "That time has already passed."})
+            request = self.context.get("request")
+            if self.instance is None and request is not None and data.get("duration"):
+                try:
+                    scheduling.ensure_no_clash(
+                        request.user, data["date"], data["time"], data["duration"]
+                    )
+                except scheduling.BookingNotAvailable as error:
+                    raise serializers.ValidationError({"time": str(error)}) from None
 
         return data
 
