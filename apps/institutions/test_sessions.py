@@ -12,6 +12,7 @@ from apps.accounts.models import User
 from apps.audit.models import AuditLog
 from apps.core.permissions import user_institution
 from apps.interpreters.models import ScheduledSession
+from apps.realtime.models import SessionFeedback, VideoSession
 from apps.service_requests.models import ServiceRequest
 from apps.service_requests.test_offers import make_interpreter
 
@@ -164,13 +165,6 @@ class InstitutionSessionListTests(APITestCase):
         waiting.refresh_from_db()
         self.assertEqual(waiting.updated_at, before)
 
-    def test_staff_who_are_not_administrators_are_refused(self):
-        self.client.force_authenticate(self.nurse)
-
-        self.assertEqual(
-            self.client.get(SESSIONS_URL).status_code, status.HTTP_403_FORBIDDEN
-        )
-
     def test_pending_institutions_are_refused(self):
         pending_admin = make_institution(
             "0700000400", "New Clinic", status=InstitutionStatus.PENDING
@@ -180,6 +174,136 @@ class InstitutionSessionListTests(APITestCase):
         self.assertEqual(
             self.client.get(SESSIONS_URL).status_code, status.HTTP_403_FORBIDDEN
         )
+
+
+def detail_url(session):
+    return reverse("institution-session-detail", args=[session.pk])
+
+
+class SessionHistoryTests(APITestCase):
+    """V2-030: past sessions, metadata only. Staff see their own; administrators see everyone's."""
+
+    def setUp(self):
+        self.admin = make_institution("0700000700", "Mulago Hospital")
+        self.nurse = make_staff(self.admin, "Grace Achieng", "Maternity")
+        self.doctor = make_staff(self.admin, "Dr Sarah Nakato", "Emergency")
+        self.interpreter = make_interpreter()
+        self.nurses = make_request(self.nurse, Status.COMPLETED, self.interpreter, minutes=20)
+        self.doctors = make_request(self.doctor, Status.COMPLETED, self.interpreter, minutes=35)
+
+    def ids(self, response):
+        return {row["id"] for row in response.data}
+
+    def test_staff_see_only_their_own_sessions(self):
+        self.client.force_authenticate(self.nurse)
+
+        response = self.client.get(SESSIONS_URL, {"state": "history"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(self.ids(response), {self.nurses.pk})
+
+    def test_staff_cannot_reach_a_colleagues_session_even_with_filters(self):
+        self.client.force_authenticate(self.nurse)
+        doctor_staff_id = self.doctor.institution_staff.id
+
+        response = self.client.get(SESSIONS_URL, {"staff": doctor_staff_id})
+
+        self.assertEqual(self.ids(response), set())
+
+    def test_administrators_still_see_every_staff_members_sessions(self):
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.get(SESSIONS_URL, {"state": "history"})
+
+        self.assertEqual(self.ids(response), {self.nurses.pk, self.doctors.pk})
+
+    def test_staff_open_their_own_session(self):
+        self.client.force_authenticate(self.nurse)
+
+        response = self.client.get(detail_url(self.nurses))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["duration_minutes"], 20)
+        self.assertEqual(response.data["interpreter_name"], self.interpreter.user.full_name)
+        self.assertEqual(response.data["staff"]["name"], "Grace Achieng")
+
+    def test_a_colleagues_session_is_not_found_for_staff(self):
+        self.client.force_authenticate(self.nurse)
+
+        response = self.client.get(detail_url(self.doctors))
+
+        # 404, not 403: staff cannot even learn that it exists.
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_administrators_open_any_of_their_institutions_sessions(self):
+        self.client.force_authenticate(self.admin)
+
+        self.assertEqual(self.client.get(detail_url(self.doctors)).status_code, status.HTTP_200_OK)
+
+    def test_another_institutions_session_is_not_found(self):
+        other_admin = make_institution("0700000800", "Nsambya Hospital")
+        theirs = make_request(make_staff(other_admin), Status.COMPLETED, self.interpreter, minutes=5)
+        self.client.force_authenticate(self.admin)
+
+        self.assertEqual(self.client.get(detail_url(theirs)).status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_people_outside_institutions_are_refused(self):
+        self.client.force_authenticate(self.interpreter.user)
+
+        self.assertEqual(self.client.get(SESSIONS_URL).status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(
+            self.client.get(detail_url(self.nurses)).status_code, status.HTTP_403_FORBIDDEN
+        )
+
+    def test_channel_says_whether_the_session_was_on_demand_or_booked(self):
+        booked = make_request(self.nurse, Status.COMPLETED, self.interpreter, minutes=30)
+        ScheduledSession.objects.create(
+            deaf_user=self.nurse,
+            institution=user_institution(self.nurse),
+            date=date.today(),
+            time=time(10, 0),
+            duration=30,
+            session_type="medical",
+            service_request=booked,
+        )
+        self.client.force_authenticate(self.nurse)
+
+        rows = {row["id"]: row for row in self.client.get(SESSIONS_URL).data}
+
+        self.assertEqual(rows[self.nurses.pk]["channel"], "on_demand")
+        self.assertEqual(rows[booked.pk]["channel"], "booked")
+
+    def test_only_metadata_is_returned_never_what_was_said(self):
+        video = VideoSession.objects.create(service_request=self.nurses)
+        SessionFeedback.objects.create(
+            video_session=video,
+            interpreter=self.interpreter,
+            submitted_by=self.nurse,
+            rating=2,
+            comment="PRIVATE: the patient described her symptoms",
+        )
+        self.client.force_authenticate(self.nurse)
+
+        listed = self.client.get(SESSIONS_URL).data[0]
+        opened = self.client.get(detail_url(self.nurses)).data
+
+        expected = {
+            "id",
+            "staff",
+            "channel",
+            "interpreter_name",
+            "specialisation_required",
+            "priority",
+            "status",
+            "display_status",
+            "created_at",
+            "assigned_at",
+            "ended_at",
+            "duration_minutes",
+        }
+        for body in (listed, opened):
+            self.assertEqual(set(body), expected)
+            self.assertNotIn("PRIVATE", str(body))
 
 
 class InstitutionScheduledSessionTests(APITestCase):
