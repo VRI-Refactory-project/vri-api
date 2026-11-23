@@ -170,6 +170,27 @@ class IsInstitutionAdmin(IsApprovedInstitution):
         return True
 
 
+class IsInstitutionStaffMember(IsApprovedInstitution):
+    """Staff of an approved institution who are not its administrators (V2-065: the staff tutorial).
+
+    Administrators get a 403 with code institution_staff_only.
+    """
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        from apps.institutions.models import StaffRole
+
+        if user_staff_membership(request.user).role != StaffRole.STAFF:
+            raise PermissionDenied(
+                {
+                    "detail": "This is only for your institution's staff.",
+                    "code": "institution_staff_only",
+                }
+            )
+        return True
+
+
 # The permission class for each role, for code that picks the check at runtime.
 ROLE_PERMISSIONS = {
     User.Role.DEAF_HOH: IsDeafUser,

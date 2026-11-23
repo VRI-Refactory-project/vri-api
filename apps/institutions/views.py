@@ -25,19 +25,21 @@ from apps.core.permissions import (
     IsApprovedInstitution,
     IsInstitutionAccountAdmin,
     IsInstitutionAdmin,
+    IsInstitutionStaffMember,
     user_institution,
     user_staff_membership,
 )
 from apps.interpreters.models import ScheduledSession
 from apps.service_requests.models import OPEN_STATUSES, ServiceRequest
 
-from . import staff, usage, usage_pdf
+from . import staff, tutorial, usage, usage_pdf
 from .models import (
     InstitutionDepartment,
     InstitutionProfile,
     InstitutionStaff,
     InstitutionStatus,
     StaffRole,
+    TutorialProgress,
 )
 from .serializers import (
     InstitutionDocumentUploadSerializer,
@@ -52,6 +54,8 @@ from .serializers import (
     StaffCreateSerializer,
     StaffSerializer,
     StaffUpdateSerializer,
+    TutorialSerializer,
+    TutorialUpdateSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -657,6 +661,66 @@ class InstitutionSessionDetailView(RetrieveAPIView):
 
     def get_queryset(self):
         return visible_sessions(self.request.user)
+
+
+class StaffTutorialView(APIView):
+    """The first-sign-in tutorial for institution staff (V2-065): the steps, and how far this person
+    got. Progress belongs to the signed-in staff member; nobody can read or change anyone else's."""
+
+    permission_classes = [IsInstitutionStaffMember]
+
+    def _progress(self, request):
+        progress, _ = TutorialProgress.objects.get_or_create(
+            staff=user_staff_membership(request.user)
+        )
+        return progress
+
+    @staticmethod
+    def _body(progress):
+        return TutorialSerializer(
+            {
+                "steps": tutorial.STAFF_TUTORIAL,
+                "step": progress.step,
+                "completed": progress.completed_at is not None,
+                "skipped": progress.skipped_at is not None,
+                "show": progress.is_open,
+            }
+        ).data
+
+    @extend_schema(
+        tags=["Institution Staff"],
+        summary="My tutorial and my progress",
+        responses={200: TutorialSerializer},
+    )
+    def get(self, request):
+        return Response(self._body(self._progress(request)))
+
+    @extend_schema(
+        tags=["Institution Staff"],
+        summary="Save my tutorial progress",
+        request=TutorialUpdateSerializer,
+        responses={200: TutorialSerializer},
+    )
+    def patch(self, request):
+        data = TutorialUpdateSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        progress = self._progress(request)
+        now = timezone.now()
+
+        if "step" in data.validated_data:
+            # A step past the end is kept at the last one, so an old app cannot break it.
+            progress.step = min(data.validated_data["step"], tutorial.LAST_STEP)
+        action = data.validated_data.get("action")
+        if action == "complete":
+            progress.completed_at = now
+        elif action == "skip":
+            progress.skipped_at = now
+        elif action == "restart":
+            progress.step = 0
+            progress.completed_at = None
+            progress.skipped_at = None
+        progress.save()
+        return Response(self._body(progress))
 
 
 class InstitutionScheduledSessionListView(APIView):

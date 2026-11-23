@@ -72,6 +72,7 @@ urlpatterns = [
         views.InstitutionSessionDetailView.as_view(),
         name="institution-session-detail",
     ),
+    path("me/tutorial/", views.StaffTutorialView.as_view(), name="institution-staff-tutorial"),
     path(
         "me/scheduled-sessions/",
         views.InstitutionScheduledSessionListView.as_view(),
