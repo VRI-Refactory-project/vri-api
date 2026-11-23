@@ -76,13 +76,17 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
             return None
         return {"id": obj.institution.pk, "name": obj.institution.organisation_name}
 
+    # Who interpreted: shown while the session runs and once it is completed, so a finished session
+    # still says who it was with. A request that was cancelled, failed or is still looking has none.
+    SHOWS_INTERPRETER = (ServiceRequest.Status.ASSIGNED, ServiceRequest.Status.COMPLETED)
+
     def get_interpreter_id(self, obj):
-        if obj.status != ServiceRequest.Status.ASSIGNED:
+        if obj.status not in self.SHOWS_INTERPRETER:
             return None
         return obj.interpreter_id
 
     def get_interpreter(self, obj):
-        if obj.status != ServiceRequest.Status.ASSIGNED or obj.interpreter is None:
+        if obj.status not in self.SHOWS_INTERPRETER or obj.interpreter is None:
             return None
         profile = obj.interpreter
         return {
