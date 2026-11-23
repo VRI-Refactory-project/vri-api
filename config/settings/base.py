@@ -187,6 +187,10 @@ INTERPRETER_OFFER_REMINDER_LEAD_TIME = env.int(
 DISPATCH_REQUESTS_ON_HEALTH = env.bool("DISPATCH_REQUESTS_ON_HEALTH", default=False)
 # A waiting request is cancelled when the requester's app has not checked on it for this long (V2-009).
 # Placeholder until the product owner decides (REQUESTER_DISCONNECT_GRACE_WINDOW is TBD).
+# Booked sessions: close a booking and tell people when someone has not joined 10 minutes after the
+# start. It relies on LiveKit's webhook reaching the API (that is what records who joined), so switch
+# it off with BOOKED_SESSION_NO_SHOW=false if that webhook is not set up.
+BOOKED_SESSION_NO_SHOW = env.bool("BOOKED_SESSION_NO_SHOW", default=True)
 REQUESTER_DISCONNECT_GRACE_WINDOW = timedelta(
     seconds=env.int("REQUESTER_DISCONNECT_GRACE_WINDOW_SECONDS", default=120)
 )

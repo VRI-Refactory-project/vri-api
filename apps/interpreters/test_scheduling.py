@@ -1053,6 +1053,14 @@ class NoShowTests(SchedulingBase):
 
         self.assertEqual(scheduling.handle_no_shows(now=self.late), 0)
 
+    @override_settings(BOOKED_SESSION_NO_SHOW=False)
+    def test_it_can_be_switched_off(self):
+        self.open_call(booker_in=True)
+
+        self.assertEqual(scheduling.handle_no_shows(now=self.late), 0)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.no_show, "")
+
     def test_it_is_dealt_with_once(self):
         scheduling.handle_no_shows(now=self.late)
         scheduling.handle_no_shows(now=self.late)

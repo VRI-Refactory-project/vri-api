@@ -602,9 +602,13 @@ def handle_no_shows(*, now=None):
     closed, the interpreter is freed, and both are told. Each booking is dealt with once.
     Returns how many were handled.
     """
+    from django.conf import settings
+
     from apps.service_requests import services as requests
     from apps.service_requests.models import ServiceRequest
 
+    if not getattr(settings, "BOOKED_SESSION_NO_SHOW", True):
+        return 0
     now = now or timezone.localtime()
     today = timezone.localdate(now)
     candidates = ScheduledSession.objects.filter(
