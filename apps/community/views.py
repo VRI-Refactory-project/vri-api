@@ -178,7 +178,7 @@ class RequestDetailView(APIView):
         responses={204: None},
     )
     def delete(self, request, pk):
-        _pending(request, pk, as_addressee=False).delete()
+        services.withdraw(_pending(request, pk, as_addressee=False))
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

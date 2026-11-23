@@ -99,7 +99,23 @@ def send_request(requester, target):
     return _create_request(requester, target), False
 
 
+def clear_request_notification(connection):
+    """Remove the "wants to connect" notification once the request has an answer (or is withdrawn)."""
+    Notification.objects.filter(
+        user_id=connection.addressee_id,
+        category=Notification.Category.CONNECTION_REQUEST,
+        data__connection_id=connection.id,
+    ).delete()
+
+
+def withdraw(connection):
+    """The person who asked takes the request back."""
+    clear_request_notification(connection)
+    connection.delete()
+
+
 def accept(connection):
+    clear_request_notification(connection)
     connection.status = Connection.Status.ACCEPTED
     connection.responded_at = timezone.now()
     connection.save(update_fields=["status", "responded_at"])
@@ -116,6 +132,7 @@ def accept(connection):
 
 
 def decline(connection):
+    clear_request_notification(connection)
     connection.status = Connection.Status.DECLINED
     connection.responded_at = timezone.now()
     connection.save(update_fields=["status", "responded_at"])

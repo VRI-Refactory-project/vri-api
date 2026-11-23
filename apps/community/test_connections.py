@@ -308,6 +308,67 @@ class NotificationTests(CommunityBase):
         self.client.force_authenticate(self.sarah)
         self.client.post(reverse("community:request-decline", args=[request_id]))
 
-        # Only the original "new request" notification exists, and it went to Sarah.
-        self.assertEqual(Notification.objects.count(), 1)
-        self.assertFalse(Notification.objects.filter(user=self.me).exists())
+        # The asker is told nothing, and Sarah's "new request" notice is gone now she has answered.
+        self.assertEqual(Notification.objects.count(), 0)
+
+
+class RequestNotificationClearingTests(CommunityBase):
+    """The "wants to connect" notification goes away once the request has an answer."""
+
+    def setUp(self):
+        super().setUp()
+        self.ask(self.sarah)
+        self.request_id = Connection.objects.get().id
+
+    def waiting(self, user=None):
+        return Notification.objects.filter(
+            user=user or self.sarah, category=Notification.Category.CONNECTION_REQUEST
+        )
+
+    def test_it_is_there_until_answered(self):
+        self.assertEqual(self.waiting().count(), 1)
+
+    def test_accepting_removes_it(self):
+        self.client.force_authenticate(self.sarah)
+        self.client.post(reverse("community:request-accept", args=[self.request_id]))
+
+        self.assertFalse(self.waiting().exists())
+
+    def test_declining_removes_it(self):
+        self.client.force_authenticate(self.sarah)
+        self.client.post(reverse("community:request-decline", args=[self.request_id]))
+
+        self.assertFalse(self.waiting().exists())
+
+    def test_taking_the_request_back_removes_it(self):
+        response = self.client.delete(
+            reverse("community:request-detail", args=[self.request_id])
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(self.waiting().exists())
+        self.assertFalse(Connection.objects.exists())
+
+    def test_asking_back_connects_and_removes_the_other_persons_waiting_notice(self):
+        self.client.force_authenticate(self.sarah)
+        self.ask(self.me)
+
+        self.assertFalse(self.waiting().exists())
+        self.assertEqual(Connection.objects.get().status, Connection.Status.ACCEPTED)
+
+    def test_other_notifications_and_other_requests_are_left_alone(self):
+        self.client.force_authenticate(self.daniel)
+        self.ask(self.sarah)
+        Notification.objects.create(user=self.sarah, title="Hi", body="x")
+        self.client.force_authenticate(self.sarah)
+        self.client.post(reverse("community:request-accept", args=[self.request_id]))
+
+        remaining = Notification.objects.filter(user=self.sarah)
+        self.assertEqual(
+            sorted(remaining.values_list("category", flat=True)),
+            ["connection_request", "general"],
+        )
+        self.assertEqual(
+            self.waiting().get().data["connection_id"],
+            Connection.objects.get(requester=self.daniel).id,
+        )
