@@ -26,10 +26,29 @@ urlpatterns = [
         DeleteInstitutionView.as_view(),
         name="institution-delete",
     ),
+
     # Institution Administrator routes (Self-service)
     path("me/", views.MyInstitutionView.as_view(), name="institution-me"),
-    path("me/institution-profile/", views.MyInstitutionProfileView.as_view(), name="institution-profile-me"),
-    path("me/departments/", views.InstitutionDepartmentListCreateView.as_view(), name="institution-departments"),
+    path(
+        "me/notices/",
+        views.InstitutionNoticeListCreateView.as_view(),
+        name="institution-notices",
+    ),
+    path(
+        "me/notices/<int:pk>/",
+        views.InstitutionNoticeDetailView.as_view(),
+        name="institution-notice-detail",
+    ),
+    path(
+        "me/institution-profile/",
+        views.MyInstitutionProfileView.as_view(),
+        name="institution-profile-me",
+    ),
+    path(
+        "me/departments/",
+        views.InstitutionDepartmentListCreateView.as_view(),
+        name="institution-departments",
+    ),
     path(
         "me/departments/<int:pk>/",
         views.InstitutionDepartmentDetailView.as_view(),
@@ -38,8 +57,9 @@ urlpatterns = [
     path(
         "me/account/",
         InstitutionalAccountUpdateAPIView.as_view(),
-        name="institution-account-update"
+        name="institution-account-update",
     ),
+
     # Staff management routes
     path("me/staff/", views.StaffListCreateView.as_view(), name="institution-staff"),
     path(
@@ -72,7 +92,11 @@ urlpatterns = [
         views.InstitutionSessionDetailView.as_view(),
         name="institution-session-detail",
     ),
-    path("me/tutorial/", views.StaffTutorialView.as_view(), name="institution-staff-tutorial"),
+    path(
+        "me/tutorial/",
+        views.StaffTutorialView.as_view(),
+        name="institution-staff-tutorial",
+    ),
     path(
         "me/scheduled-sessions/",
         views.InstitutionScheduledSessionListView.as_view(),
