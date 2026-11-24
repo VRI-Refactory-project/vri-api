@@ -18,7 +18,10 @@ from apps.service_requests.views import (
     InterpreterOffersView,
     InterpreterSessionListView,
 )
-from apps.administration.support_requests import SupportRequestCreateView
+from apps.administration.support_requests import (
+    MySupportRequestListView,
+    SupportRequestCreateView,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,11 @@ def health(request):
 
 
 urlpatterns = [
+    path(
+        "api/v1/support/requests/mine/",
+        MySupportRequestListView.as_view(),
+        name="support-request-mine",
+    ),
     path("api/v1/support/requests/", SupportRequestCreateView.as_view(), name="support-request-create"),
     path("api/health/", health, name="health"),
     # Django Admin

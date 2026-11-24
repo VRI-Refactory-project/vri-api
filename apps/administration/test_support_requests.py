@@ -8,6 +8,7 @@ from apps.institutions.models import InstitutionProfile, InstitutionStaff, Staff
 User = get_user_model()
 CREATE_URL = "/api/v1/support/requests/"
 LIST_URL = "/api/v1/dashboard/admin/support-requests/"
+MINE_URL = "/api/v1/support/requests/mine/"
 PASSWORD = "StrongPassword123!"
 
 
@@ -142,6 +143,83 @@ class SupportRequestTests(TestCase):
                 f"{LIST_URL}{request.pk}/", {"status": "RESOLVED"}, format="json"
             )
             self.assertEqual(response.status_code, 403)
-        # There is no user-facing list or detail route; only the creator endpoint is exposed.
+        # The create route does not expose a detail view.
         self.client.force_authenticate(self.deaf)
         self.assertEqual(self.client.get(CREATE_URL).status_code, 405)
+
+    def test_mine_requires_authentication_and_allows_supported_roles(self):
+        self.assertEqual(self.client.get(MINE_URL).status_code, 401)
+        for account in (
+            self.deaf,
+            self.interpreter,
+            self.institution_user,
+            self.staff_user,
+        ):
+            self.client.force_authenticate(account)
+            response = self.client.get(MINE_URL)
+            self.assertEqual(response.status_code, 200, account.role)
+            self.assertEqual(response.data["count"], 0)
+
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self.client.get(MINE_URL).status_code, 403)
+
+    def test_mine_only_returns_own_requests_and_exposes_response_not_private_fields(self):
+        own_request = SupportRequest.objects.create(
+            requester=self.deaf,
+            requester_name=self.deaf.full_name,
+            requester_role=self.deaf.role,
+            subject="My issue",
+            category="Account",
+            message="My support request message.",
+            status=SupportRequest.Status.IN_PROGRESS,
+            admin_response="We are looking into this.",
+            follow_up="Internal note for support staff.",
+        )
+        SupportRequest.objects.create(
+            requester=self.interpreter,
+            requester_name=self.interpreter.full_name,
+            requester_role=self.interpreter.role,
+            subject="Someone else's issue",
+            category="Account",
+            message="Another user's private support request.",
+            admin_response="Private reply to another user.",
+        )
+
+        self.client.force_authenticate(self.deaf)
+        response = self.client.get(MINE_URL)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(len(response.data["results"]), 1)
+        result = response.data["results"][0]
+        self.assertEqual(result["id"], own_request.pk)
+        self.assertEqual(result["admin_response"], "We are looking into this.")
+        self.assertEqual(
+            set(result),
+            {
+                "id", "subject", "category", "message", "status", "admin_response",
+                "created_at", "updated_at",
+            },
+        )
+        self.assertNotIn("follow_up", result)
+        self.assertNotIn("requester", result)
+
+    def test_mine_is_paginated(self):
+        for index in range(22):
+            SupportRequest.objects.create(
+                requester=self.deaf,
+                requester_name=self.deaf.full_name,
+                requester_role=self.deaf.role,
+                subject=f"Issue {index}",
+                category="Account",
+                message="Detailed support message.",
+            )
+
+        self.client.force_authenticate(self.deaf)
+        response = self.client.get(MINE_URL, {"page": 2, "page_size": 10})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 22)
+        self.assertEqual(len(response.data["results"]), 10)
+        self.assertIsNotNone(response.data["previous"])
+        self.assertIsNotNone(response.data["next"])
