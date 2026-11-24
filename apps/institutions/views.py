@@ -21,6 +21,7 @@ from apps.audit.models import AuditLog
 from apps.core.emailing import branded_html, send_branded_email
 from apps.core.permissions import (
     HasInstitutionalRole,
+    IsActiveInstitutionMember,
     IsAdminRole,
     IsApprovedInstitution,
     IsInstitutionAccountAdmin,
@@ -35,6 +36,7 @@ from apps.service_requests.models import OPEN_STATUSES, ServiceRequest
 from . import staff, tutorial, usage, usage_pdf
 from .models import (
     InstitutionDepartment,
+    InstitutionNotice,
     InstitutionProfile,
     InstitutionStaff,
     InstitutionStatus,
@@ -42,11 +44,12 @@ from .models import (
     TutorialProgress,
 )
 from .serializers import (
-    InstitutionDocumentUploadSerializer,
-    InstitutionProfileUpdateSerializer,
-    InstitutionSelfProfileSerializer,
     DepartmentSerializer,
+    InstitutionDocumentUploadSerializer,
+    InstitutionNoticeSerializer,
+    InstitutionProfileUpdateSerializer,
     InstitutionScheduledSessionSerializer,
+    InstitutionSelfProfileSerializer,
     InstitutionSerializer,
     InstitutionSessionSerializer,
     InstitutionUsageSerializer,
@@ -225,6 +228,78 @@ class MyInstitutionView(RetrieveAPIView):
 
     def get_object(self):
         return user_institution(self.request.user)
+
+
+class InstitutionNoticeListCreateView(APIView):
+    """List notices for active institution members and allow admins to create them."""
+
+    permission_classes = [IsActiveInstitutionMember]
+
+    def get_permissions(self):
+        permissions = super().get_permissions()
+
+        if self.request.method == "POST":
+            permissions.append(IsInstitutionAdmin())
+
+        return permissions
+
+    def get(self, request):
+        institution = user_institution(request.user)
+
+        notices = InstitutionNotice.objects.filter(
+            institution=institution
+        ).select_related("created_by")
+
+        serializer = InstitutionNoticeSerializer(notices, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        institution = user_institution(request.user)
+
+        serializer = InstitutionNoticeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        notice = serializer.save(
+            institution=institution,
+            created_by=request.user,
+        )
+
+        return Response(
+            InstitutionNoticeSerializer(notice).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class InstitutionNoticeDetailView(APIView):
+    """Allow institution administrators to update or delete their own notices."""
+
+    permission_classes = [IsActiveInstitutionMember, IsInstitutionAdmin]
+
+    def _get_notice(self, request, pk):
+        return get_object_or_404(
+            InstitutionNotice,
+            pk=pk,
+            institution=user_institution(request.user),
+        )
+
+    def patch(self, request, pk):
+        notice = self._get_notice(request, pk)
+
+        serializer = InstitutionNoticeSerializer(
+            notice,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+
+        notice = serializer.save()
+        return Response(InstitutionNoticeSerializer(notice).data)
+
+    def delete(self, request, pk):
+        notice = self._get_notice(request, pk)
+        notice.delete()
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class MyInstitutionProfileView(APIView):

@@ -78,7 +78,10 @@ class IsSignedOut(BasePermission):
         signed_in = request.user and request.user.is_authenticated
         if not signed_in:
             from rest_framework_simplejwt.authentication import JWTAuthentication
-            from rest_framework_simplejwt.exceptions import AuthenticationFailed, InvalidToken
+            from rest_framework_simplejwt.exceptions import (
+                AuthenticationFailed,
+                InvalidToken,
+            )
 
             try:
                 signed_in = JWTAuthentication().authenticate(request) is not None
@@ -147,6 +150,25 @@ class IsApprovedInstitution(BasePermission):
                 }
             )
         return institution.status == InstitutionStatus.APPROVED
+
+
+class IsActiveInstitutionMember(IsApprovedInstitution):
+    """Active staff and administrators of an approved institution."""
+
+    message = "Only active members of an approved institution can access this resource."
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+
+        membership = user_staff_membership(request.user)
+
+        return (
+            membership is not None
+            and membership.is_active
+            and membership.revoked_at is None
+            and request.user.is_active
+        )
 
 
 class IsInstitutionAdmin(IsApprovedInstitution):
