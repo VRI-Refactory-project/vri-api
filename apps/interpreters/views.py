@@ -685,6 +685,7 @@ class ListMyScheduledSessionsView(generics.ListAPIView):
             ScheduledSession.objects.filter(
                 deaf_user=self.request.user, date__gte=date.today()
             )
+            .exclude(status=ScheduledSession.Status.CANCELLED)
             .select_related("interpreter__user")
             .order_by("date", "time")
         )
