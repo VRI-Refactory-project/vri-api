@@ -114,6 +114,21 @@ Not signed in returns 401, a different role returns 403. The role is read from t
 a role change applies straight away. Superusers are checked by role like everyone else. To see the rules in Swagger,
 sign in, click **Authorize**, then try `GET /auth/me/access/{role}/` with each role.
 
+## Support requests (V2-071)
+
+Signed-in Deaf/HoH, interpreter, and institution accounts (institution admins and staff) can
+submit a private support request. The server assigns the requester from the authenticated account.
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `POST` | `/api/v1/support/requests/` | Create a request with `subject`, `category`, and `message` (subject 3–200 characters; message 10–5000). New requests are `OPEN`. |
+| `GET` | `/api/v1/dashboard/admin/support-requests/?status=OPEN&page=1&page_size=20` | System administrators only. Lists requests newest first with standard pagination. Omit `status` or use `status=all` to list all; supported filters are `OPEN`, `IN_PROGRESS`, and `RESOLVED`. |
+| `PATCH` | `/api/v1/dashboard/admin/support-requests/{id}/` | System administrators only. Update `status`, `admin_response`, and/or `follow_up`. Requester and original message are immutable through this endpoint. |
+
+Admin list results include requester ID, name, platform role, and institution name/membership role
+when applicable. Requests have no user-facing list or detail endpoint, so users cannot read another
+person's submissions.
+
 ## Interpreter profile metrics
 
 `GET /api/v1/interpreters/me/profile/` returns rating and completed-session aggregates for the

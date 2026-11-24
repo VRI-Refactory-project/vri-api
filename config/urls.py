@@ -18,6 +18,7 @@ from apps.service_requests.views import (
     InterpreterOffersView,
     InterpreterSessionListView,
 )
+from apps.administration.support_requests import SupportRequestCreateView
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ def health(request):
 
 
 urlpatterns = [
+    path("api/v1/support/requests/", SupportRequestCreateView.as_view(), name="support-request-create"),
     path("api/health/", health, name="health"),
     # Django Admin
     path("admin/", admin.site.urls),
