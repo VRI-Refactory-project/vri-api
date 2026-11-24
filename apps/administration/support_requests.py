@@ -45,6 +45,23 @@ class SupportRequestAdminSerializer(serializers.ModelSerializer):
         return result
 
 
+class MySupportRequestSerializer(serializers.ModelSerializer):
+    """Only the requester-safe fields, including the response written by an administrator."""
+
+    class Meta:
+        model = SupportRequest
+        fields = (
+            "id",
+            "subject",
+            "category",
+            "message",
+            "status",
+            "admin_response",
+            "created_at",
+            "updated_at",
+        )
+
+
 class SupportRequestAdminUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = SupportRequest
@@ -83,6 +100,22 @@ class SupportRequestCreateView(generics.CreateAPIView):
                 requester_institution_role=membership.role,
             )
         serializer.save(**values)
+
+
+class MySupportRequestListView(generics.ListAPIView):
+    serializer_class = MySupportRequestSerializer
+    permission_classes = [IsAuthenticated, IsDeafUser | IsInterpreter | IsInstitution]
+    pagination_class = SupportRequestPagination
+
+    @extend_schema(
+        tags=["Support"],
+        summary="List my support requests",
+        responses={200: MySupportRequestSerializer(many=True)},
+    )
+    def get_queryset(self):
+        return SupportRequest.objects.filter(requester=self.request.user).order_by(
+            "-created_at", "-id"
+        )
 
 
 class AdminSupportRequestListView(generics.ListAPIView):
