@@ -2,12 +2,20 @@ from django.urls import path
 
 from apps.institutions.views import InstitutionUsageExportView
 
-from . import admin_stats, views
 from apps.administration import support_requests
+from . import admin_stats, views
 
 urlpatterns = [
-    path("admin/support-requests/", support_requests.AdminSupportRequestListView.as_view(), name="dashboard-admin-support-requests"),
-    path("admin/support-requests/<int:pk>/", support_requests.AdminSupportRequestDetailView.as_view(), name="dashboard-admin-support-request-detail"),
+    path(
+        "admin/support-requests/",
+        support_requests.AdminSupportRequestListView.as_view(),
+        name="dashboard-admin-support-requests",
+    ),
+    path(
+        "admin/support-requests/<int:pk>/",
+        support_requests.AdminSupportRequestDetailView.as_view(),
+        name="dashboard-admin-support-request-detail",
+    ),
     path("deaf/", views.DeafDashboardView.as_view(), name="dashboard-deaf"),
     path(
         "deaf/available-interpreters/",

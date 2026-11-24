@@ -66,7 +66,11 @@ class SupportRequestCreateView(generics.CreateAPIView):
     serializer_class = SupportRequestCreateSerializer
     permission_classes = [IsAuthenticated, IsDeafUser | IsInterpreter | IsInstitution]
 
-    @extend_schema(tags=["Support"], summary="Create a support request", responses={201: SupportRequestCreateSerializer})
+    @extend_schema(
+        tags=["Support"],
+        summary="Create a support request",
+        responses={201: SupportRequestCreateSerializer},
+    )
     def perform_create(self, serializer):
         user = self.request.user
         values = {"requester": user, "requester_name": user.full_name, "requester_role": user.role}
@@ -112,7 +116,11 @@ class AdminSupportRequestDetailView(generics.RetrieveUpdateAPIView):
     permission_classes = [IsAuthenticated, IsAdminRole]
     http_method_names = ["patch", "head", "options"]
 
-    @extend_schema(tags=["Administration"], summary="Update a support request", responses={200: SupportRequestAdminSerializer})
+    @extend_schema(
+        tags=["Administration"],
+        summary="Update a support request",
+        responses={200: SupportRequestAdminSerializer},
+    )
     def patch(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = SupportRequestAdminUpdateSerializer(instance, data=request.data, partial=True)

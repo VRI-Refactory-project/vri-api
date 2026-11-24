@@ -35,7 +35,12 @@ class SupportRequestTests(TestCase):
 
     def create_as(self, account, data=None):
         self.client.force_authenticate(account)
-        return self.client.post(CREATE_URL, data or {"subject": "Need help", "category": "Account", "message": "Please help with my account."}, format="json")
+        payload = data or {
+            "subject": "Need help",
+            "category": "Account",
+            "message": "Please help with my account.",
+        }
+        return self.client.post(CREATE_URL, payload, format="json")
 
     def test_create_roles_identity_and_ignore_spoofed_identity(self):
         for account, expected_role, expected_membership in (
@@ -72,11 +77,17 @@ class SupportRequestTests(TestCase):
     def test_admin_filtering_pagination_and_requester_identity(self):
         rows = []
         for index in range(23):
-            rows.append(SupportRequest.objects.create(
-                requester=self.deaf, requester_name=self.deaf.full_name, requester_role=self.deaf.role, subject=f"Issue {index}",
-                category="Account", message="Detailed support message.",
-                status="RESOLVED" if index == 0 else "OPEN",
-            ))
+            rows.append(
+                SupportRequest.objects.create(
+                    requester=self.deaf,
+                    requester_name=self.deaf.full_name,
+                    requester_role=self.deaf.role,
+                    subject=f"Issue {index}",
+                    category="Account",
+                    message="Detailed support message.",
+                    status="RESOLVED" if index == 0 else "OPEN",
+                )
+            )
         self.client.force_authenticate(self.admin)
         page = self.client.get(LIST_URL, {"status": "OPEN", "page": 1, "page_size": 10})
         self.assertEqual(page.status_code, 200)
@@ -94,7 +105,11 @@ class SupportRequestTests(TestCase):
 
     def test_admin_update_only_changes_status_and_response_fields(self):
         request = SupportRequest.objects.create(
-            requester=self.deaf, requester_name=self.deaf.full_name, requester_role=self.deaf.role, subject="Issue", category="Other",
+            requester=self.deaf,
+            requester_name=self.deaf.full_name,
+            requester_role=self.deaf.role,
+            subject="Issue",
+            category="Other",
             message="Do not change this original content.",
         )
         self.client.force_authenticate(self.admin)
@@ -112,13 +127,21 @@ class SupportRequestTests(TestCase):
 
     def test_admin_routes_are_private_and_admin_only(self):
         request = SupportRequest.objects.create(
-            requester=self.deaf, requester_name=self.deaf.full_name, requester_role=self.deaf.role, subject="Private", category="Other", message="Private message content."
+            requester=self.deaf,
+            requester_name=self.deaf.full_name,
+            requester_role=self.deaf.role,
+            subject="Private",
+            category="Other",
+            message="Private message content.",
         )
         self.assertEqual(self.client.get(LIST_URL).status_code, 401)
         for account in (self.deaf, self.interpreter, self.institution_user, self.staff_user):
             self.client.force_authenticate(account)
             self.assertEqual(self.client.get(LIST_URL).status_code, 403)
-            self.assertEqual(self.client.patch(f"{LIST_URL}{request.pk}/", {"status": "RESOLVED"}, format="json").status_code, 403)
+            response = self.client.patch(
+                f"{LIST_URL}{request.pk}/", {"status": "RESOLVED"}, format="json"
+            )
+            self.assertEqual(response.status_code, 403)
         # There is no user-facing list or detail route; only the creator endpoint is exposed.
         self.client.force_authenticate(self.deaf)
         self.assertEqual(self.client.get(CREATE_URL).status_code, 405)
