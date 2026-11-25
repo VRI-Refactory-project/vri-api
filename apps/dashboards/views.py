@@ -129,6 +129,8 @@ InstitutionDashboardSerializer = inline_serializer(
                 "completed_requests": serializers.IntegerField(),
                 "cancelled_requests": serializers.IntegerField(),
                 "failed_requests": serializers.IntegerField(),
+                "active_sessions": serializers.IntegerField(),
+                "sessions_this_month": serializers.IntegerField(),
                 "total_video_sessions": serializers.IntegerField(),
                 "waiting_video_sessions": serializers.IntegerField(),
                 "connecting_video_sessions": serializers.IntegerField(),
@@ -455,6 +457,16 @@ class InstitutionDashboardView(APIView):
         institution_sessions = VideoSession.objects.filter(
             service_request__in=institution_requests
         )
+        today = timezone.localdate()
+        month_start = today.replace(day=1)
+        month_requests = institution_requests.filter(
+            created_at__date__gte=month_start,
+            created_at__date__lte=today,
+        )
+        sessions_this_month = month_requests.filter(
+            Q(status=ServiceRequest.Status.COMPLETED)
+            | Q(video_session__status=VideoSession.Status.CONNECTED)
+        ).distinct().count()
 
         # Calculate duration only for calls that connected and subsequently ended.
         completed_call_durations = institution_sessions.filter(
@@ -523,6 +535,15 @@ class InstitutionDashboardView(APIView):
                     "failed_requests": institution_requests.filter(
                         status=ServiceRequest.Status.FAILED
                     ).count(),
+
+                    # A request is active only after the interpreter and requester have connected.
+                    "active_sessions": institution_sessions.filter(
+                        status=VideoSession.Status.CONNECTED
+                    ).count(),
+
+                    # Include completed calls and calls connected now; exclude routing requests,
+                    # cancellations, failures and calls that never connected.
+                    "sessions_this_month": sessions_this_month,
 
                     "total_video_sessions": institution_sessions.count(),
 

@@ -425,6 +425,8 @@ class InstitutionDashboardTests(TestCase):
         self.assertEqual(analytics["completed_requests"], 1)
         self.assertEqual(analytics["cancelled_requests"], 1)
         self.assertEqual(analytics["failed_requests"], 1)
+        self.assertEqual(analytics["active_sessions"], 0)
+        self.assertEqual(analytics["sessions_this_month"], 1)
 
     def test_institution_user_receives_dashboard_data(self):
         self.client.force_authenticate(user=self.institution_user)
@@ -490,6 +492,8 @@ class InstitutionDashboardTests(TestCase):
         analytics = response.data["session_analytics"]
 
         self.assertEqual(analytics["total_video_sessions"], 6)
+        self.assertEqual(analytics["active_sessions"], 1)
+        self.assertEqual(analytics["sessions_this_month"], 1)
         self.assertEqual(analytics["waiting_video_sessions"], 1)
         self.assertEqual(analytics["connecting_video_sessions"], 1)
         self.assertEqual(analytics["connected_video_sessions"], 1)
