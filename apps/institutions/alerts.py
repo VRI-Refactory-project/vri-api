@@ -1,11 +1,5 @@
 """Institution alert creation helpers shared by request, staff and queue flows."""
 
-from datetime import timedelta
-
-from django.utils import timezone
-
-from apps.service_requests.models import ServiceRequest
-
 from .models import InstitutionAlert, InstitutionStaff
 
 
@@ -35,28 +29,21 @@ def staff_member_added(membership):
     )
 
 
-def alert_overdue_pending_requests(*, now=None):
-    """Create one warning per institutional request once it has waited ten minutes."""
-    now = now or timezone.now()
-    cutoff = now - timedelta(minutes=10)
-    count = 0
-    waiting = ServiceRequest.objects.filter(
-        institution__isnull=False,
-        status=ServiceRequest.Status.PENDING,
-        created_at__lte=cutoff,
-    ).select_related("institution")
-    for request in waiting.iterator():
-        _, created = InstitutionAlert.objects.get_or_create(
-            source_request_id=request.pk,
-            defaults={
-                "institution_id": request.institution_id,
-                "title": "No Interpreter Available",
-                "message": (
-                    f"A request for a {request.get_specialisation_required_display()} session "
-                    "has been waiting for over 10 minutes with no interpreter assigned."
-                ),
-                "severity": InstitutionAlert.Severity.WARNING,
-            },
-        )
-        count += int(created)
-    return count
+def no_interpreter_available(service_request):
+    """Create or upgrade the one institution alert for a request that timed out."""
+    if service_request.institution_id is None:
+        return None
+    return InstitutionAlert.objects.update_or_create(
+        source_request_id=service_request.pk,
+        defaults={
+            "institution_id": service_request.institution_id,
+            "title": "No Interpreter Available",
+            "message": (
+                f"A request for a {service_request.get_specialisation_required_display()} session "
+                "has expired because no interpreter was available."
+            ),
+            "severity": InstitutionAlert.Severity.URGENT,
+            "is_read": False,
+            "created_at": service_request.failed_at,
+        },
+    )
