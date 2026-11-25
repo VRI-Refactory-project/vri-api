@@ -1,11 +1,12 @@
 from pathlib import Path
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
-from rest_framework import generics, permissions, status
+from rest_framework import generics, permissions, status, serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -99,9 +100,12 @@ class AdminInstitutionDetailView(generics.RetrieveUpdateAPIView):
         "verification_documents"
     )
     serializer_class = InstitutionProfileUpdateSerializer
-    http_method_names = ["get", "patch", "head", "options"]
+    http_method_names = ["get", "patch", "delete", "head", "options"]
 
     def get_serializer(self, *args, **kwargs):
+        if self.request.method == "PATCH":
+            kwargs["context"] = self.get_serializer_context()
+            return AdminInstitutionEditSerializer(*args, **kwargs)
         if self.request.method == "GET":
             kwargs["context"] = self.get_serializer_context()
             return AdminInstitutionReviewSerializer(*args, **kwargs)
@@ -114,6 +118,69 @@ class AdminInstitutionDetailView(generics.RetrieveUpdateAPIView):
             AdminInstitutionSerializer(institution).data,
             status=response.status_code,
         )
+
+    def delete(self, request, *args, **kwargs):
+        institution = self.get_object()
+        institution.delete()
+        return Response({"detail": "Institution deleted successfully."}, status=status.HTTP_200_OK)
+
+
+class AdminInstitutionEditSerializer(serializers.ModelSerializer):
+    """Admin-facing institution fields, including the linked account contact details."""
+    name = serializers.CharField(source="organisation_name", required=False, max_length=200)
+    registration_number = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    sector = serializers.ChoiceField(source="organisation_type", choices=InstitutionProfile._meta.get_field("organisation_type").choices, required=False)
+    sector_other = serializers.CharField(source="organisation_type_other", required=False, allow_blank=True, max_length=100)
+    email = serializers.EmailField(source="user.email", required=False, allow_null=True, allow_blank=True)
+    phone = serializers.CharField(source="user.phone_number", required=False)
+
+    class Meta:
+        model = InstitutionProfile
+        fields = ("name", "registration_number", "sector", "sector_other", "email", "phone")
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Institution name cannot be blank.")
+        return value
+
+    def validate_email(self, value):
+        value = (value or "").strip().lower()
+        qs = get_user_model().objects.filter(email__iexact=value).exclude(pk=self.instance.user_id)
+        if value and qs.exists():
+            raise serializers.ValidationError("An account with this email already exists.")
+        return value or None
+
+    def validate_phone(self, value):
+        from apps.accounts.serializers import PlusPhoneNumberField
+        value = PlusPhoneNumberField().run_validation(value)
+        if get_user_model().objects.filter(phone_number=value).exclude(pk=self.instance.user_id).exists():
+            raise serializers.ValidationError("An account with this phone number already exists.")
+        return value
+
+    def validate(self, attrs):
+        sector = attrs.get("organisation_type", self.instance.organisation_type)
+        other = attrs.get("organisation_type_other", self.instance.organisation_type_other)
+        if sector == "OTHER" and not (other or "").strip():
+            raise serializers.ValidationError({"sector_other": "Specify the institution sector."})
+        if sector != "OTHER" and ("organisation_type" in attrs or "organisation_type_other" in attrs):
+            attrs["organisation_type_other"] = ""
+        return attrs
+
+    def update(self, instance, validated_data):
+        user_data = validated_data.pop("user", {})
+        if user_data.get("email", instance.user.email) != instance.user.email:
+            instance.user.email_verified_at = None
+            user_data["email_verified_at"] = None
+        for field, value in validated_data.items():
+            target = "registration_number" if field == "registration_number" else field
+            setattr(instance, target, value)
+        for field, value in user_data.items():
+            setattr(instance.user, field, value)
+        instance.save()
+        if user_data:
+            instance.user.save(update_fields=list(user_data))
+        return instance
 
 
 class AdminInstitutionDocumentDownloadView(APIView):

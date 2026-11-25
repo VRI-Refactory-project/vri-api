@@ -142,7 +142,12 @@ class AdminChangePasswordSerializer(serializers.Serializer):
 
 
 class AdminInstitutionSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source="organisation_name", read_only=True)
+    registration_number = serializers.CharField(read_only=True)
+    sector = serializers.CharField(source="organisation_type", read_only=True)
+    sector_other = serializers.CharField(source="organisation_type_other", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
+    phone = serializers.CharField(source="user.phone_number", read_only=True)
     contact_name = serializers.CharField(source="user.full_name", read_only=True)
     email_verified = serializers.BooleanField(
         source="user.email_verified", read_only=True
@@ -157,6 +162,10 @@ class AdminInstitutionSerializer(serializers.ModelSerializer):
         model = InstitutionProfile
         fields = [
             "id",
+            "name",
+            "registration_number",
+            "sector",
+            "sector_other",
             "organisation_name",
             "organisation_type",
             "organisation_type_display",
@@ -164,6 +173,7 @@ class AdminInstitutionSerializer(serializers.ModelSerializer):
             "status",
             "status_display",
             "email",
+            "phone",
             "contact_name",
             "email_verified",
             "is_active",

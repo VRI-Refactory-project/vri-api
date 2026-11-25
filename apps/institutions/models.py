@@ -36,6 +36,7 @@ class InstitutionProfile(models.Model):
     )
     # What the institution is, in the registrant's own words. Only filled when the type is OTHER.
     organisation_type_other = models.CharField(max_length=100, blank=True, default="")
+    registration_number = models.CharField(max_length=100, blank=True, default="")
     description = models.TextField(blank=True, default="")
     verification_document = models.FileField(
         upload_to="institution_documents/",
