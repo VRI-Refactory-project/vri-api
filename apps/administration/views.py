@@ -121,24 +121,36 @@ class AdminInstitutionDetailView(generics.RetrieveUpdateAPIView):
 
     def delete(self, request, *args, **kwargs):
         institution = self.get_object()
-        institution.delete()
+        institution.user.delete()
         return Response({"detail": "Institution deleted successfully."}, status=status.HTTP_200_OK)
 
 
 class AdminInstitutionEditSerializer(serializers.ModelSerializer):
     """Admin-facing institution fields, including the linked account contact details."""
     name = serializers.CharField(source="organisation_name", required=False, max_length=200)
+    organisation_name = serializers.CharField(
+        required=False, max_length=200, write_only=True
+    )
     registration_number = serializers.CharField(required=False, allow_blank=True, max_length=100)
     sector = serializers.ChoiceField(
         source="organisation_type",
         choices=InstitutionProfile._meta.get_field("organisation_type").choices,
         required=False,
     )
+    organisation_type = serializers.ChoiceField(
+        choices=InstitutionProfile._meta.get_field("organisation_type").choices,
+        required=False,
+        write_only=True,
+    )
     sector_other = serializers.CharField(
         source="organisation_type_other",
         required=False,
         allow_blank=True,
         max_length=100,
+    )
+    organisation_type_other = serializers.CharField(
+        required=False, allow_blank=True,
+        max_length=100, write_only=True,
     )
     email = serializers.EmailField(
         source="user.email", required=False, allow_null=True, allow_blank=True
@@ -147,7 +159,10 @@ class AdminInstitutionEditSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = InstitutionProfile
-        fields = ("name", "registration_number", "sector", "sector_other", "email", "phone")
+        fields = (
+            "name", "organisation_name", "registration_number", "sector", "sector_other",
+            "organisation_type", "organisation_type_other", "email", "phone",
+        )
 
     def validate_name(self, value):
         value = value.strip()

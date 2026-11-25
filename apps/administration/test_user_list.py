@@ -71,6 +71,7 @@ class AdminUserListTests(TestCase):
         self.client.force_authenticate(user=self.admin)
 
     def by_name(self, **params):
+        params.setdefault("page_size", 100)
         response = self.client.get(URL, params)
         self.assertEqual(response.status_code, 200)
         return {row["full_name"]: row for row in response.json()["results"]}
@@ -208,12 +209,15 @@ class AdminUserListTests(TestCase):
         first.date_joined = timezone.now() - timedelta(days=1)
         first.save(update_fields=["date_joined"])
         make_user(User.Role.DEAF_HOH, "0700000081", "Later")
-        names = [row["full_name"] for row in self.client.get(URL).json()["results"]]
+        names = [
+            row["full_name"]
+            for row in self.client.get(URL, {"page_size": 100}).json()["results"]
+        ]
         self.assertLess(names.index("Later"), names.index("Earlier"))
 
     def test_each_user_appears_once(self):
         make_institution_user("0700000090", InstitutionStatus.APPROVED, full_name="Once")
-        rows = self.client.get(URL).json()["results"]
+        rows = self.client.get(URL, {"page_size": 100}).json()["results"]
         self.assertEqual([r["full_name"] for r in rows].count("Once"), 1)
 
     def test_page_size_and_pagination_links(self):
