@@ -115,7 +115,7 @@ class AdminInstitutionManagementTests(APITestCase):
         self.assertEqual(response.data["name"], "Mulago Hospital")
         self.assertEqual(response.data["contact_person_name"], "Institution Admin")
         self.assertEqual(response.data["phone"], "+256700000001")
-        self.assertIsNone(response.data["registration_number"])
+        self.assertEqual(response.data["registration_number"], "")
         self.assertEqual(
             response.data["verification_progress"],
             {

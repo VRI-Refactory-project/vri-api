@@ -10,6 +10,7 @@ from apps.institutions.models import (
     InstitutionProfile,
     InstitutionStatus,
     InstitutionVerificationDocument,
+    canonical_organisation_type,
 )
 
 from .models import AdminProfile
@@ -144,7 +145,7 @@ class AdminChangePasswordSerializer(serializers.Serializer):
 class AdminInstitutionSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source="organisation_name", read_only=True)
     registration_number = serializers.CharField(read_only=True)
-    sector = serializers.CharField(source="organisation_type", read_only=True)
+    sector = serializers.SerializerMethodField()
     sector_other = serializers.CharField(source="organisation_type_other", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
     phone = serializers.CharField(source="user.phone_number", read_only=True)
@@ -181,6 +182,9 @@ class AdminInstitutionSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def get_sector(self, institution):
+        return canonical_organisation_type(institution.organisation_type)
+
 
 class AdminInstitutionDocumentSerializer(serializers.ModelSerializer):
     file_name = serializers.SerializerMethodField()
@@ -216,7 +220,10 @@ class AdminInstitutionDocumentSerializer(serializers.ModelSerializer):
 class AdminInstitutionReviewSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source="organisation_name", read_only=True)
     registration_number = serializers.SerializerMethodField()
-    sector = serializers.CharField(source="organisation_type", read_only=True)
+    sector = serializers.SerializerMethodField()
+    sector_other = serializers.CharField(
+        source="organisation_type_other", read_only=True
+    )
     email = serializers.EmailField(source="user.email", read_only=True)
     phone = serializers.CharField(source="user.phone_number", read_only=True)
     contact_person_name = serializers.CharField(
@@ -241,6 +248,7 @@ class AdminInstitutionReviewSerializer(serializers.ModelSerializer):
             "name",
             "registration_number",
             "sector",
+            "sector_other",
             "email",
             "phone",
             "contact_person_name",
@@ -256,8 +264,11 @@ class AdminInstitutionReviewSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+    def get_sector(self, institution):
+        return canonical_organisation_type(institution.organisation_type)
+
     def get_registration_number(self, institution):
-        return None
+        return institution.registration_number
 
     def get_address(self, institution):
         return None
