@@ -1,4 +1,7 @@
+from pathlib import Path
+
 from django.db import transaction
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
@@ -9,12 +12,17 @@ from rest_framework.views import APIView
 from apps.accounts import recovery
 from apps.audit import services as audit
 from apps.audit.models import AuditLog
-from apps.institutions.models import InstitutionProfile, InstitutionStaff
+from apps.institutions.models import (
+    InstitutionProfile,
+    InstitutionStaff,
+    InstitutionVerificationDocument,
+)
 from apps.institutions.serializers import InstitutionProfileUpdateSerializer
 
 from .models import AdminProfile
 from .serializers import (
     AdminChangePasswordSerializer,
+    AdminInstitutionReviewSerializer,
     AdminInstitutionSerializer,
     AdminProfileSerializer,
 )
@@ -29,7 +37,7 @@ class IsAdminUserPermission(permissions.BasePermission):
             request.user
             and request.user.is_authenticated
             and (
-                user_role in ["ADMINISTRATOR", "SYSTEM_ADMIN", "ADMIN"]
+                user_role in ["ADMINISTRATOR", "SYSTEM_ADMIN", "ADMIN", "admin"]
                 or request.user.is_staff
                 or request.user.is_superuser
             )
@@ -87,14 +95,16 @@ class AdminInstitutionListView(generics.ListAPIView):
 )
 class AdminInstitutionDetailView(generics.RetrieveUpdateAPIView):
     permission_classes = [IsAdminUserPermission]
-    queryset = InstitutionProfile.objects.select_related("user")
+    queryset = InstitutionProfile.objects.select_related("user").prefetch_related(
+        "verification_documents"
+    )
     serializer_class = InstitutionProfileUpdateSerializer
     http_method_names = ["get", "patch", "head", "options"]
 
     def get_serializer(self, *args, **kwargs):
         if self.request.method == "GET":
             kwargs["context"] = self.get_serializer_context()
-            return AdminInstitutionSerializer(*args, **kwargs)
+            return AdminInstitutionReviewSerializer(*args, **kwargs)
         return super().get_serializer(*args, **kwargs)
 
     def patch(self, request, *args, **kwargs):
@@ -104,6 +114,25 @@ class AdminInstitutionDetailView(generics.RetrieveUpdateAPIView):
             AdminInstitutionSerializer(institution).data,
             status=response.status_code,
         )
+
+
+class AdminInstitutionDocumentDownloadView(APIView):
+    permission_classes = [IsAdminUserPermission]
+
+    def get(self, request, pk, document_pk):
+        document = get_object_or_404(
+            InstitutionVerificationDocument.objects.select_related("institution"),
+            pk=document_pk,
+            institution_id=pk,
+        )
+        response = FileResponse(
+            document.file.open("rb"),
+            as_attachment=True,
+            filename=Path(document.file.name).name,
+            content_type="application/octet-stream",
+        )
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
 
 
 @extend_schema(

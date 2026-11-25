@@ -1,6 +1,8 @@
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
@@ -10,6 +12,7 @@ from apps.accounts.serializers import (
     clean_full_name,
     ensure_phone_unused,
 )
+from apps.accounts.utils import email_in_use, phone_in_use
 from apps.interpreters.models import ScheduledSession
 from apps.realtime.call_status import display_status
 from apps.service_requests.models import ServiceRequest
@@ -20,6 +23,7 @@ from .models import (
     InstitutionNotice,
     InstitutionProfile,
     InstitutionStaff,
+    InstitutionStatus,
     OrganisationType,
     StaffRole,
 )
@@ -55,7 +59,106 @@ class InstitutionRegistrationSerializer(BaseRegistrationSerializer):
             attrs["organisation_type_other"] = other
         else:
             attrs["organisation_type_other"] = ""  # only kept for "Other"
+
+        phone_user = User.objects.filter(phone_number=attrs["phone_number"]).first()
+        email_user = User.objects.filter(email__iexact=attrs["email"]).first()
+        existing_user = phone_user or email_user
+        if existing_user is not None:
+            is_rejected_applicant = (
+                phone_user == email_user == existing_user
+                and existing_user.role == User.Role.INSTITUTION
+                and InstitutionProfile.objects.filter(
+                    user=existing_user, status=InstitutionStatus.REJECTED
+                ).exists()
+            )
+            if not is_rejected_applicant:
+                raise serializers.ValidationError(
+                    {"email": "An account with this email or phone already exists."}
+                )
+            if not existing_user.check_password(attrs["password"]):
+                raise serializers.ValidationError(
+                    {"password": "The password does not match the rejected applicant account."}
+                )
+            attrs["_rejected_applicant"] = existing_user
+
         return attrs
+
+    def validate_phone_number(self, value):
+        if phone_in_use(value):
+            user = User.objects.filter(phone_number=value).first()
+            if not user or not InstitutionProfile.objects.filter(
+                user=user, status=InstitutionStatus.REJECTED
+            ).exists():
+                raise serializers.ValidationError(
+                    "An account with this phone number already exists."
+                )
+        return value
+
+    def validate_email(self, value):
+        value = (value or "").strip().lower()
+        if not value:
+            return None
+        local_part = value.split("@", 1)[0]
+        if local_part.isdigit():
+            raise serializers.ValidationError(
+                "Email address cannot contain only numbers before the @ symbol."
+            )
+        if email_in_use(value):
+            user = User.objects.filter(email__iexact=value).first()
+            if not user or not InstitutionProfile.objects.filter(
+                user=user, status=InstitutionStatus.REJECTED
+            ).exists():
+                raise serializers.ValidationError(
+                    "An account with this email already exists."
+                )
+        return value
+
+    def create(self, validated_data):
+        existing_user = validated_data.pop("_rejected_applicant", None)
+        if existing_user is None:
+            return super().create(validated_data)
+
+        user_data = {
+            key: validated_data.pop(key)
+            for key in self.USER_FIELDS
+            if key in validated_data
+        }
+        terms_accepted = validated_data.pop("terms_accepted", False)
+        with transaction.atomic():
+            institution = InstitutionProfile.objects.select_for_update().get(
+                user=existing_user
+            )
+            existing_user.full_name = user_data["full_name"]
+            user_update_fields = ["full_name"]
+            if terms_accepted:
+                existing_user.terms_accepted_at = timezone.now()
+                user_update_fields.append("terms_accepted_at")
+            existing_user.save(update_fields=user_update_fields)
+
+            institution.organisation_name = validated_data["organisation_name"].strip()
+            institution.organisation_type = validated_data["organisation_type"]
+            institution.organisation_type_other = validated_data[
+                "organisation_type_other"
+            ]
+            institution.status = InstitutionStatus.PENDING
+            institution.rejection_reason = ""
+            institution.save(
+                update_fields=[
+                    "organisation_name",
+                    "organisation_type",
+                    "organisation_type_other",
+                    "status",
+                    "rejection_reason",
+                    "updated_at",
+                ]
+            )
+            InstitutionStaff.objects.get_or_create(
+                institution=institution,
+                user=existing_user,
+                defaults={"role": StaffRole.ADMIN, "created_by": existing_user},
+            )
+
+        return existing_user
 
     def create_profile(self, user, validated_data):
         institution = InstitutionProfile.objects.create(
@@ -88,11 +191,7 @@ class InstitutionSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_verification_document(self, obj):
-        if obj.verification_document:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.verification_document.url)
-            return obj.verification_document.url
+        # Institution users must not receive a direct media URL to verification documents.
         return None
 
 
@@ -595,6 +694,12 @@ class InstitutionUsageSerializer(serializers.Serializer):
 
 class InstitutionDocumentUploadSerializer(serializers.Serializer):
     document = serializers.FileField()
+    document_type = serializers.CharField(
+        max_length=100, required=False, default="verification"
+    )
+    issuing_authority = serializers.CharField(
+        max_length=200, required=False, allow_blank=True, default=""
+    )
 
     def validate_document(self, value):
         if value.size > 5 * 1024 * 1024:

@@ -17,8 +17,10 @@ from .models import (
     InstitutionProfile,
     InstitutionStaff,
     InstitutionStatus,
+    InstitutionVerificationDocument,
     StaffRole,
 )
+from .serializers import InstitutionSerializer
 
 PASSWORD = "Sign-Connect-2026"
 
@@ -145,6 +147,74 @@ class InstitutionRegistrationTests(APITestCase):
         self.assertIn("phone_number", res.data)
         self.assertEqual(InstitutionProfile.objects.count(), 1)
 
+    def test_rejected_applicant_can_resubmit_without_creating_an_account(self):
+        user = User.objects.create_user(
+            phone_number="+256772555000",
+            password=PASSWORD,
+            full_name="Grace Namutebi",
+            email="grace@mulago.example",
+            role=User.Role.INSTITUTION,
+        )
+        profile = InstitutionProfile.objects.create(
+            user=user,
+            organisation_name="Old Hospital Name",
+            organisation_type="HOSPITAL",
+            status=InstitutionStatus.REJECTED,
+            rejection_reason="Please update the institution name.",
+        )
+        InstitutionStaff.objects.create(
+            institution=profile,
+            user=user,
+            role=StaffRole.ADMIN,
+        )
+
+        response = self.client.post(
+            reverse("auth-register-institution"),
+            self.data(
+                full_name="Grace N. Namutebi",
+                organisation_name="Updated Hospital Name",
+                organisation_type="OTHER",
+                organisation_type_other="Specialist centre",
+            ),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(User.objects.count(), 1)
+        self.assertEqual(InstitutionProfile.objects.count(), 1)
+        user.refresh_from_db()
+        profile.refresh_from_db()
+        self.assertEqual(user.full_name, "Grace N. Namutebi")
+        self.assertEqual(profile.organisation_name, "Updated Hospital Name")
+        self.assertEqual(profile.organisation_type_other, "Specialist centre")
+        self.assertEqual(profile.status, InstitutionStatus.PENDING)
+        self.assertEqual(profile.rejection_reason, "")
+
+    def test_rejected_applicant_must_prove_account_password_to_resubmit(self):
+        user = User.objects.create_user(
+            phone_number="+256772555000",
+            password=PASSWORD,
+            full_name="Grace Namutebi",
+            email="grace@mulago.example",
+            role=User.Role.INSTITUTION,
+        )
+        InstitutionProfile.objects.create(
+            user=user,
+            organisation_name="Mulago Hospital",
+            organisation_type="HOSPITAL",
+            status=InstitutionStatus.REJECTED,
+        )
+
+        response = self.client.post(
+            reverse("auth-register-institution"),
+            self.data(password="WrongPassword123!"),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("password", response.data)
+        self.assertEqual(User.objects.count(), 1)
+
 
 class InstitutionApprovalTests(APITestCase):
     def setUp(self):
@@ -197,10 +267,14 @@ class InstitutionApprovalTests(APITestCase):
         self.profile.refresh_from_db()
         self.assertEqual(self.profile.status, InstitutionStatus.PENDING)
 
-    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        WEB_APP_URL="https://web.test",
+    )
     def test_admin_can_approve_and_notification_is_sent(self):
         self.institution_user.email_verified_at = timezone.now()
-        self.institution_user.save(update_fields=["email_verified_at"])
+        self.institution_user.is_active = False
+        self.institution_user.save(update_fields=["email_verified_at", "is_active"])
 
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
@@ -212,6 +286,8 @@ class InstitutionApprovalTests(APITestCase):
 
         self.profile.refresh_from_db()
         self.assertEqual(self.profile.status, InstitutionStatus.APPROVED)
+        self.institution_user.refresh_from_db()
+        self.assertTrue(self.institution_user.is_active)
 
         self.assertTrue(
             AuditLog.objects.filter(
@@ -224,12 +300,18 @@ class InstitutionApprovalTests(APITestCase):
             mail.outbox[0].to,
             ["grace@mulago.example"],
         )
+        self.assertIn("https://web.test/sign-in", mail.outbox[0].body)
 
-    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        WEB_APP_URL="https://web.test",
+    )
     def test_admin_can_reject_application(self):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
-                reverse("institution-reject", args=[self.profile.pk])
+                reverse("institution-reject", args=[self.profile.pk]),
+                {"rejection_reason": "Please provide a current registration document."},
+                format="json",
             )
 
         self.assertEqual(response.status_code, 200)
@@ -237,7 +319,42 @@ class InstitutionApprovalTests(APITestCase):
 
         self.profile.refresh_from_db()
         self.assertEqual(self.profile.status, InstitutionStatus.REJECTED)
+        self.assertEqual(
+            self.profile.rejection_reason,
+            "Please provide a current registration document.",
+        )
+        self.institution_user.refresh_from_db()
+        self.assertTrue(self.institution_user.is_active)
         self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("current registration document", mail.outbox[0].body)
+        self.assertIn(
+            "https://web.test/register/institution", mail.outbox[0].body
+        )
+
+    def test_rejection_requires_a_nonblank_reason_and_only_pending_can_be_rejected(self):
+        for payload in ({}, {"rejection_reason": "   "}):
+            response = self.client.post(
+                reverse("institution-reject", args=[self.profile.pk]),
+                payload,
+                format="json",
+            )
+            self.assertEqual(response.status_code, 400)
+            self.profile.refresh_from_db()
+            self.assertEqual(self.profile.status, InstitutionStatus.PENDING)
+
+        self.client.post(
+            reverse("institution-reject", args=[self.profile.pk]),
+            {"rejection_reason": "Please update your documents."},
+            format="json",
+        )
+        second_response = self.client.post(
+            reverse("institution-reject", args=[self.profile.pk]),
+            {"rejection_reason": "A second rejection."},
+            format="json",
+        )
+        self.assertEqual(second_response.status_code, 400)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.rejection_reason, "Please update your documents.")
 
     def test_approval_succeeds_when_notification_email_fails(self):
         self.institution_user.email_verified_at = timezone.now()
@@ -263,7 +380,9 @@ class InstitutionApprovalTests(APITestCase):
         ):
             with self.captureOnCommitCallbacks(execute=True):
                 response = self.client.post(
-                    reverse("institution-reject", args=[self.profile.pk])
+                    reverse("institution-reject", args=[self.profile.pk]),
+                    {"rejection_reason": "Update the application."},
+                    format="json",
                 )
 
         self.assertEqual(response.status_code, 200)
@@ -577,7 +696,11 @@ class InstitutionDocumentUploadTests(APITestCase):
 
         response = self.client.post(
             self.upload_url(),
-            {"document": document},
+            {
+                "document": document,
+                "document_type": "business_registration",
+                "issuing_authority": "Uganda Registration Services Bureau",
+            },
             format="multipart",
         )
 
@@ -590,6 +713,42 @@ class InstitutionDocumentUploadTests(APITestCase):
                 "institution_documents/"
             )
         )
+        uploaded_document = InstitutionVerificationDocument.objects.get(
+            institution=self.institution
+        )
+        self.assertEqual(uploaded_document.file.name, self.institution.verification_document.name)
+        self.assertEqual(uploaded_document.document_type, "business_registration")
+        self.assertEqual(
+            uploaded_document.issuing_authority,
+            "Uganda Registration Services Bureau",
+        )
+        self.assertEqual(uploaded_document.file.name.rsplit("/", 1)[-1], "institution.pdf")
+        self.assertIsNone(
+            InstitutionSerializer(self.institution).data["verification_document"]
+        )
+
+    def test_uploading_documents_resubmits_a_rejected_application(self):
+        self.admin.email_verified_at = timezone.now()
+        self.admin.save(update_fields=["email_verified_at"])
+        self.institution.status = InstitutionStatus.REJECTED
+        self.institution.rejection_reason = "Please provide a current document."
+        self.institution.save(update_fields=["status", "rejection_reason"])
+
+        document = SimpleUploadedFile(
+            "updated-institution.pdf",
+            b"%PDF-1.4\nUpdated verification document\n%%EOF",
+            content_type="application/pdf",
+        )
+        response = self.client.post(
+            self.upload_url(),
+            {"document": document},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.institution.refresh_from_db()
+        self.assertEqual(self.institution.status, InstitutionStatus.PENDING)
+        self.assertEqual(self.institution.rejection_reason, "")
 
     def test_unverified_admin_cannot_upload_document(self):
         document = SimpleUploadedFile(

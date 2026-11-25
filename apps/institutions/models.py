@@ -48,6 +48,7 @@ class InstitutionProfile(models.Model):
         default=InstitutionStatus.PENDING,
         db_index=True,
     )
+    rejection_reason = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -62,6 +63,24 @@ class InstitutionProfile(models.Model):
 
     def __str__(self):
         return f"{self.organisation_name} ({self.get_status_display()})"
+
+
+class InstitutionVerificationDocument(models.Model):
+    institution = models.ForeignKey(
+        InstitutionProfile,
+        on_delete=models.CASCADE,
+        related_name="verification_documents",
+    )
+    file = models.FileField(upload_to="institution_documents/")
+    document_type = models.CharField(max_length=100, default="verification")
+    issuing_authority = models.CharField(max_length=200, blank=True, default="")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["uploaded_at", "id"]
+
+    def __str__(self):
+        return f"{self.document_type} for {self.institution}"
 
 
 class StaffRole(models.TextChoices):

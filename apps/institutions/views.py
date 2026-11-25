@@ -1,5 +1,6 @@
 import logging
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponse
@@ -40,6 +41,7 @@ from .models import (
     InstitutionProfile,
     InstitutionStaff,
     InstitutionStatus,
+    InstitutionVerificationDocument,
     StaffRole,
     TutorialProgress,
 )
@@ -84,22 +86,39 @@ class InstitutionApplicationSerializer(serializers.ModelSerializer):
         ]
 
 
+class InstitutionRejectionSerializer(serializers.Serializer):
+    rejection_reason = serializers.CharField(
+        required=True, max_length=2000, allow_blank=False, trim_whitespace=True
+    )
+
+
 def notify_institution(profile, decision):
     """Attempt to email the institution administrator about the decision."""
     if not profile.user.email:
         return
 
     approved = decision == InstitutionStatus.APPROVED
+    frontend_url = settings.WEB_APP_URL.rstrip("/")
     subject = (
         "Institution account approved"
         if approved
         else "Institution account application rejected"
     )
-    message = (
-        f"Hello {profile.user.full_name},\n\n"
-        f"Your application for {profile.organisation_name} "
-        f"has been {'approved' if approved else 'rejected'}.\n"
-    )
+    if approved:
+        message = (
+            f"Hello {profile.user.full_name},\n\n"
+            f"Your application for {profile.organisation_name} has been approved. "
+            "You can now sign in to your institution account:\n"
+            f"{frontend_url}/sign-in"
+        )
+    else:
+        message = (
+            f"Hello {profile.user.full_name},\n\n"
+            f"Your application for {profile.organisation_name} has been rejected.\n\n"
+            f"Reason: {profile.rejection_reason}\n\n"
+            "You may update your application and apply again here:\n"
+            f"{frontend_url}/register/institution"
+        )
     try:
         send_branded_email(
             subject,
@@ -164,9 +183,23 @@ class InstitutionDecisionView(APIView):
                     }
                 )
 
+            if self.decision == InstitutionStatus.REJECTED:
+                reason_serializer = InstitutionRejectionSerializer(data=request.data)
+                reason_serializer.is_valid(raise_exception=True)
+                profile.rejection_reason = reason_serializer.validated_data[
+                    "rejection_reason"
+                ]
+            else:
+                profile.rejection_reason = ""
+
             profile.status = self.decision
             profile.updated_at = timezone.now()
-            profile.save(update_fields=["status", "updated_at"])
+            profile.save(
+                update_fields=["status", "rejection_reason", "updated_at"]
+            )
+            if self.decision == InstitutionStatus.APPROVED and not profile.user.is_active:
+                profile.user.is_active = True
+                profile.user.save(update_fields=["is_active"])
 
             audit.record(self.audit_event, request.user, request)
 
@@ -199,7 +232,7 @@ class RejectInstitutionView(InstitutionDecisionView):
     @extend_schema(
         tags=["Institutions"],
         summary="Reject a pending institution application",
-        request=None,
+        request=InstitutionRejectionSerializer,
         responses={200: InstitutionApplicationSerializer},
     )
     def post(self, request, pk):
@@ -1028,10 +1061,24 @@ class InstitutionDocumentUploadView(APIView):
         serializer = InstitutionDocumentUploadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        institution.verification_document = serializer.validated_data["document"]
-        institution.save(update_fields=["verification_document", "updated_at"])
+        document = InstitutionVerificationDocument.objects.create(
+            institution=institution,
+            file=serializer.validated_data["document"],
+            document_type=serializer.validated_data["document_type"],
+            issuing_authority=serializer.validated_data["issuing_authority"],
+        )
+        institution.verification_document = document.file.name
+        update_fields = ["verification_document", "updated_at"]
+        if institution.status == InstitutionStatus.REJECTED:
+            institution.status = InstitutionStatus.PENDING
+            institution.rejection_reason = ""
+            update_fields.extend(["status", "rejection_reason"])
+        institution.save(update_fields=update_fields)
 
         return Response(
-            {"detail": "Institution document uploaded successfully."},
+            {
+                "detail": "Institution document uploaded successfully.",
+                "document_id": document.pk,
+            },
             status=status.HTTP_200_OK,
         )

@@ -355,7 +355,7 @@ class BaseRegisterView(APIView):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        if user.email:
+        if user.email and not user.email_verified:
             # Best effort: if the mail fails the account still exists and the user can ask for a new code.
             recovery.issue_code(
                 user, RecoveryCode.Purpose.EMAIL_VERIFY, ip=client_ip(request)
