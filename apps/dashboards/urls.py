@@ -3,7 +3,7 @@ from django.urls import path
 from apps.institutions.views import InstitutionUsageExportView
 
 from apps.administration import support_requests
-from . import admin_stats, views
+from . import admin_reports, admin_stats, views
 
 urlpatterns = [
     path(
@@ -102,6 +102,16 @@ urlpatterns = [
         "admin/sessions/<int:pk>/seen/",
         views.AdminSessionSeenView.as_view(),
         name="admin-session-seen",
+    ),
+    path(
+        "admin/reports/usage/",
+        admin_reports.AdminUsageReportView.as_view(),
+        name="admin-report-usage",
+    ),
+    path(
+        "admin/reports/response-times/",
+        admin_reports.AdminResponseTimesReportView.as_view(),
+        name="admin-report-response-times",
     ),
     path(
         "admin/audit-logs/",
