@@ -233,3 +233,27 @@ class TutorialProgress(models.Model):
 
     def __str__(self):
         return f"Tutorial for {self.staff}"
+
+
+class InstitutionAlert(models.Model):
+    class Severity(models.TextChoices):
+        INFO = "INFO", "Info"
+        WARNING = "WARNING", "Warning"
+        URGENT = "URGENT", "Urgent"
+
+    institution = models.ForeignKey(
+        InstitutionProfile, on_delete=models.CASCADE, related_name="alerts"
+    )
+    title = models.CharField(max_length=150)
+    message = models.TextField()
+    severity = models.CharField(max_length=10, choices=Severity.choices)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    # Makes the timed "no interpreter" alert idempotent across cron runs.
+    source_request_id = models.PositiveBigIntegerField(null=True, blank=True, unique=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.title} ({self.institution})"

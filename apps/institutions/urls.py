@@ -108,6 +108,16 @@ urlpatterns = [
         name="institution-usage",
     ),
     path(
+        "me/alerts/",
+        views.InstitutionAlertListView.as_view(),
+        name="institution-alerts",
+    ),
+    path(
+        "me/alerts/<int:pk>/read/",
+        views.InstitutionAlertReadView.as_view(),
+        name="institution-alert-read",
+    ),
+    path(
         "me/document/",
         InstitutionDocumentUploadView.as_view(),
         name="institution-document-upload",

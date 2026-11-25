@@ -249,7 +249,7 @@ class DispatchTests(APITestCase):
 
         result = sweep()
 
-        self.assertEqual(result, {"expired": 1, "failed": 1, "offered": 0})
+        self.assertEqual(result, {"expired": 1, "failed": 1, "offered": 0, "alerts": 0})
         first.refresh_from_db()
         failing.refresh_from_db()
         self.assertEqual(failing.status, ServiceRequest.Status.FAILED)

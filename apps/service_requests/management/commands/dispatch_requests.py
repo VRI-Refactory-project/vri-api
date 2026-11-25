@@ -15,7 +15,7 @@ class Command(BaseCommand):
         result = sweep()
         result.update(scheduling.sweep())
         self.stdout.write(
-            "expired={expired} offered={offered} failed={failed} "
+            "expired={expired} offered={offered} failed={failed} alerts={alerts} "
             "scheduled_offered={scheduled_offered} reminders_sent={reminders_sent} no_shows={no_shows}".format(
                 **result
             )

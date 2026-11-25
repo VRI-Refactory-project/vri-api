@@ -37,6 +37,7 @@ from apps.service_requests.models import OPEN_STATUSES, ServiceRequest
 from . import staff, tutorial, usage, usage_pdf
 from .models import (
     InstitutionDepartment,
+    InstitutionAlert,
     InstitutionNotice,
     InstitutionProfile,
     InstitutionStaff,
@@ -55,6 +56,7 @@ from .serializers import (
     InstitutionSerializer,
     InstitutionSessionSerializer,
     InstitutionUsageSerializer,
+    InstitutionAlertSerializer,
     OwnProfileUpdateSerializer,
     StaffCreateSerializer,
     StaffSerializer,
@@ -893,6 +895,31 @@ class InstitutionUsageView(APIView):
     def get(self, request):
         _, data = usage_for(request)
         return Response(InstitutionUsageSerializer(data).data)
+
+
+class InstitutionAlertListView(APIView):
+    permission_classes = [IsInstitutionAdmin]
+
+    def get(self, request):
+        alerts = InstitutionAlert.objects.filter(
+            institution=user_institution(request.user)
+        )[:10]
+        return Response(InstitutionAlertSerializer(alerts, many=True).data)
+
+
+class InstitutionAlertReadView(APIView):
+    permission_classes = [IsInstitutionAdmin]
+
+    def post(self, request, pk):
+        alert = get_object_or_404(
+            InstitutionAlert,
+            pk=pk,
+            institution=user_institution(request.user),
+        )
+        if not alert.is_read:
+            alert.is_read = True
+            alert.save(update_fields=["is_read"])
+        return Response(InstitutionAlertSerializer(alert).data)
 
 
 def usage_for(request):
