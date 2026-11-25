@@ -13,6 +13,14 @@ class OrganisationType(models.TextChoices):
     OTHER = "OTHER", "Other"
 
 
+def canonical_organisation_type(value):
+    """Return the canonical choice value for legacy case-insensitive stored values."""
+    if value is None:
+        return value
+    choices = {choice.value.lower(): choice.value for choice in OrganisationType}
+    return choices.get(str(value).strip().lower(), value)
+
+
 class InstitutionStatus(models.TextChoices):
     PENDING = "PENDING", "Pending approval"
     APPROVED = "APPROVED", "Approved"

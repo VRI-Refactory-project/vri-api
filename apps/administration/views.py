@@ -17,6 +17,7 @@ from apps.institutions.models import (
     InstitutionProfile,
     InstitutionStaff,
     InstitutionVerificationDocument,
+    canonical_organisation_type,
 )
 from apps.institutions.serializers import InstitutionProfileUpdateSerializer
 
@@ -185,11 +186,23 @@ class AdminInstitutionEditSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        sector = attrs.get("organisation_type", self.instance.organisation_type)
+        sector = canonical_organisation_type(
+            attrs.get("organisation_type", self.instance.organisation_type)
+        )
         other = attrs.get("organisation_type_other", self.instance.organisation_type_other)
-        if sector == "OTHER" and not (other or "").strip():
-            raise serializers.ValidationError({"sector_other": "Specify the institution sector."})
-        if sector != "OTHER" and ("organisation_type" in attrs or "organisation_type_other" in attrs):
+        other_changed = "organisation_type_other" in attrs
+        sector_changed = "organisation_type" in attrs
+        if sector == "OTHER":
+            other = (other or "").strip()
+            if (sector_changed or other_changed) and not other:
+                raise serializers.ValidationError(
+                    {"sector_other": "Specify the institution sector."}
+                )
+            if other_changed:
+                attrs["organisation_type_other"] = other
+        if sector != "OTHER" and (
+            sector_changed or other_changed
+        ):
             attrs["organisation_type_other"] = ""
         return attrs
 
@@ -201,6 +214,9 @@ class AdminInstitutionEditSerializer(serializers.ModelSerializer):
         for field, value in validated_data.items():
             target = "registration_number" if field == "registration_number" else field
             setattr(instance, target, value)
+        instance.organisation_type = canonical_organisation_type(
+            instance.organisation_type
+        )
         for field, value in user_data.items():
             setattr(instance.user, field, value)
         instance.save()
