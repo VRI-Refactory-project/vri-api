@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -188,6 +190,29 @@ class InstitutionStaff(models.Model):
     @property
     def is_revoked(self):
         return self.revoked_at is not None
+
+
+class InstitutionStaffInvitation(models.Model):
+    """Hashed, single-use password setup token for institution staff onboarding."""
+
+    staff = models.ForeignKey(
+        InstitutionStaff,
+        on_delete=models.CASCADE,
+        related_name="invitations",
+    )
+    token_selector = models.CharField(max_length=16, unique=True)
+    token_hash = models.CharField(max_length=128)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    LIFETIME = timedelta(hours=24)
+
+    def __str__(self):
+        return f"Password invitation for {self.staff.user_id}"
 
 
 class InstitutionNotice(models.Model):
