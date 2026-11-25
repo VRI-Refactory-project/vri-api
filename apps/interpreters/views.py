@@ -674,6 +674,8 @@ class CreateScheduledSessionView(generics.CreateAPIView):
         # Offer it to the interpreters who are free for that slot. Nobody being free yet is fine: it
         # stays pending and is offered again when someone is, or an admin assigns it.
         scheduling.offer_session(session)
+        # Tell the booker until when they can cancel or change it (V2-051).
+        scheduling.tell_booker_how_to_change(session)
 
 
 class ListMyScheduledSessionsView(generics.ListAPIView):
@@ -798,6 +800,47 @@ class CancelScheduledSessionView(APIView):
         get_object_or_404(ScheduledSession, pk=pk, deaf_user=request.user)
         try:
             session = scheduling.cancel_session(pk, request.user)
+        except scheduling.BookingNotAvailable as error:
+            raise ValidationError({"detail": str(error)}) from None
+        return Response(ScheduledSessionSerializer(session).data)
+
+
+class RescheduleSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    time = serializers.TimeField()
+    duration = serializers.IntegerField(
+        required=False, min_value=15, max_value=480, help_text="Minutes. Leave out to keep the current length."
+    )
+
+
+class RescheduleScheduledSessionView(APIView):
+    """The person who booked moves the booking to another time (V2-051)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["Interpreter"],
+        summary="Move a session I booked to another time",
+        description=(
+            "Allowed until BOOKING_CHANGE_NOTICE_HOURS before the start (see change_deadline). The "
+            "interpreter keeps it if they are free at the new time; otherwise it is offered again."
+        ),
+        request=RescheduleSerializer,
+        responses={200: ScheduledSessionSerializer},
+    )
+    def post(self, request, pk):
+        booking = get_object_or_404(ScheduledSession, pk=pk, deaf_user=request.user)
+        body = RescheduleSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        data = body.validated_data
+        try:
+            session = scheduling.reschedule_session(
+                pk,
+                request.user,
+                day=data["date"],
+                at=data["time"],
+                duration=data.get("duration", booking.duration),
+            )
         except scheduling.BookingNotAvailable as error:
             raise ValidationError({"detail": str(error)}) from None
         return Response(ScheduledSessionSerializer(session).data)

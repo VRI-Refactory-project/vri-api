@@ -673,6 +673,9 @@ class NeedsAttentionTests(SchedulingBase):
         self.assertEqual(flagged, {soon.pk, old.pk})
         self.assertNotIn(far.pk, flagged)
 
+    # Cancels a booking for tomorrow, which the 24-hour notice rule (V2-051) could refuse depending on
+    # the time of day the test runs; the rule itself is tested in test_booking_changes.py.
+    @override_settings(BOOKING_CHANGE_NOTICE_HOURS=0)
     def test_confirmed_and_cancelled_ones_are_not_flagged(self):
         profile = free_interpreter(timezone.localdate() + timedelta(days=1))
         confirmed = self.book(

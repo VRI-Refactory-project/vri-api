@@ -212,6 +212,10 @@ CALL_WAIT_TIMEOUT_SECONDS = env.int("CALL_WAIT_TIMEOUT_SECONDS", default=300)
 # The admin's live monitor marks a connected call running longer than this as needing attention (V2-047).
 # 90 is a placeholder until the team confirms the number.
 UNUSUAL_DURATION_THRESHOLD_MINUTES = env.int("UNUSUAL_DURATION_THRESHOLD_MINUTES", default=90)
+# A booked session can be cancelled or moved by the person who booked it only while it starts more
+# than this many hours from now (V2-051). 24 is a placeholder until Clarification C-04 is decided;
+# 0 means changes are allowed right up to the start.
+BOOKING_CHANGE_NOTICE_HOURS = env.int("BOOKING_CHANGE_NOTICE_HOURS", default=24)
 # After someone leaves a call, they have this long to come back before the session is settled (V2-033).
 SESSION_RECONNECT_GRACE_WINDOW_SECONDS = env.int("SESSION_RECONNECT_GRACE_WINDOW_SECONDS", default=300)
 

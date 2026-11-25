@@ -20,6 +20,7 @@ from .views import (
     InterpreterProfileMetricsView,
     InterpreterSessionHistoryView,
     ListMyScheduledSessionsView,
+    RescheduleScheduledSessionView,
     SpecialisationLibraryView,
     StartBookedSessionCallView,
     WeeklyScheduleView,
@@ -125,6 +126,11 @@ urlpatterns = [
         "sessions/booked/<int:pk>/cancel/",
         CancelScheduledSessionView.as_view(),
         name="booked-session-cancel",
+    ),
+    path(
+        "sessions/booked/<int:pk>/reschedule/",
+        RescheduleScheduledSessionView.as_view(),
+        name="booked-session-reschedule",
     ),
     path(
         "sessions/booked/<int:pk>/start/",
