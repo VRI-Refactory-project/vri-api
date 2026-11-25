@@ -159,6 +159,7 @@ class InstitutionRegistrationSerializer(BaseRegistrationSerializer):
             )
 
         return existing_user
+
     def create_profile(self, user, validated_data):
         institution = InstitutionProfile.objects.create(
             user=user,
