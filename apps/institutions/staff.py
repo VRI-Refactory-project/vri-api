@@ -20,6 +20,7 @@ from apps.audit import services as audit
 from apps.audit.models import AuditLog
 from apps.core.emailing import branded_html, send_branded_email
 
+from .alerts import staff_member_added
 from .models import InstitutionStaff, StaffRole
 
 logger = logging.getLogger("apps.institutions")
@@ -66,6 +67,7 @@ def create_staff(serializer, admin, request=None):
             logger.exception("staff_credentials_email_failed admin=%s", admin.pk)
             raise StaffEmailError from exc
         audit.record(AuditLog.Event.STAFF_CREATED, admin, request, target_user=user)
+        staff_member_added(membership)
     return membership
 
 

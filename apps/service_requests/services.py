@@ -219,6 +219,10 @@ def create_request(
         service_request.save(update_fields=["status", "updated_at"])
         broadcast_status(service_request)
     service_request.refresh_from_db()
+    if priority == ServiceRequest.Priority.EMERGENCY:
+        from apps.institutions.alerts import emergency_request_started
+
+        emergency_request_started(service_request)
     return service_request, True
 
 
@@ -831,4 +835,7 @@ def sweep(*, now=None):
     # Then waiting requests whose requester's app has gone quiet are cancelled (V2-009).
     cancel_disconnected_requests(now=now)
     offered = dispatch_pending(now=now)
-    return {"expired": expired, "offered": offered, "failed": failed}
+    from apps.institutions.alerts import alert_overdue_pending_requests
+
+    alerts = alert_overdue_pending_requests(now=now)
+    return {"expired": expired, "offered": offered, "failed": failed, "alerts": alerts}
