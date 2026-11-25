@@ -3,16 +3,17 @@ from django.urls import path
 from apps.institutions.views import ApproveInstitutionView, RejectInstitutionView
 
 from .user_list import (
-    AdminUserListView,
     AdminUserApproveView,
     AdminUserDeactivateView,
     AdminUserDeleteView,
     AdminUserDetailView,
+    AdminUserListView,
 )
 from .views import (
     AdminChangePasswordView,
     AdminInstitutionDeactivateView,
     AdminInstitutionDetailView,
+    AdminInstitutionDocumentDownloadView,
     AdminInstitutionListView,
     AdminProfileDetailView,
 )
@@ -39,6 +40,11 @@ urlpatterns = [
         "institutions/<int:pk>/",
         AdminInstitutionDetailView.as_view(),
         name="admin-institution-detail",
+    ),
+    path(
+        "institutions/<int:pk>/documents/<int:document_pk>/download/",
+        AdminInstitutionDocumentDownloadView.as_view(),
+        name="admin-institution-document-download",
     ),
     path(
         "institutions/<int:pk>/approve/",

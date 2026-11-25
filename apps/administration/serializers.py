@@ -1,9 +1,16 @@
+from pathlib import Path
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.urls import reverse
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.institutions.models import InstitutionProfile
+from apps.institutions.models import (
+    InstitutionProfile,
+    InstitutionStatus,
+    InstitutionVerificationDocument,
+)
 
 from .models import AdminProfile
 
@@ -163,3 +170,138 @@ class AdminInstitutionSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+
+class AdminInstitutionDocumentSerializer(serializers.ModelSerializer):
+    file_name = serializers.SerializerMethodField()
+    file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = InstitutionVerificationDocument
+        fields = [
+            "id",
+            "file_name",
+            "document_type",
+            "file_url",
+            "issuing_authority",
+            "uploaded_at",
+        ]
+        read_only_fields = fields
+
+    def get_file_name(self, document):
+        return Path(document.file.name).name
+
+    def get_file_url(self, document):
+        request = self.context.get("request")
+        url = reverse(
+            "administration:admin-institution-document-download",
+            kwargs={
+                "pk": document.institution_id,
+                "document_pk": document.pk,
+            },
+        )
+        return request.build_absolute_uri(url) if request else url
+
+
+class AdminInstitutionReviewSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source="organisation_name", read_only=True)
+    registration_number = serializers.SerializerMethodField()
+    sector = serializers.CharField(source="organisation_type", read_only=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
+    phone = serializers.CharField(source="user.phone_number", read_only=True)
+    contact_person_name = serializers.CharField(
+        source="user.full_name", read_only=True
+    )
+    address = serializers.SerializerMethodField()
+    website = serializers.SerializerMethodField()
+    founded_date = serializers.SerializerMethodField()
+    last_active = serializers.DateTimeField(
+        source="user.last_login", read_only=True, allow_null=True
+    )
+    status = serializers.SerializerMethodField()
+    documents = AdminInstitutionDocumentSerializer(
+        many=True, source="verification_documents", read_only=True
+    )
+    verification_progress = serializers.SerializerMethodField()
+
+    class Meta:
+        model = InstitutionProfile
+        fields = [
+            "id",
+            "name",
+            "registration_number",
+            "sector",
+            "email",
+            "phone",
+            "contact_person_name",
+            "address",
+            "website",
+            "description",
+            "founded_date",
+            "last_active",
+            "status",
+            "created_at",
+            "documents",
+            "verification_progress",
+        ]
+        read_only_fields = fields
+
+    def get_registration_number(self, institution):
+        return None
+
+    def get_address(self, institution):
+        return None
+
+    def get_website(self, institution):
+        return None
+
+    def get_founded_date(self, institution):
+        return None
+
+    def get_status(self, institution):
+        if institution.status == InstitutionStatus.REJECTED:
+            return "rejected"
+        if institution.status == InstitutionStatus.DELETED or not institution.user.is_active:
+            return "deactivated"
+        return institution.status.lower()
+
+    def get_verification_progress(self, institution):
+        details = (
+            institution.organisation_name,
+            institution.organisation_type,
+            institution.user.full_name,
+            institution.user.email,
+            institution.user.phone_number,
+        )
+        details_present = any(str(value or "").strip() for value in details)
+        details_complete = all(str(value or "").strip() for value in details)
+        detail_status = (
+            "completed"
+            if details_complete
+            else "in_progress"
+            if details_present
+            else "not_started"
+        )
+
+        has_documents = institution.verification_documents.exists()
+        document_status = "completed" if has_documents else "not_started"
+        if institution.user.email_verified:
+            checks_status = "completed"
+        elif details_present or has_documents:
+            checks_status = "in_progress"
+        else:
+            checks_status = "not_started"
+
+        if institution.status != InstitutionStatus.PENDING:
+            decision_status = "completed"
+        elif details_present or has_documents:
+            decision_status = "in_progress"
+        else:
+            decision_status = "not_started"
+
+        return {
+            "institution_details": detail_status,
+            "documents": document_status,
+            "verification_checks": checks_status,
+            "approval_decision": decision_status,
+        }
