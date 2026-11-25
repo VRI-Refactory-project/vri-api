@@ -84,10 +84,13 @@ def institution_usage(requests, members, start, end):
     by_status = _counts(in_period, "status")
     completed = by_status.get(ServiceRequest.Status.COMPLETED, 0)
 
+    # Usage counts completed sessions only. A live or abandoned call must not accrue
+    # minutes forever; cap unusually long completed calls at two hours as well.
     durations = [
-        minutes
+        min(120, minutes)
         for minutes in map(
-            session_duration_minutes, in_period.only("assigned_at", "ended_at")
+            session_duration_minutes,
+            in_period.filter(ended_at__isnull=False).only("assigned_at", "ended_at"),
         )
         if minutes is not None
     ]

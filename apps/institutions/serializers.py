@@ -20,6 +20,7 @@ from apps.service_requests.serializers import session_duration_minutes
 
 from .models import (
     InstitutionDepartment,
+    InstitutionAlert,
     InstitutionNotice,
     InstitutionProfile,
     InstitutionStaff,
@@ -499,6 +500,13 @@ class OwnProfileUpdateSerializer(serializers.Serializer):
 
 
 # --- What an institution's administrators see of its staff's sessions -------------------------------
+
+
+class InstitutionAlertSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InstitutionAlert
+        fields = ("id", "title", "message", "severity", "is_read", "created_at")
+        read_only_fields = fields
 
 
 def _staff_fields(user):
