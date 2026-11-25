@@ -126,3 +126,77 @@ class CallDeparture(models.Model):
 
     def __str__(self):
         return f"{self.identity} {self.get_reason_display()} from session {self.video_session_id}"
+
+
+class SessionFlag(models.Model):
+    """An administrator marking a live session for follow-up (V2-047, WEB-03).
+
+    A session has at most one open flag. Clearing it keeps the row (with who cleared it and when), so
+    the history stays; both actions are also written to the audit log.
+    """
+
+    video_session = models.ForeignKey(
+        VideoSession,
+        on_delete=models.CASCADE,
+        related_name="flags",
+    )
+    flagged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    # The admin's own short reason, e.g. "Check the interpreter's connection". Never call content.
+    note = models.CharField(max_length=300, blank=True, default="")
+    flagged_at = models.DateTimeField(auto_now_add=True)
+    cleared_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    cleared_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-flagged_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["video_session"],
+                condition=models.Q(cleared_at__isnull=True),
+                name="one_open_flag_per_session",
+            ),
+        ]
+
+    def __str__(self):
+        state = "cleared" if self.cleared_at else "open"
+        return f"Flag on video session {self.video_session_id} ({state})"
+
+
+class SessionAcknowledgement(models.Model):
+    """An administrator marking a live session's automatic warnings as seen (V2-047).
+
+    `reasons` are the warnings that were showing at the time (emergency, stuck, over_duration). They
+    stop counting as needing attention; a warning that appears later still shows. Kept as history and
+    written to the audit log.
+    """
+
+    video_session = models.ForeignKey(
+        VideoSession,
+        on_delete=models.CASCADE,
+        related_name="acknowledgements",
+    )
+    reasons = models.JSONField(default=list)
+    acknowledged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    acknowledged_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-acknowledged_at", "-id"]
+
+    def __str__(self):
+        return f"Seen on video session {self.video_session_id}: {', '.join(self.reasons)}"
