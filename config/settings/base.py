@@ -209,6 +209,9 @@ LIVEKIT_TURN_CREDENTIAL = env("LIVEKIT_TURN_CREDENTIAL", default="")
 CALL_CONNECT_TIMEOUT_SECONDS = env.int("CALL_CONNECT_TIMEOUT_SECONDS", default=60)
 # A session where nobody has joined this many seconds after it was created is marked failed.
 CALL_WAIT_TIMEOUT_SECONDS = env.int("CALL_WAIT_TIMEOUT_SECONDS", default=300)
+# The admin's live monitor marks a connected call running longer than this as needing attention (V2-047).
+# 90 is a placeholder until the team confirms the number.
+UNUSUAL_DURATION_THRESHOLD_MINUTES = env.int("UNUSUAL_DURATION_THRESHOLD_MINUTES", default=90)
 # After someone leaves a call, they have this long to come back before the session is settled (V2-033).
 SESSION_RECONNECT_GRACE_WINDOW_SECONDS = env.int("SESSION_RECONNECT_GRACE_WINDOW_SECONDS", default=300)
 

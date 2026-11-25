@@ -94,6 +94,16 @@ urlpatterns = [
         name="admin-session-stats",
     ),
     path(
+        "admin/sessions/<int:pk>/flag/",
+        views.AdminSessionFlagView.as_view(),
+        name="admin-session-flag",
+    ),
+    path(
+        "admin/sessions/<int:pk>/seen/",
+        views.AdminSessionSeenView.as_view(),
+        name="admin-session-seen",
+    ),
+    path(
         "admin/audit-logs/",
         views.AdminAuditLogsView.as_view(),
         name="dashboard-admin-audit-logs",

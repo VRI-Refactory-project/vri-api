@@ -7,7 +7,8 @@ by shared permission classes in apps/core/permissions.py.
 from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
-from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F
+from django.db import transaction
+from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema, inline_serializer
@@ -20,6 +21,7 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.serializers import UserSerializer
+from apps.audit import services as audit
 from apps.audit.models import AuditLog
 from apps.core.permissions import (
     CanAccessInterpreterDashboard,
@@ -39,9 +41,11 @@ from apps.interpreters.models import (
 )
 from apps.interpreters.services import get_eligible_interpreters
 from apps.notifications.models import Notification
-from apps.realtime.models import VideoSession
+from apps.realtime.models import SessionFlag, VideoSession
 from apps.service_requests.models import ServiceRequest
 from apps.users.photos import photo_path
+
+from . import live_sessions
 
 User = get_user_model()
 
@@ -548,79 +552,167 @@ class InstitutionDashboardView(APIView):
         )
 
 
+LIVE_FILTERS = ("all", "connecting", "attention")
+LIVE_LIST_LIMIT = 200
+
+
 class AdminLiveSessionsView(APIView):
-    """The calls that are starting or running right now, for the admin's Sessions page."""
+    """The calls waiting, connecting or connected right now, for the admin's live monitor (V2-047).
+
+    Metadata only, one row per call (see apps/dashboards/live_sessions.py), newest first.
+    ?filter=connecting (waiting or connecting) or attention (needs attention); ?search= matches the
+    session number, the requester's or interpreter's name, or the institution.
+    """
 
     permission_classes = [IsAdminRole]
 
     def get(self, request):
-        calls = (
-            VideoSession.objects.filter(
-                status__in=[
-                    VideoSession.Status.WAITING,
-                    VideoSession.Status.CONNECTING,
-                    VideoSession.Status.CONNECTED,
-                ]
-            )
-            .select_related(
-                "service_request__requester", "service_request__institution"
-            )
-            .order_by("-created_at")[:50]
-        )
-
-        data = []
-        for call in calls:
-            request_row = call.service_request
-            started = timezone.localtime(call.connected_at or call.created_at)
-            data.append(
-                {
-                    "id": request_row.id,
-                    "sector": (
-                        request_row.institution.organisation_name
-                        if request_row.institution_id
-                        else "Individual"
-                    ),
-                    "participant_name": request_row.requester.full_name,
-                    "status": call.get_status_display(),
-                    "started_at": started.strftime("%H:%M"),
-                    "connection": "stable",
-                }
+        chosen = request.query_params.get("filter", "all") or "all"
+        if chosen not in LIVE_FILTERS:
+            return Response(
+                {"detail": f"filter must be one of: {', '.join(LIVE_FILTERS)}.", "code": "invalid_filter"},
+                status=400,
             )
 
-        return Response(data)
+        calls = live_sessions.live_calls()
+        if chosen == "connecting":
+            calls = calls.filter(status__in=live_sessions.NOT_CONNECTED_YET)
+
+        search = request.query_params.get("search", "").strip()
+        if search:
+            matches = (
+                Q(service_request__requester__full_name__icontains=search)
+                | Q(service_request__interpreter__user__full_name__icontains=search)
+                | Q(service_request__institution__organisation_name__icontains=search)
+            )
+            if search.lstrip("#").isdigit():
+                matches |= Q(service_request_id=int(search.lstrip("#")))
+            calls = calls.filter(matches)
+
+        now = timezone.now()
+        rows = [live_sessions.live_row(call, now) for call in calls[:LIVE_LIST_LIMIT]]
+        if chosen == "attention":
+            rows = [row for row in rows if row["needs_attention"]]
+        return Response(rows)
 
 
 class AdminSessionStatsView(APIView):
-    """Real-time stats for the admin's Live Sessions page."""
+    """The figures at the top of the admin's live monitor (V2-047)."""
 
     permission_classes = [IsAdminRole]
 
     def get(self, request):
-        # 1. Live now (Connected sessions)
-        live_now = VideoSession.objects.filter(
-            status=VideoSession.Status.CONNECTED
-        ).count()
+        return Response(live_sessions.live_stats())
 
-        # 2. Connecting (Waiting or Connecting sessions)
-        connecting = VideoSession.objects.filter(
-            status__in=[
-                VideoSession.Status.WAITING,
-                VideoSession.Status.CONNECTING,
-            ]
-        ).count()
 
-        # 3. Needs Attention (Failed sessions)
-        needs_attention = VideoSession.objects.filter(
-            status=VideoSession.Status.FAILED
-        ).count()
+class SessionFlagSerializer(serializers.Serializer):
+    note = serializers.CharField(max_length=300, required=False, allow_blank=True, default="")
 
-        return Response({
-            "liveNow": live_now,
-            "liveStable": live_now,  # Assume all connected are stable for now
-            "connecting": connecting,
-            "connectingAverageSeconds": 0,  # Can be calculated later
-            "needsAttention": needs_attention,
-        })
+
+class AdminSessionFlagView(APIView):
+    """Flag a live call for follow-up (POST, optional note) or clear its flag (DELETE). V2-047, WEB-03.
+
+    Both are written to the audit log and pushed to every admin on the monitor. Returns the call's row.
+    """
+
+    permission_classes = [IsAdminRole]
+
+    @extend_schema(request=SessionFlagSerializer)
+    def post(self, request, pk):
+        body = SessionFlagSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        note = body.validated_data["note"].strip()
+
+        with transaction.atomic():
+            call = get_object_or_404(VideoSession.objects.select_for_update(), service_request_id=pk)
+            if call.status not in live_sessions.LIVE_STATUSES:
+                return Response(
+                    {
+                        "detail": "Only a session that is happening now can be marked for follow-up.",
+                        "code": "session_not_live",
+                    },
+                    status=400,
+                )
+            if call.flags.filter(cleared_at__isnull=True).exists():
+                return Response(
+                    {"detail": "This session is already marked for follow-up.", "code": "already_flagged"},
+                    status=409,
+                )
+            flag = SessionFlag.objects.create(video_session=call, flagged_by=request.user, note=note)
+            audit.record(
+                AuditLog.Event.SESSION_FLAGGED,
+                request.user,
+                request,
+                details={"request_id": pk, "flag_id": flag.pk, "note": note},
+            )
+            live_sessions.broadcast_live_session(call.pk)
+
+        return Response(live_row_for(call), status=201)
+
+    def delete(self, request, pk):
+        with transaction.atomic():
+            call = get_object_or_404(VideoSession, service_request_id=pk)
+            flag = call.flags.select_for_update().filter(cleared_at__isnull=True).first()
+            if flag is None:
+                return Response(
+                    {"detail": "This session is not marked for follow-up.", "code": "not_flagged"},
+                    status=404,
+                )
+            flag.cleared_by = request.user
+            flag.cleared_at = timezone.now()
+            flag.save(update_fields=["cleared_by", "cleared_at"])
+            # The follow-up is done, so the warnings showing now have been dealt with too.
+            seen = live_sessions.acknowledge(call, request.user) if call.status in live_sessions.LIVE_STATUSES else []
+            audit.record(
+                AuditLog.Event.SESSION_FLAG_CLEARED,
+                request.user,
+                request,
+                details={"request_id": pk, "flag_id": flag.pk, "marked_seen": seen},
+            )
+            live_sessions.broadcast_live_session(call.pk)
+
+        return Response(live_row_for(call))
+
+
+class AdminSessionSeenView(APIView):
+    """Mark a live call's current warnings (emergency, stuck, over time) as seen. V2-047.
+
+    They stop counting as needing attention; a warning that appears later still shows. Written to the
+    audit log and pushed to every admin on the monitor. Returns the call's row.
+    """
+
+    permission_classes = [IsAdminRole]
+
+    @extend_schema(request=None)
+    def post(self, request, pk):
+        with transaction.atomic():
+            call = get_object_or_404(VideoSession.objects.select_for_update(), service_request_id=pk)
+            if call.status not in live_sessions.LIVE_STATUSES:
+                return Response(
+                    {"detail": "This session has already finished.", "code": "session_not_live"},
+                    status=400,
+                )
+            seen = live_sessions.acknowledge(call, request.user)
+            if not seen:
+                return Response(
+                    {"detail": "This session has no warnings to mark as seen.", "code": "nothing_to_mark"},
+                    status=400,
+                )
+            audit.record(
+                AuditLog.Event.SESSION_ACKNOWLEDGED,
+                request.user,
+                request,
+                details={"request_id": pk, "reasons": seen},
+            )
+            live_sessions.broadcast_live_session(call.pk)
+
+        return Response(live_row_for(call))
+
+
+def live_row_for(call):
+    """The call's monitor row, read fresh from the database."""
+    fresh = live_sessions.with_row_data(VideoSession.objects.filter(pk=call.pk)).get()
+    return live_sessions.live_row(fresh)
 
 
 class AdminAuditLogsView(APIView):

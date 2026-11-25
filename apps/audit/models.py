@@ -6,7 +6,7 @@ class AuditLog(models.Model):
     """A record of something an administrator or user did that the platform must be able to account for.
 
     Administrator sign-ins (V2-064), institution lifecycle changes, institution staff changes (V2-006),
-    and interpreter requests and offers (V2-009, V2-010, V2-024).
+    interpreter requests and offers (V2-009, V2-010, V2-024), and live-session flags (V2-047).
     Add an `Event` when another action needs recording. Entries are written by `apps.audit.services.record`
     and are read-only in the admin site.
     """
@@ -38,6 +38,9 @@ class AuditLog(models.Model):
         CALL_ENDED = "call_ended", "Video call ended"
         CALL_FAILED = "call_failed", "Video call failed (never connected in time)"
         CALL_DISCONNECTED = "call_disconnected", "Participant's connection dropped during a video call"
+        SESSION_FLAGGED = "session_flagged", "Administrator flagged a live session for follow-up"
+        SESSION_FLAG_CLEARED = "session_flag_cleared", "Administrator cleared a session's follow-up flag"
+        SESSION_ACKNOWLEDGED = "session_acknowledged", "Administrator marked a live session's warnings as seen"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

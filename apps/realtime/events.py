@@ -43,3 +43,9 @@ def broadcast_video_session_status(video_session):
             "label": labels.get(video_session.status, "Updating"),
         },
     )
+
+    # The administrators' live monitor hears about every call status change too (V2-047). Imported
+    # here because apps.dashboards imports from this app.
+    from apps.dashboards.live_sessions import broadcast_live_session
+
+    broadcast_live_session(video_session.pk)
