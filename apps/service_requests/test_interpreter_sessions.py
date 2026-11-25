@@ -56,7 +56,7 @@ class InterpreterSessionListTests(APITestCase):
             [item["id"] for item in response.data], [running.pk, finished.pk]
         )
         self.assertEqual(response.data[0]["status"], "ASSIGNED")
-        self.assertIsNone(response.data[0]["duration_minutes"])
+        self.assertGreater(response.data[0]["duration_minutes"], 0)
         self.assertEqual(response.data[1]["status"], "COMPLETED")
         self.assertEqual(response.data[1]["duration_minutes"], 30)
         self.assertEqual(response.data[1]["requester_name"], self.deaf.full_name)

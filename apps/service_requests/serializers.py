@@ -1,4 +1,5 @@
 from drf_spectacular.utils import extend_schema_field, inline_serializer
+from django.utils import timezone
 from rest_framework import serializers
 
 from apps.interpreters.models import Specialisation
@@ -129,10 +130,11 @@ class InterpreterSessionSerializer(serializers.ModelSerializer):
 
 
 def session_duration_minutes(request) -> int | None:
-    """How long a session lasted, in whole minutes. None while it is still running or never started."""
-    if request.assigned_at is None or request.ended_at is None:
+    """How long a session has lasted, in whole minutes. None if it never started."""
+    if request.assigned_at is None:
         return None
-    return max(1, round((request.ended_at - request.assigned_at).total_seconds() / 60))
+    ended_at = request.ended_at or timezone.now()
+    return max(1, round((ended_at - request.assigned_at).total_seconds() / 60))
 
 
 class OfferedRequestSerializer(serializers.ModelSerializer):
