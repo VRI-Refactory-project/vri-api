@@ -16,7 +16,7 @@ from apps.realtime.models import SessionFeedback, VideoSession
 from apps.service_requests.models import ServiceRequest
 from apps.service_requests.test_offers import make_interpreter
 
-from .models import InstitutionStaff, InstitutionStatus, StaffRole
+from .models import InstitutionDepartment, InstitutionStaff, InstitutionStatus, StaffRole
 from .test_staff import PASSWORD, make_institution
 
 Status = ServiceRequest.Status
@@ -39,11 +39,18 @@ def make_staff(
         role=User.Role.INSTITUTION,
         email=f"staff{n}@example.com",
     )
+    department_record = None
+    if department:
+        department_record, _ = InstitutionDepartment.objects.get_or_create(
+            institution=admin.institution_staff.institution,
+            name=department,
+        )
     InstitutionStaff.objects.create(
         institution=admin.institution_staff.institution,
         user=user,
         role=role,
         job_title=department,
+        department=department_record,
     )
     return user
 
