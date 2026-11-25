@@ -77,14 +77,76 @@ def _when(session):
     return session.starts_at.strftime("%a %d %b at %H:%M")
 
 
+def change_notice():
+    """How long before the start a booking stops being changeable by its booker (V2-051, C-04)."""
+    return timedelta(hours=change_notice_hours())
+
+
+def change_deadline(session):
+    """The last moment the booker can cancel or move the booking."""
+    return session.starts_at - change_notice()
+
+
+def can_change(session, now=None):
+    """True while the booker may still cancel or move it: not cancelled, and before the deadline."""
+    now = now or timezone.now()
+    return session.status != Status.CANCELLED and now < change_deadline(session) and now < session.starts_at
+
+
+def change_notice_hours():
+    return getattr(settings, "BOOKING_CHANGE_NOTICE_HOURS", 24)
+
+
+def _notice_hours():
+    hours = change_notice_hours()
+    return f"{hours} hour{'' if hours == 1 else 's'}"
+
+
+def _check_can_change(session, now, action):
+    if session.starts_at <= now:
+        raise BookingNotAvailable("This session has already started.")
+    if now >= change_deadline(session):
+        raise BookingNotAvailable(
+            f"This booking can no longer be {action}: changes are allowed up to {_notice_hours()} "
+            "before it starts. Contact support if you need help."
+        )
+
+
+def _deadline_text(session):
+    return timezone.localtime(change_deadline(session)).strftime("%a %d %b at %H:%M")
+
+
+def tell_booker_how_to_change(session, now=None):
+    """Right after booking: tell the booker until when they can cancel or change it (V2-051)."""
+    now = now or timezone.now()
+    if can_change(session, now):
+        body = (
+            f"Your {_label(session)} session on {_when(session)} is booked. You can cancel or change it "
+            f"until {_deadline_text(session)} ({_notice_hours()} before it starts)."
+        )
+    else:
+        body = (
+            f"Your {_label(session)} session on {_when(session)} is booked. It starts in less than "
+            f"{_notice_hours()}, so it can no longer be cancelled or changed in the app."
+        )
+    create_notification(
+        user=session.deaf_user,
+        title="Session booked",
+        body=body,
+        category=Notification.Category.GENERAL,
+        data={"session_id": session.pk, "screen": "booked-session"},
+    )
+
+
 def overlaps(session, other):
     return session.starts_at < other.ends_at and other.starts_at < session.ends_at
 
 
-def ensure_no_clash(user, day, at, duration):
+def ensure_no_clash(user, day, at, duration, *, exclude=None):
     """A person cannot book two sessions that overlap: pressing Save twice makes one booking.
 
-    Cancelled bookings do not count. Raises BookingNotAvailable with the message to show.
+    Cancelled bookings do not count, nor does `exclude` (the booking being moved). Raises
+    BookingNotAvailable with the message to show.
     """
     wanted = ScheduledSession(date=day, time=at, duration=duration)
     around = ScheduledSession.objects.filter(
@@ -92,6 +154,8 @@ def ensure_no_clash(user, day, at, duration):
         status__in=[Status.PENDING, Status.CONFIRMED],
         date__in=[day - timedelta(days=1), day, day + timedelta(days=1)],
     )
+    if exclude is not None:
+        around = around.exclude(pk=exclude.pk)
     if any(overlaps(wanted, other) for other in around):
         raise BookingNotAvailable("You already have a session booked at that time.")
 
@@ -410,8 +474,7 @@ def cancel_session(session_id, user, *, now=None):
             raise BookingNotAvailable("This is not your booking.")
         if session.status == Status.CANCELLED:
             return session
-        if session.starts_at <= now:
-            raise BookingNotAvailable("This session has already started.")
+        _check_can_change(session, now, "cancelled")
         interpreter = session.interpreter
         session.status = Status.CANCELLED
         session.save(update_fields=["status", "updated_at"])
@@ -424,6 +487,109 @@ def cancel_session(session_id, user, *, now=None):
                 category=Notification.Category.GENERAL,
                 data={"session_id": session.pk, "screen": "booked-session"},
             )
+    return session
+
+
+def reschedule_session(session_id, user, *, day, at, duration, now=None):
+    """The person who booked moves the booking to another time (V2-051).
+
+    The interpreter keeps it when they are free at the new time (they are told, and can release it
+    as usual); otherwise it goes back to PENDING and is offered again for the new time. Either way
+    the reminders start again for the new time, and the booker is told what happened.
+    """
+    now = now or timezone.now()
+    with transaction.atomic():
+        session = (
+            ScheduledSession.objects.select_for_update(of=("self",))
+            .select_related("interpreter__user", "deaf_user")
+            .get(pk=session_id)
+        )
+        if session.deaf_user_id != user.pk:
+            raise BookingNotAvailable("This is not your booking.")
+        if session.status == Status.CANCELLED:
+            raise BookingNotAvailable("This booking was cancelled.")
+        _check_can_change(session, now, "changed")
+
+        moved = ScheduledSession(date=day, time=at, duration=duration)
+        if moved.starts_at <= now:
+            raise BookingNotAvailable("That time has already passed.")
+        if (day, at, duration) == (session.date, session.time, session.duration):
+            raise BookingNotAvailable("That is the time it is already booked for.")
+        ensure_no_clash(user, day, at, duration, exclude=session)
+
+        old_when = _when(session)
+        interpreter = session.interpreter
+        session.date, session.time, session.duration = day, at, duration
+        session.reminders_sent = []
+        session.no_show = ""
+        keeps = (
+            interpreter is not None
+            and session.status == Status.CONFIRMED
+            and is_free_for(interpreter, session)
+        )
+        if not keeps:
+            session.interpreter = None
+            session.status = Status.PENDING
+            session.confirmed_at = None
+            session.offered_at = None
+        session.save(
+            update_fields=[
+                "date",
+                "time",
+                "duration",
+                "reminders_sent",
+                "no_show",
+                "interpreter",
+                "status",
+                "confirmed_at",
+                "offered_at",
+                "updated_at",
+            ]
+        )
+        # Every answer so far was about the old time, so everyone may be asked again for the new one.
+        others = session.offers.all()
+        if keeps:
+            others = others.exclude(interpreter=interpreter)
+        others.update(outcome=Outcome.WITHDRAWN)
+
+        if interpreter is not None:
+            if keeps:
+                title = "A booked session was moved"
+                body = (
+                    f"The {_label(session)} session on {old_when} is now on {_when(session)}. It is still "
+                    "yours; release it in the app if you cannot make the new time."
+                )
+            else:
+                title = "A booked session was moved to a time you are not free"
+                body = (
+                    f"The {_label(session)} session on {old_when} moved to {_when(session)}, when you are "
+                    "not available, so it is no longer yours. It has been offered to other interpreters."
+                )
+            create_notification(
+                user=interpreter.user,
+                title=title,
+                body=body,
+                category=Notification.Category.GENERAL,
+                data={"session_id": session.pk, "screen": "booked-session"},
+            )
+        still_with = (
+            f", still with {interpreter.user.full_name}."
+            if keeps
+            else ". We are finding an interpreter for the new time."
+        )
+        create_notification(
+            user=session.deaf_user,
+            title="Your session was moved",
+            body=(
+                f"Your {_label(session)} session is now on {_when(session)}{still_with} "
+                "You will get reminders before the new time."
+            ),
+            category=Notification.Category.GENERAL,
+            data={"session_id": session.pk, "screen": "booked-session"},
+        )
+
+    if not keeps:
+        offer_session(session, now=now)
     return session
 
 

@@ -595,6 +595,9 @@ class ScheduledSessionSerializer(serializers.ModelSerializer):
             "confirmed_at",
             "can_join",
             "no_show",
+            "can_change",
+            "change_deadline",
+            "change_notice_hours",
             "created_at",
         ]
         read_only_fields = [
@@ -604,6 +607,9 @@ class ScheduledSessionSerializer(serializers.ModelSerializer):
             "confirmed_at",
             "can_join",
             "no_show",
+            "can_change",
+            "change_deadline",
+            "change_notice_hours",
             "created_at",
         ]
 
@@ -613,6 +619,25 @@ class ScheduledSessionSerializer(serializers.ModelSerializer):
 
     def get_can_join(self, obj) -> bool:
         return scheduling.join_window_open(obj)
+
+    can_change = serializers.SerializerMethodField(
+        help_text="True while the booker can still cancel or move it (before change_deadline). V2-051."
+    )
+    change_deadline = serializers.SerializerMethodField(
+        help_text="The last moment the booker can cancel or move it: change_notice_hours before the start."
+    )
+    change_notice_hours = serializers.SerializerMethodField(
+        help_text="The notice rule (Clarification C-04): changes are allowed up to this many hours before."
+    )
+
+    def get_can_change(self, obj) -> bool:
+        return scheduling.can_change(obj)
+
+    def get_change_deadline(self, obj) -> str:
+        return timezone.localtime(scheduling.change_deadline(obj)).isoformat()
+
+    def get_change_notice_hours(self, obj) -> int:
+        return scheduling.change_notice_hours()
 
     interpreter_name = serializers.SerializerMethodField(
         help_text="Who will interpret it. Null until an interpreter has confirmed."
