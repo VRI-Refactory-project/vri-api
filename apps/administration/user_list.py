@@ -206,6 +206,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.exceptions import ValidationError
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -216,8 +217,6 @@ from apps.institutions.models import InstitutionStatus
 from apps.interpreters.models import VerificationStatus
 
 User = get_user_model()
-
-MAX_USERS = 500
 
 # The web page says "deaf"; the API's role value is "deaf_hoh".
 ROLE_FILTERS = {
@@ -306,6 +305,8 @@ class AdminUserListView(APIView):
         summary="List users (administrators only)",
         parameters=[
             OpenApiParameter("search", OpenApiTypes.STR, description="Name, email or phone number."),
+            OpenApiParameter("page", OpenApiTypes.INT, description="Page number."),
+            OpenApiParameter("page_size", OpenApiTypes.INT, description="Results per page (maximum 100)."),
             OpenApiParameter(
                 "role",
                 OpenApiTypes.STR,
@@ -369,20 +370,31 @@ class AdminUserListView(APIView):
             since = timezone.now() - timedelta(days=RANGE_FILTERS[range_filter])
             users = users.filter(date_joined__gte=since)
 
+        users = users.order_by("-date_joined", "-pk")
+        paginator = PageNumberPagination()
+        paginator.page_size = 10
+        paginator.page_size_query_param = "page_size"
+        paginator.max_page_size = 100
+        page = paginator.paginate_queryset(users, request, view=self)
         return Response(
-            [
-                {
-                    "id": user.pk,
-                    "full_name": user.full_name,
-                    "email": user.email or "",
-                    "phone_number": str(user.phone_number),
-                    "role": user.role,
-                    "verification_status": user.verification_status,
-                    "created_at": user.date_joined,
-                    "last_login": user.last_login,
-                }
-                for user in users.order_by("-date_joined", "-pk")[:MAX_USERS]
-            ]
+            {
+                "count": paginator.page.paginator.count,
+                "results": [
+                    {
+                        "id": user.pk,
+                        "full_name": user.full_name,
+                        "email": user.email or "",
+                        "phone_number": str(user.phone_number),
+                        "role": user.role,
+                        "verification_status": user.verification_status,
+                        "created_at": user.date_joined,
+                        "last_login": user.last_login,
+                    }
+                    for user in page
+                ],
+                "next": paginator.get_next_link(),
+                "previous": paginator.get_previous_link(),
+            }
         )
 
 
@@ -485,32 +497,68 @@ class AdminUserDetailView(APIView):
 
     permission_classes = [IsAdminRole]
 
+    def get(self, request, pk):
+        user = get_object_or_404(User, pk=pk)
+        return Response(self.representation(user))
+
+    @staticmethod
+    def representation(user):
+        return {
+            "id": user.pk, "full_name": user.full_name, "email": user.email or "",
+            "phone_number": str(user.phone_number), "role": user.role,
+            "verification_status": "verified", "created_at": user.date_joined,
+            "last_login": user.last_login,
+        }
+
     def patch(self, request, pk):
         user = get_object_or_404(User, pk=pk)
+        original_email = user.email
 
         # Only allow updating these fields
-        name = request.data.get("name")
+        name = request.data.get("full_name", request.data.get("name"))
         email = request.data.get("email")
-        phone = request.data.get("phone")
+        phone = request.data.get("phone_number", request.data.get("phone"))
 
-        if name is not None:
-            user.full_name = name.strip()
+        errors = {}
+        if name is not None and (not isinstance(name, str) or not name.strip() or len(name.strip()) > 150):
+            errors["full_name"] = ["Enter a valid full name (up to 150 characters)."]
         if email is not None:
-            user.email = email.strip()
+            from django.core.validators import validate_email
+            if not isinstance(email, str):
+                errors["email"] = ["Enter a valid email address."]
+            elif email.strip():
+                try:
+                    validate_email(email.strip())
+                except Exception:
+                    errors["email"] = ["Enter a valid email address."]
+            duplicate_email = (
+                isinstance(email, str)
+                and email.strip()
+                and User.objects.filter(email__iexact=email.strip()).exclude(pk=user.pk).exists()
+            )
+            if duplicate_email:
+                errors["email"] = ["An account with this email already exists."]
         if phone is not None:
-            user.phone_number = phone.strip()
+            from apps.accounts.serializers import PlusPhoneNumberField
+            field = PlusPhoneNumberField()
+            try:
+                phone = field.run_validation(phone)
+            except serializers.ValidationError as exc:
+                errors["phone_number"] = exc.detail
+            else:
+                if User.objects.filter(phone_number=phone).exclude(pk=user.pk).exists():
+                    errors["phone_number"] = ["An account with this phone number already exists."]
+        if errors:
+            raise ValidationError(errors)
 
-        user.save(update_fields=["full_name", "email", "phone_number"])
-
-        return Response(
-            {
-                "id": user.pk,
-                "full_name": user.full_name,
-                "email": user.email or "",
-                "phone_number": str(user.phone_number),
-                "role": user.role,
-                "verification_status": "verified",  # simplified for now
-                "created_at": user.date_joined,
-                "last_login": user.last_login,
-            }
-        )
+        fields = []
+        for key, value in (("full_name", name), ("email", email), ("phone_number", phone)):
+            if value is not None:
+                setattr(user, key, value.strip() if isinstance(value, str) else value)
+                fields.append(key)
+        if "email" in fields and user.email != original_email:
+            user.email_verified_at = None
+            fields.append("email_verified_at")
+        if fields:
+            user.save(update_fields=fields)
+        return Response(self.representation(user))

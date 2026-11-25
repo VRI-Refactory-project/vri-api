@@ -71,9 +71,10 @@ class AdminUserListTests(TestCase):
         self.client.force_authenticate(user=self.admin)
 
     def by_name(self, **params):
+        params.setdefault("page_size", 100)
         response = self.client.get(URL, params)
         self.assertEqual(response.status_code, 200)
-        return {row["full_name"]: row for row in response.json()}
+        return {row["full_name"]: row for row in response.json()["results"]}
 
     def test_row_has_the_fields_the_page_needs(self):
         make_user(
@@ -208,10 +209,46 @@ class AdminUserListTests(TestCase):
         first.date_joined = timezone.now() - timedelta(days=1)
         first.save(update_fields=["date_joined"])
         make_user(User.Role.DEAF_HOH, "0700000081", "Later")
-        names = [row["full_name"] for row in self.client.get(URL).json()]
+        names = [
+            row["full_name"]
+            for row in self.client.get(URL, {"page_size": 100}).json()["results"]
+        ]
         self.assertLess(names.index("Later"), names.index("Earlier"))
 
     def test_each_user_appears_once(self):
         make_institution_user("0700000090", InstitutionStatus.APPROVED, full_name="Once")
-        rows = self.client.get(URL).json()
+        rows = self.client.get(URL, {"page_size": 100}).json()["results"]
         self.assertEqual([r["full_name"] for r in rows].count("Once"), 1)
+
+    def test_page_size_and_pagination_links(self):
+        for i in range(3):
+            make_user(User.Role.DEAF_HOH, f"07000002{i}0", f"Page {i}")
+        first = self.client.get(URL, {"page_size": 2}).json()
+        self.assertEqual(first["count"], 4)  # includes the admin
+        self.assertEqual(len(first["results"]), 2)
+        self.assertIsNotNone(first["next"])
+        second = self.client.get(URL, {"page": 2, "page_size": 2}).json()
+        self.assertEqual(len(second["results"]), 2)
+        self.assertIsNotNone(second["previous"])
+
+    def test_update_fields_and_list_reflects_changes(self):
+        user = make_user(User.Role.DEAF_HOH, "0700000290", "Before", email="before@example.com")
+        response = self.client.patch(f"{URL}{user.pk}/", {
+            "full_name": "After", "email": "after@example.com", "phone_number": "0700000291"
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.json())
+        user.refresh_from_db()
+        self.assertEqual(
+            (user.full_name, user.email, str(user.phone_number)),
+            ("After", "after@example.com", "+256700000291"),
+        )
+        self.assertIn("After", self.by_name())
+
+    def test_update_validation_and_delete(self):
+        user = make_user(User.Role.DEAF_HOH, "0700000292", "Delete Me")
+        invalid = self.client.patch(f"{URL}{user.pk}/", {"email": "not-an-email"}, format="json")
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("email", invalid.json())
+        response = self.client.delete(f"{URL}{user.pk}/delete/")
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(User.objects.filter(pk=user.pk).exists())
