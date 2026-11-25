@@ -733,6 +733,9 @@ def fail_overdue_requests(*, now=None, service_request=None):
             locked.failed_at = now
             locked.failure_reason = "no_interpreter_available"
             locked.save()
+            from apps.institutions.alerts import no_interpreter_available
+
+            no_interpreter_available(locked)
             broadcast_status(locked)
             _report_failure(locked)
             failed += 1
@@ -835,7 +838,4 @@ def sweep(*, now=None):
     # Then waiting requests whose requester's app has gone quiet are cancelled (V2-009).
     cancel_disconnected_requests(now=now)
     offered = dispatch_pending(now=now)
-    from apps.institutions.alerts import alert_overdue_pending_requests
-
-    alerts = alert_overdue_pending_requests(now=now)
-    return {"expired": expired, "offered": offered, "failed": failed, "alerts": alerts}
+    return {"expired": expired, "offered": offered, "failed": failed}

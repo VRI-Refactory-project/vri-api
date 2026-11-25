@@ -8,7 +8,18 @@ from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Q
+from django.db.models import (
+    Avg,
+    Count,
+    DateTimeField,
+    DurationField,
+    ExpressionWrapper,
+    F,
+    Q,
+    Sum,
+    Value,
+)
+from django.db.models.functions import Coalesce, TruncDate
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema, inline_serializer
@@ -131,6 +142,9 @@ InstitutionDashboardSerializer = inline_serializer(
                 "failed_requests": serializers.IntegerField(),
                 "active_sessions": serializers.IntegerField(),
                 "sessions_this_month": serializers.IntegerField(),
+                "daily_usage_minutes": serializers.ListField(
+                    child=serializers.IntegerField()
+                ),
                 "total_video_sessions": serializers.IntegerField(),
                 "waiting_video_sessions": serializers.IntegerField(),
                 "connecting_video_sessions": serializers.IntegerField(),
@@ -459,6 +473,30 @@ class InstitutionDashboardView(APIView):
         )
         today = timezone.localdate()
         month_start = today.replace(day=1)
+        last_seven_days = [
+            today - timedelta(days=offset) for offset in range(6, -1, -1)
+        ]
+        usage_end = timezone.now()
+        duration_expression = ExpressionWrapper(
+            Coalesce("ended_at", Value(usage_end, output_field=DateTimeField()))
+            - F("connected_at"),
+            output_field=DurationField(),
+        )
+        usage_by_date = {
+            row["day"]: round(row["duration"].total_seconds() / 60)
+            for row in institution_sessions.filter(
+                status__in=[VideoSession.Status.CONNECTED, VideoSession.Status.ENDED],
+                connected_at__isnull=False,
+                connected_at__date__gte=last_seven_days[0],
+                connected_at__date__lte=last_seven_days[-1],
+            )
+            .annotate(day=TruncDate("connected_at"))
+            .values("day")
+            .annotate(duration=Sum(duration_expression))
+        }
+        daily_usage_minutes = [0] * 7
+        for usage_day, minutes in usage_by_date.items():
+            daily_usage_minutes[usage_day.weekday()] = max(0, minutes)
         month_requests = institution_requests.filter(
             created_at__date__gte=month_start,
             created_at__date__lte=today,
@@ -544,6 +582,7 @@ class InstitutionDashboardView(APIView):
                     # Include completed calls and calls connected now; exclude routing requests,
                     # cancellations, failures and calls that never connected.
                     "sessions_this_month": sessions_this_month,
+                    "daily_usage_minutes": daily_usage_minutes,
 
                     "total_video_sessions": institution_sessions.count(),
 
