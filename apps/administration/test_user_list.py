@@ -234,7 +234,10 @@ class AdminUserListTests(TestCase):
         }, format="json")
         self.assertEqual(response.status_code, 200, response.json())
         user.refresh_from_db()
-        self.assertEqual((user.full_name, user.email, str(user.phone_number)), ("After", "after@example.com", "+256700000291"))
+        self.assertEqual(
+            (user.full_name, user.email, str(user.phone_number)),
+            ("After", "after@example.com", "+256700000291"),
+        )
         self.assertIn("After", self.by_name())
 
     def test_update_validation_and_delete(self):

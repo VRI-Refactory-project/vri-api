@@ -380,17 +380,17 @@ class AdminUserListView(APIView):
             {
                 "count": paginator.page.paginator.count,
                 "results": [
-                {
-                    "id": user.pk,
-                    "full_name": user.full_name,
-                    "email": user.email or "",
-                    "phone_number": str(user.phone_number),
-                    "role": user.role,
-                    "verification_status": user.verification_status,
-                    "created_at": user.date_joined,
-                    "last_login": user.last_login,
-                }
-                for user in page
+                    {
+                        "id": user.pk,
+                        "full_name": user.full_name,
+                        "email": user.email or "",
+                        "phone_number": str(user.phone_number),
+                        "role": user.role,
+                        "verification_status": user.verification_status,
+                        "created_at": user.date_joined,
+                        "last_login": user.last_login,
+                    }
+                    for user in page
                 ],
                 "next": paginator.get_next_link(),
                 "previous": paginator.get_previous_link(),
@@ -531,7 +531,12 @@ class AdminUserDetailView(APIView):
                     validate_email(email.strip())
                 except Exception:
                     errors["email"] = ["Enter a valid email address."]
-            if isinstance(email, str) and email.strip() and User.objects.filter(email__iexact=email.strip()).exclude(pk=user.pk).exists():
+            duplicate_email = (
+                isinstance(email, str)
+                and email.strip()
+                and User.objects.filter(email__iexact=email.strip()).exclude(pk=user.pk).exists()
+            )
+            if duplicate_email:
                 errors["email"] = ["An account with this email already exists."]
         if phone is not None:
             from apps.accounts.serializers import PlusPhoneNumberField

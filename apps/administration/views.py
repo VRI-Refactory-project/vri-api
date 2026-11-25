@@ -129,9 +129,20 @@ class AdminInstitutionEditSerializer(serializers.ModelSerializer):
     """Admin-facing institution fields, including the linked account contact details."""
     name = serializers.CharField(source="organisation_name", required=False, max_length=200)
     registration_number = serializers.CharField(required=False, allow_blank=True, max_length=100)
-    sector = serializers.ChoiceField(source="organisation_type", choices=InstitutionProfile._meta.get_field("organisation_type").choices, required=False)
-    sector_other = serializers.CharField(source="organisation_type_other", required=False, allow_blank=True, max_length=100)
-    email = serializers.EmailField(source="user.email", required=False, allow_null=True, allow_blank=True)
+    sector = serializers.ChoiceField(
+        source="organisation_type",
+        choices=InstitutionProfile._meta.get_field("organisation_type").choices,
+        required=False,
+    )
+    sector_other = serializers.CharField(
+        source="organisation_type_other",
+        required=False,
+        allow_blank=True,
+        max_length=100,
+    )
+    email = serializers.EmailField(
+        source="user.email", required=False, allow_null=True, allow_blank=True
+    )
     phone = serializers.CharField(source="user.phone_number", required=False)
 
     class Meta:

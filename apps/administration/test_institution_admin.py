@@ -10,24 +10,47 @@ URL = "/api/v1/administration/institutions/"
 
 class AdminInstitutionEditTests(TestCase):
     def setUp(self):
-        self.admin = User.objects.create_user("0700000101", "password", role=User.Role.ADMIN, full_name="Admin")
-        self.contact = User.objects.create_user("0700000102", "password", role=User.Role.INSTITUTION, full_name="Contact", email="contact@example.com")
-        self.institution = InstitutionProfile.objects.create(user=self.contact, organisation_name="Old", organisation_type=OrganisationType.HOSPITAL)
+        self.admin = User.objects.create_user(
+            "0700000101", "password", role=User.Role.ADMIN, full_name="Admin"
+        )
+        self.contact = User.objects.create_user(
+            "0700000102",
+            "password",
+            role=User.Role.INSTITUTION,
+            full_name="Contact",
+            email="contact@example.com",
+        )
+        self.institution = InstitutionProfile.objects.create(
+            user=self.contact,
+            organisation_name="Old",
+            organisation_type=OrganisationType.HOSPITAL,
+        )
         self.client = APIClient()
         self.client.force_authenticate(self.admin)
 
     def test_patch_persists_frontend_fields_and_list_reflects_them(self):
-        response = self.client.patch(f"{URL}{self.institution.pk}/", {
-            "name": "New Clinic", "registration_number": "REG-123", "sector": "OTHER",
-            "sector_other": "Community health", "email": "new@example.com", "phone": "0700000103",
-        }, format="json")
+        response = self.client.patch(
+            f"{URL}{self.institution.pk}/",
+            {
+                "name": "New Clinic",
+                "registration_number": "REG-123",
+                "sector": "OTHER",
+                "sector_other": "Community health",
+                "email": "new@example.com",
+                "phone": "0700000103",
+            },
+            format="json",
+        )
         self.assertEqual(response.status_code, 200, response.json())
         self.institution.refresh_from_db()
         self.contact.refresh_from_db()
         self.assertEqual(self.institution.organisation_name, "New Clinic")
         self.assertEqual(self.institution.registration_number, "REG-123")
         self.assertEqual(self.institution.organisation_type_other, "Community health")
-        self.assertEqual((self.contact.email, str(self.contact.phone_number)), ("new@example.com", "+256700000103"))
+        self.assertEqual(
+            (self.contact.email, str(self.contact.phone_number)),
+            ("new@example.com", "+256700000103"),
+        )
         listed = self.client.get(URL).json()[0]
         self.assertEqual(listed["name"], "New Clinic")
         self.assertEqual(listed["registration_number"], "REG-123")
