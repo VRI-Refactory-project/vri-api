@@ -160,6 +160,7 @@ BREVO_API_KEY = env("BREVO_API_KEY", default="")
 # e.g. https://<web-address>/email-logo.png). Empty = the header shows the name as text.
 EMAIL_LOGO_URL = env("EMAIL_LOGO_URL", default="")
 WEB_APP_URL = env("WEB_APP_URL", default="https://138.68.41.10")
+FRONTEND_URL = env("FRONTEND_URL", default=WEB_APP_URL)
 
 # --- Expo Push Notifications ---
 EXPO_PUSH_ENABLED = env.bool("EXPO_PUSH_ENABLED", default=False)
@@ -267,6 +268,7 @@ REST_FRAMEWORK = {
         "recovery_confirm": "10/minute",
         "email_verify_resend": "5/hour",
         "email_verify_confirm": "10/minute",
+        "staff_invitation_accept": "10/minute",
     },
 }
 

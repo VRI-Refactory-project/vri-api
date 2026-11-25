@@ -1,15 +1,12 @@
-"""Institution staff accounts (V2-006): create, change, revoke and reinstate, done by an institution's admins.
-Staff can also change their own name and phone number.
-
-New staff get a temporary password by email ("send account details to staff" in the user flow) and must choose
-their own at first sign-in. Revoking deactivates the account and signs it out everywhere, so it is blocked at
-once (see docs/design/V2-006-staff-accounts.md).
-"""
+"""Institution staff accounts (V2-006): onboarding, changes, revocation and reinstatement."""
 
 import logging
 import secrets
+from urllib.parse import quote
 
 from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.hashers import check_password, make_password
+from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
@@ -21,54 +18,132 @@ from apps.audit.models import AuditLog
 from apps.core.emailing import branded_html, send_branded_email
 
 from .alerts import staff_member_added
-from .models import InstitutionStaff, StaffRole
+from .models import (
+    InstitutionStaff,
+    InstitutionStaffInvitation,
+    InstitutionStatus,
+    StaffRole,
+)
 
 logger = logging.getLogger("apps.institutions")
 
-# No look-alike characters (0/O, 1/I/L), so it can be copied from the email without mistakes.
-_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
-_DIGITS = "23456789"
+INVITATION_TOKEN_INVALID = "This invitation is invalid, expired, or has already been used."
 
 
 class StaffEmailError(Exception):
-    """The login-details email could not be sent. The staff account was not created."""
-
-
-def generate_temporary_password(user):
-    """Like K7PM-4Q9X. Meets the password rules (length, a number, a special character)."""
-    while True:
-        chars = [secrets.choice(_ALPHABET) for _ in range(8)]
-        if not any(ch in _DIGITS for ch in chars):
-            continue
-        password = f"{''.join(chars[:4])}-{''.join(chars[4:])}"
-        try:
-            validate_password(password, user=user)
-        except DjangoValidationError:
-            continue
-        return password
+    """The invitation email could not be sent. The staff account was not created."""
 
 
 def create_staff(serializer, admin, request=None):
-    """Save a validated StaffCreateSerializer, email the login details and audit it. Returns the membership.
+    """Save a validated StaffCreateSerializer, email an invitation and audit it.
 
-    Everything is undone (StaffEmailError) if the email cannot be sent, so no account exists whose password
-    nobody knows.
+    The invitation and account are rolled back if the email cannot be sent.
     """
     with transaction.atomic():
         membership = serializer.save()
         user = membership.user
-        password = generate_temporary_password(user)
-        user.set_password(password)
         user.must_change_password = True
-        user.save(update_fields=["password", "must_change_password"])
+        user.save(update_fields=["must_change_password"])
         try:
-            _send_login_details(membership, admin, password)
+            issue_staff_invitation(membership, admin)
         except Exception as exc:
-            logger.exception("staff_credentials_email_failed admin=%s", admin.pk)
+            logger.exception("staff_invitation_email_failed admin=%s", admin.pk)
             raise StaffEmailError from exc
         audit.record(AuditLog.Event.STAFF_CREATED, admin, request, target_user=user)
         staff_member_added(membership)
     return membership
+
+
+@transaction.atomic
+def issue_staff_invitation(membership, admin):
+    """Invalidate previous invitations and send a hashed, expiring setup link."""
+    now = timezone.now()
+    token_selector = secrets.token_urlsafe(9)
+    token_secret = secrets.token_urlsafe(32)
+    token = f"{token_selector}.{token_secret}"
+    InstitutionStaffInvitation.objects.filter(
+        staff=membership, used_at__isnull=True
+    ).update(expires_at=now)
+    InstitutionStaffInvitation.objects.create(
+        staff=membership,
+        token_selector=token_selector,
+        token_hash=make_password(token_secret),
+        expires_at=now + InstitutionStaffInvitation.LIFETIME,
+    )
+    link = (
+        f"{settings.FRONTEND_URL.rstrip('/')}/staff/accept-invitation?"
+        f"token={quote(token, safe='')}"
+    )
+    user = membership.user
+    body = (
+        f"Hello {user.full_name},\n\n"
+        f"{admin.full_name} has invited you to join SignConnect at "
+        f"{membership.institution.organisation_name} ({membership.get_role_display()}).\n\n"
+        "Set your password using this secure invitation link. It expires in 24 hours and can only be used once:\n\n"
+        f"{link}\n\n"
+        "If you were not expecting this invitation, contact your institution's administrator.\n"
+    )
+    send_branded_email(
+        "Set up your SignConnect staff account",
+        body,
+        branded_html(body, highlight=link),
+        user.email,
+        user.full_name,
+        log=logger,
+    )
+
+
+@transaction.atomic
+def accept_staff_invitation(token, new_password, ip=None):
+    """Consume an active staff invitation and return the newly authenticated user."""
+    try:
+        selector, secret = token.split(".", 1)
+    except (AttributeError, ValueError):
+        raise ValidationError({"token": [INVITATION_TOKEN_INVALID]})
+
+    try:
+        invitation = (
+            InstitutionStaffInvitation.objects.select_for_update()
+            .select_related("staff__user", "staff__institution")
+            .get(token_selector=selector)
+        )
+    except InstitutionStaffInvitation.DoesNotExist:
+        raise ValidationError({"token": [INVITATION_TOKEN_INVALID]})
+
+    now = timezone.now()
+    membership = invitation.staff
+    user = membership.user
+    valid = (
+        invitation.used_at is None
+        and invitation.expires_at > now
+        and membership.is_active
+        and membership.revoked_at is None
+        and membership.institution.status == InstitutionStatus.APPROVED
+        and user.is_active
+        and check_password(secret, invitation.token_hash)
+    )
+    if not valid:
+        raise ValidationError({"token": [INVITATION_TOKEN_INVALID]})
+
+    try:
+        validate_password(new_password, user=user)
+    except DjangoValidationError as exc:
+        raise ValidationError({"new_password": list(exc.messages)})
+
+    user.set_password(new_password)
+    user.must_change_password = False
+    user.save(update_fields=["password", "must_change_password"])
+    invitation.used_at = now
+    invitation.save(update_fields=["used_at"])
+
+    result = recovery.issue_code(
+        user, recovery.RecoveryCode.Purpose.EMAIL_VERIFY, ip=ip
+    )
+    if result != "sent":
+        raise ValidationError(
+            {"detail": "We could not send your email verification code. Please try again."}
+        )
+    return user
 
 
 def update_staff(membership, data, admin, request=None):

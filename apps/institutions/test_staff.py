@@ -2,24 +2,34 @@
 
 import json
 import re
+from datetime import timedelta
 from unittest import mock
 
 from django.core import mail
 from django.core.cache import cache
 from django.test import override_settings
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import User
 from apps.accounts.serializers import TokenPairSerializer
 from apps.audit.models import AuditLog
 
-from .models import InstitutionProfile, InstitutionStaff, InstitutionStatus, StaffRole
+from . import staff
+from .models import (
+    InstitutionProfile,
+    InstitutionStaff,
+    InstitutionStatus,
+    StaffRole,
+)
 
 PASSWORD = "Sign-Connect-2026"
 NEW_PASSWORD = "Doctor-Own-2026!"
 STAFF_URL = reverse("institution-staff")
-TEMPORARY_PASSWORD = re.compile(r"\b([A-Z2-9]{4}-[A-Z2-9]{4})\b")
+INVITATION_TOKEN = re.compile(r"token=([A-Za-z0-9_.-]+)")
+VERIFICATION_CODE = re.compile(r"Your code: (\d{6})")
+ACCEPT_INVITATION_URL = reverse("institution-staff-invitation-accept")
 
 
 def make_institution(phone, name, status=InstitutionStatus.APPROVED):
@@ -56,12 +66,15 @@ def detail(name, pk):
     return reverse(f"institution-staff-{name}", args=[pk])
 
 
-def emailed_password():
-    return TEMPORARY_PASSWORD.search(mail.outbox[-1].body).group(1)
+def emailed_invitation_token(email=None):
+    email = email or mail.outbox[-1]
+    return INVITATION_TOKEN.search(email.body).group(1)
 
 
 @override_settings(
-    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", BREVO_API_KEY=""
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    BREVO_API_KEY="",
+    FRONTEND_URL="https://web.test",
 )
 class StaffTestCase(APITestCase):
     def setUp(self):
@@ -116,7 +129,7 @@ class RegistrantIsAdminTests(StaffTestCase):
 class CreateStaffTests(StaffTestCase):
     """V2-006-BE-01 (create)."""
 
-    def test_admin_adds_a_staff_member_and_their_login_details_are_emailed(self):
+    def test_admin_adds_a_staff_member_and_emails_a_password_setup_invitation(self):
         res = self.client.post(STAFF_URL, staff_data(), format="json")
         self.assertEqual(res.status_code, 201, res.data)
         self.assertEqual(res.data["role"], "STAFF")
@@ -133,7 +146,12 @@ class CreateStaffTests(StaffTestCase):
         email = mail.outbox[0]
         self.assertEqual(email.to, ["sarah@mulago.example"])
         self.assertIn("Mulago Hospital", email.body)
-        self.assertTrue(membership.user.check_password(emailed_password()))
+        self.assertFalse(membership.user.has_usable_password())
+        self.assertIn(
+            "https://web.test/staff/accept-invitation?token=",
+            mail.outbox[0].body,
+        )
+        self.assertNotIn("temporary password", mail.outbox[0].body.lower())
         self.assertTrue(
             AuditLog.objects.filter(
                 event=AuditLog.Event.STAFF_CREATED,
@@ -145,24 +163,115 @@ class CreateStaffTests(StaffTestCase):
     def test_admin_can_add_another_admin(self):
         self.assertEqual(self.add_staff(role="ADMIN").role, StaffRole.ADMIN)
 
-    def test_new_staff_sign_in_with_the_emailed_password_and_must_change_it(self):
-        self.add_staff()
-        res = self.login("sarah@mulago.example", emailed_password())
-        self.assertEqual(res.status_code, 200)
-        self.assertTrue(res.data["user"]["must_change_password"])
-        self.assertEqual(res.data["user"]["institution_role"], "STAFF")
-        self.assertEqual(res.data["user"]["institution_status"], "APPROVED")
-        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {res.data['access']}")
-        changed = self.client.post(
-            reverse("auth-password-change"),
-            {"current_password": emailed_password(), "new_password": NEW_PASSWORD},
+    def test_accepting_invitation_sets_password_sends_verification_and_returns_session(self):
+        membership = self.add_staff()
+        token = emailed_invitation_token()
+        response = self.client.post(
+            ACCEPT_INVITATION_URL,
+            {"token": token, "new_password": NEW_PASSWORD},
             format="json",
         )
-        self.assertEqual(changed.status_code, 200, changed.data)
-        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {changed.data['access']}")
-        me = self.client.get(reverse("institution-me"))
-        self.assertEqual(me.status_code, 200)
-        self.assertEqual(me.data["organisation_name"], "Mulago Hospital")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(set(response.data), {"access", "refresh", "user"})
+        self.assertEqual(response.data["user"]["role"], User.Role.INSTITUTION)
+        self.assertEqual(response.data["user"]["institution_role"], StaffRole.STAFF)
+        self.assertFalse(response.data["user"]["email_verified"])
+        self.assertFalse(response.data["user"]["must_change_password"])
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertIn("Verify your SignConnect email", mail.outbox[1].subject)
+
+        membership.user.refresh_from_db()
+        self.assertTrue(membership.user.check_password(NEW_PASSWORD))
+        self.assertIsNotNone(membership.invitations.get().used_at)
+        code = VERIFICATION_CODE.search(mail.outbox[1].body).group(1)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {response.data['access']}")
+        verified = self.client.post(
+            reverse("auth-email-verify"), {"code": code}, format="json"
+        )
+        self.assertEqual(verified.status_code, 200, verified.data)
+        self.assertTrue(verified.data["email_verified"])
+
+    def test_invalid_expired_and_reused_invitations_are_rejected(self):
+        membership = self.add_staff()
+        invalid = self.client.post(
+            ACCEPT_INVITATION_URL,
+            {"token": "invalid.token", "new_password": NEW_PASSWORD},
+            format="json",
+        )
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("token", invalid.data)
+
+        invitation = membership.invitations.get()
+        invitation.expires_at = timezone.now() - timedelta(seconds=1)
+        invitation.save(update_fields=["expires_at"])
+        expired = self.client.post(
+            ACCEPT_INVITATION_URL,
+            {"token": emailed_invitation_token(), "new_password": NEW_PASSWORD},
+            format="json",
+        )
+        self.assertEqual(expired.status_code, 400)
+
+        self.client.post(
+            STAFF_URL,
+            staff_data(phone_number="0772111001", email="second@mulago.example"),
+            format="json",
+        )
+        token = emailed_invitation_token()
+        accepted = self.client.post(
+            ACCEPT_INVITATION_URL,
+            {"token": token, "new_password": NEW_PASSWORD},
+            format="json",
+        )
+        self.assertEqual(accepted.status_code, 200, accepted.data)
+        self.client.credentials()
+        reused = self.client.post(
+            ACCEPT_INVITATION_URL,
+            {"token": token, "new_password": NEW_PASSWORD},
+            format="json",
+        )
+        self.assertEqual(reused.status_code, 400)
+
+    def test_password_validation_does_not_consume_invitation(self):
+        membership = self.add_staff()
+        token = emailed_invitation_token()
+        response = self.client.post(
+            ACCEPT_INVITATION_URL,
+            {"token": token, "new_password": "weak"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("new_password", response.data)
+        invitation = membership.invitations.get()
+        self.assertIsNone(invitation.used_at)
+
+    def test_reissuing_invitation_invalidates_the_previous_token(self):
+        membership = self.add_staff()
+        old_token = emailed_invitation_token()
+        staff.issue_staff_invitation(membership, self.admin)
+        new_token = emailed_invitation_token()
+        self.assertNotEqual(old_token, new_token)
+        old_response = self.client.post(
+            ACCEPT_INVITATION_URL,
+            {"token": old_token, "new_password": NEW_PASSWORD},
+            format="json",
+        )
+        self.assertEqual(old_response.status_code, 400)
+
+    def test_staff_invitation_does_not_grant_institution_license_upload(self):
+        self.add_staff()
+        accepted = self.client.post(
+            ACCEPT_INVITATION_URL,
+            {"token": emailed_invitation_token(), "new_password": NEW_PASSWORD},
+            format="json",
+        )
+        self.assertEqual(accepted.status_code, 200, accepted.data)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {accepted.data['access']}")
+        upload = self.client.post(
+            reverse("institution-document-upload"),
+            {"document": "not-a-file"},
+            format="multipart",
+        )
+        self.assertEqual(upload.status_code, 403)
 
     def test_same_validation_as_registration(self):
         self.add_staff()
@@ -199,15 +308,18 @@ class CreateStaffTests(StaffTestCase):
         BREVO_API_KEY="test-key",
         DEFAULT_FROM_EMAIL="SignConnect <no-reply@signconnect.example>",
     )
-    def test_login_details_go_out_through_brevo_when_a_key_is_set(self):
+    def test_password_setup_invitation_goes_out_through_brevo_when_a_key_is_set(self):
         with mock.patch("urllib.request.urlopen") as urlopen:
             res = self.client.post(STAFF_URL, staff_data(), format="json")
         self.assertEqual(res.status_code, 201, res.data)
         payload = json.loads(urlopen.call_args.args[0].data)
         self.assertEqual(payload["to"][0]["email"], "sarah@mulago.example")
-        self.assertEqual(payload["subject"], "Your SignConnect staff account")
+        self.assertEqual(payload["subject"], "Set up your SignConnect staff account")
         self.assertIn("Mulago Hospital", payload["textContent"])
-        self.assertTrue(TEMPORARY_PASSWORD.search(payload["textContent"]))
+        self.assertIn(
+            "https://web.test/staff/accept-invitation?token=",
+            payload["textContent"],
+        )
         self.assertEqual(len(mail.outbox), 0)
 
 
@@ -385,7 +497,14 @@ class RevokeTests(StaffTestCase):
     def setUp(self):
         super().setUp()
         self.sarah = self.add_staff()
-        signed_in = self.login("sarah@mulago.example", emailed_password())
+        signed_in = self.client.post(
+            ACCEPT_INVITATION_URL,
+            {
+                "token": emailed_invitation_token(),
+                "new_password": NEW_PASSWORD,
+            },
+            format="json",
+        )
         self.sarah_access, self.sarah_refresh = (
             signed_in.data["access"],
             signed_in.data["refresh"],
@@ -408,7 +527,7 @@ class RevokeTests(StaffTestCase):
         )
         self.assertEqual(refreshed.status_code, 401)
         self.assertEqual(
-            self.login("sarah@mulago.example", emailed_password()).status_code, 400
+            self.login("sarah@mulago.example", NEW_PASSWORD).status_code, 400
         )
 
         self.sarah.refresh_from_db()
@@ -457,7 +576,7 @@ class RevokeTests(StaffTestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.data["status"], "ACTIVE")
         self.assertEqual(
-            self.login("sarah@mulago.example", emailed_password()).status_code, 200
+            self.login("sarah@mulago.example", NEW_PASSWORD).status_code, 200
         )
         self.assertTrue(
             AuditLog.objects.filter(

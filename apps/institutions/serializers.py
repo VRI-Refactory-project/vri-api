@@ -396,8 +396,8 @@ class StaffSerializer(serializers.ModelSerializer):
 class StaffCreateSerializer(BaseRegistrationSerializer):
     """An institution administrator adds a staff member (V2-006).
 
-    Same checks as registration for name, phone and email (email is required: the login details are sent
-    there). No password: a temporary one is emailed. Needs `institution` and `request` in the context.
+    Same checks as registration for name, phone and email (email is required for the invitation).
+    No password is set until the invitation is accepted. Needs `institution` and `request` in the context.
     `save()` returns the new InstitutionStaff.
     """
 
@@ -483,6 +483,15 @@ class StaffUpdateSerializer(serializers.Serializer):
 
         instance.save()
         return instance
+
+
+class StaffInvitationAcceptSerializer(serializers.Serializer):
+    token = serializers.CharField(trim_whitespace=False, write_only=True)
+    new_password = serializers.CharField(
+        trim_whitespace=False,
+        write_only=True,
+        style={"input_type": "password"},
+    )
 
 
 class OwnProfileUpdateSerializer(serializers.Serializer):
