@@ -162,6 +162,33 @@ class InstitutionStaff(models.Model):
         return self.revoked_at is not None
 
 
+class InstitutionNotice(models.Model):
+    """A notice shared with all active members of one institution."""
+
+    institution = models.ForeignKey(
+        InstitutionProfile,
+        on_delete=models.CASCADE,
+        related_name="notices",
+    )
+    title = models.CharField(max_length=150)
+    message = models.TextField()
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_institution_notices",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.title} ({self.institution.organisation_name})"
+
+
 class TutorialProgress(models.Model):
     """How far a staff member got through the first-sign-in tutorial (V2-065).
 

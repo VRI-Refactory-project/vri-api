@@ -15,7 +15,14 @@ from apps.realtime.call_status import display_status
 from apps.service_requests.models import ServiceRequest
 from apps.service_requests.serializers import session_duration_minutes
 
-from .models import InstitutionDepartment, InstitutionProfile, InstitutionStaff, OrganisationType, StaffRole
+from .models import (
+    InstitutionDepartment,
+    InstitutionNotice,
+    InstitutionProfile,
+    InstitutionStaff,
+    OrganisationType,
+    StaffRole,
+)
 
 User = get_user_model()
 
@@ -612,3 +619,32 @@ class InstitutionDocumentUploadSerializer(serializers.Serializer):
 
         value.seek(0)
         return value
+
+
+class InstitutionNoticeSerializer(serializers.ModelSerializer):
+    """Serialize notices shared with an institution's active members."""
+
+    created_by_name = serializers.CharField(
+        source="created_by.full_name",
+        read_only=True,
+        allow_null=True,
+    )
+
+    class Meta:
+        model = InstitutionNotice
+        fields = [
+            "id",
+            "title",
+            "message",
+            "created_by",
+            "created_by_name",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "created_by",
+            "created_by_name",
+            "created_at",
+            "updated_at",
+        ]

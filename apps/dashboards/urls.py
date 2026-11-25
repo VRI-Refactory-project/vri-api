@@ -2,9 +2,20 @@ from django.urls import path
 
 from apps.institutions.views import InstitutionUsageExportView
 
-from . import admin_stats, views
+from apps.administration import support_requests
+from . import admin_reports, admin_stats, views
 
 urlpatterns = [
+    path(
+        "admin/support-requests/",
+        support_requests.AdminSupportRequestListView.as_view(),
+        name="dashboard-admin-support-requests",
+    ),
+    path(
+        "admin/support-requests/<int:pk>/",
+        support_requests.AdminSupportRequestDetailView.as_view(),
+        name="dashboard-admin-support-request-detail",
+    ),
     path("deaf/", views.DeafDashboardView.as_view(), name="dashboard-deaf"),
     path(
         "deaf/available-interpreters/",
@@ -81,6 +92,16 @@ urlpatterns = [
         "admin/sessions-stats/",
         views.AdminSessionStatsView.as_view(),
         name="admin-session-stats",
+    ),
+    path(
+        "admin/reports/usage/",
+        admin_reports.AdminUsageReportView.as_view(),
+        name="admin-report-usage",
+    ),
+    path(
+        "admin/reports/response-times/",
+        admin_reports.AdminResponseTimesReportView.as_view(),
+        name="admin-report-response-times",
     ),
     path(
         "admin/audit-logs/",
