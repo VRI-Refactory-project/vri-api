@@ -20,7 +20,7 @@ Builds on V2-009 (#45), V2-010 (#47) and V2-022 (#44, #46). Status names follow 
 | Disconnect grace window | V2-009 #45. |
 | **Who may request** | **This story.** Deaf users and staff (admins and staff) of an **approved** institution. Other roles get `403`; pending or rejected institutions get `403` with `institution_pending` / `institution_rejected`. Staff only ever see their own requests. |
 | **Requester cancel** | Cancel itself is V2-022 #44 (requester only, only while open). **This story** records `cancel_reason = REQUESTER_CANCELLED` and audits it. |
-| **Timeout -> FAILED** | The timeout is V2-022 #46 (`REQUEST_MAX_WAIT_SECONDS`, 300 s, TBD). **This story** adds what happens next, below. |
+| **Timeout -> FAILED** | The timeout is V2-022 #46 (`REQUEST_MAX_WAIT_SECONDS`, 120 s). **This story** adds what happens next, below. |
 | **Audit** | `request_created` (V2-009, includes priority and role), plus **this story's** `request_cancelled` (by the requester) and `request_failed`. |
 
 ## 2. When nobody takes a request in time

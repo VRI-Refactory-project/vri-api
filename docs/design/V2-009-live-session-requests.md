@@ -26,7 +26,7 @@ The team keeps the names already on `dev`. Where the cards use other words:
 CREATED -> OFFERED    an interpreter was found (V2-022 routing)
         -> PENDING    nobody suitable is free right now
 PENDING -> CANCELLED  the requester's app stopped checking for longer than the grace window, or they cancelled
-        -> FAILED     waited longer than REQUEST_MAX_WAIT_SECONDS (V2-022)
+        -> FAILED     waited longer than REQUEST_MAX_WAIT_SECONDS (120 s by default; V2-022)
 ```
 
 When a request is both past its maximum wait and its requester has gone quiet, it becomes `FAILED`.

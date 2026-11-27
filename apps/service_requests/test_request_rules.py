@@ -166,7 +166,7 @@ class DisconnectWindowTests(APITestCase):
         waiting = waiting_request(self.deaf)
         ServiceRequest.objects.filter(pk=waiting.pk).update(created_at=timezone.now() - timedelta(minutes=3))
 
-        self.assertEqual(self.detail(waiting).data["status"], Status.CANCELLED)
+        self.assertEqual(self.detail(waiting).data["status"], Status.FAILED)
 
     def test_the_list_and_mine_apply_the_window_too(self):
         waiting_request(self.deaf, seen_ago=timedelta(minutes=3))
