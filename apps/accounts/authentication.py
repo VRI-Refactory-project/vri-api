@@ -14,6 +14,13 @@ class EnforcePasswordChangeJWTAuthentication(JWTAuthentication):
         result = super().authenticate(request)
         if result is not None:
             user, _ = result
+            if user.must_change_password and user.role == "institution":
+                from apps.institutions.models import InstitutionStaff
+
+                if InstitutionStaff.objects.filter(
+                    user_id=user.pk, created_by__isnull=False
+                ).exists():
+                    return result
             match = getattr(request._request, "resolver_match", None)
             if user.must_change_password and (
                 match is None or match.url_name not in ALLOWED_WHILE_MUST_CHANGE

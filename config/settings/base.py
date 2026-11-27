@@ -268,7 +268,6 @@ REST_FRAMEWORK = {
         "recovery_confirm": "10/minute",
         "email_verify_resend": "5/hour",
         "email_verify_confirm": "10/minute",
-        "staff_invitation_accept": "10/minute",
     },
 }
 
