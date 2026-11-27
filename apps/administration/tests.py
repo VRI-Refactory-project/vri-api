@@ -215,7 +215,7 @@ class AdminInstitutionManagementTests(APITestCase):
 
     @override_settings(
         EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
-        WEB_APP_URL="https://web.test",
+        FRONTEND_URL="https://web.test",
     )
     def test_admin_approval_route_updates_status_and_sends_notification(self):
         self.institution_user.email_verified_at = timezone.now()
@@ -240,6 +240,7 @@ class AdminInstitutionManagementTests(APITestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ["institution@example.com"])
         self.assertIn("https://web.test/sign-in", mail.outbox[0].body)
+        self.assertIn("Log in: https://web.test/sign-in", mail.outbox[0].body)
 
     @override_settings(
         EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",

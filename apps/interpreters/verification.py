@@ -127,10 +127,16 @@ def notify_interpreter(decision):
         return
     if decision.action == Action.APPROVE:
         subject = "Your SignConnect interpreter account is approved"
+        login_url = f"{settings.FRONTEND_URL.rstrip('/')}/sign-in"
         body = (
             f"Hello {user.full_name},\n\n"
             "Your interpreter certification has been reviewed and approved.\n"
             "Sign in to SignConnect and set yourself as available to start receiving interpreting requests.\n"
+            f"Log in: {login_url}\n"
+        )
+        html_message = branded_html(body).replace(
+            f"Log in: {login_url}",
+            f'<a href="{login_url}">Log in</a>',
         )
     else:
         subject = "Your SignConnect interpreter verification was not approved"
@@ -140,13 +146,14 @@ def notify_interpreter(decision):
             f"Reason: {decision.reason}\n\n"
             "If you have questions, reply to this email or contact SignConnect support.\n"
         )
+        html_message = branded_html(body)
     try:
         send_mail(
             subject,
             body,
             settings.DEFAULT_FROM_EMAIL,
             [user.email],
-            html_message=branded_html(body),
+            html_message=html_message,
         )
     except Exception:  # SMTP down, bad address, ...
         logger.exception(
