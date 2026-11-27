@@ -226,23 +226,34 @@ ROLE_FILTERS = {
     "institution": User.Role.INSTITUTION,
     "admin": User.Role.ADMIN,
 }
-STATUS_FILTERS = ("verified", "pending", "rejected", "suspended")
+STATUS_FILTERS = ("verified", "pending", "rejected", "deactivated")
+STATUS_FILTER_ALIASES = {"suspended": "deactivated"}
 RANGE_FILTERS = {"7-days": 7, "30-days": 30}
 
 
 def with_verification_status(queryset):
-    """Add `verification_status` to every user: verified, pending, rejected or suspended.
+    """Add `verification_status` to every user: verified, pending, rejected or deactivated.
 
-    - A deactivated account is suspended, whatever its role.
+    - A deactivated account is deactivated, whatever its role.
     - Interpreters follow their profile: approved, waiting for review, rejected, or switched off.
-    - Institution users follow their institution (and are suspended once their access is revoked).
+    - Institution users follow their institution (and are deactivated once their access is revoked).
     - Deaf users and administrators have nothing to verify, so an active account counts as verified.
     """
     interpreter = User.Role.INTERPRETER
     institution = User.Role.INSTITUTION
     return queryset.annotate(
         verification_status=Case(
-            When(is_active=False, then=Value("suspended")),
+            When(
+                role=interpreter,
+                interpreter_profile__verification_status=VerificationStatus.REJECTED,
+                then=Value("rejected"),
+            ),
+            When(
+                role=institution,
+                institution_staff__institution__status=InstitutionStatus.REJECTED,
+                then=Value("rejected"),
+            ),
+            When(is_active=False, then=Value("deactivated")),
             When(
                 role=interpreter,
                 interpreter_profile__verification_status=VerificationStatus.APPROVED,
@@ -250,19 +261,14 @@ def with_verification_status(queryset):
             ),
             When(
                 role=interpreter,
-                interpreter_profile__verification_status=VerificationStatus.REJECTED,
-                then=Value("rejected"),
-            ),
-            When(
-                role=interpreter,
                 interpreter_profile__verification_status=VerificationStatus.DEACTIVATED,
-                then=Value("suspended"),
+                then=Value("deactivated"),
             ),
             When(role=interpreter, then=Value("pending")),
             When(
                 role=institution,
                 institution_staff__revoked_at__isnull=False,
-                then=Value("suspended"),
+                then=Value("deactivated"),
             ),
             When(
                 role=institution,
@@ -277,7 +283,7 @@ def with_verification_status(queryset):
             When(
                 role=institution,
                 institution_staff__institution__status=InstitutionStatus.DELETED,
-                then=Value("suspended"),
+                then=Value("deactivated"),
             ),
             When(role=institution, then=Value("pending")),
             default=Value("verified"),
@@ -359,8 +365,10 @@ class AdminUserListView(APIView):
 
         status_filter = params.get("status", "")
         if status_filter:
+            status_filter = STATUS_FILTER_ALIASES.get(status_filter, status_filter)
             if status_filter not in STATUS_FILTERS:
-                raise ValidationError({"status": [f"Choose one of: {', '.join(STATUS_FILTERS)}."]})
+                choices = (*STATUS_FILTERS, *STATUS_FILTER_ALIASES)
+                raise ValidationError({"status": [f"Choose one of: {', '.join(choices)}."]})
             users = users.filter(verification_status=status_filter)
 
         range_filter = params.get("range", "")
@@ -442,26 +450,58 @@ class AdminUserApproveView(APIView):
 
 
 class AdminUserDeactivateView(APIView):
-    """Deactivate a user. Their status becomes 'suspended' everywhere."""
+    """Deactivate a user. Their status becomes 'deactivated' everywhere."""
 
     permission_classes = [IsAdminRole]
 
     def post(self, request, pk):
-        user = get_object_or_404(User, pk=pk)
-
-        if user.is_active:
-            user.is_active = False
-            user.save(update_fields=["is_active"])
-
-            audit.record(
-                AuditLog.Event.ADMIN_DEACTIVATED_USER,
-                request.user,
-                request,
-                target_user=user,
-            )
+        with transaction.atomic():
+            lock_admin_accounts()
+            user = get_object_or_404(User.objects.select_for_update(), pk=pk)
+            ensure_admin_can_remove(request.user, user, "deactivate")
+            was_active = user.is_active
+            if user.is_active:
+                user.is_active = False
+                user.save(update_fields=["is_active"])
+                audit.record(
+                    AuditLog.Event.ADMIN_DEACTIVATED_USER,
+                    request.user,
+                    request,
+                    target_user=user,
+                )
+        if was_active:
             return Response({"detail": f"{user.full_name} deactivated."})
-
         return Response({"detail": "User is already inactive."})
+
+
+class AdminUserActivateView(APIView):
+    """Reactivate an account without sending it through initial verification."""
+
+    permission_classes = [IsAdminRole]
+
+    def post(self, request, pk):
+        with transaction.atomic():
+            user = get_object_or_404(User.objects.select_for_update(), pk=pk)
+            if user.role == User.Role.INTERPRETER and hasattr(user, "interpreter_profile"):
+                from apps.interpreters.models import VerificationDecision, VerificationStatus
+                from apps.interpreters.verification import decide
+
+                if user.interpreter_profile.verification_status == VerificationStatus.DEACTIVATED:
+                    decide(
+                        user.interpreter_profile.pk,
+                        VerificationDecision.Action.REACTIVATE,
+                        request.user,
+                    )
+            if not user.is_active:
+                user.is_active = True
+                user.save(update_fields=["is_active"])
+                audit.record(
+                    AuditLog.Event.ADMIN_ACTIVATED_USER,
+                    request.user,
+                    request,
+                    target_user=user,
+                )
+        return Response(user_record(user))
 
 
 class AdminUserDeleteView(APIView):
@@ -470,15 +510,10 @@ class AdminUserDeleteView(APIView):
     permission_classes = [IsAdminRole]
 
     def delete(self, request, pk):
-        user = get_object_or_404(User, pk=pk)
-
-        if user.pk == request.user.pk:
-            return Response(
-                {"detail": "You cannot delete your own admin account."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         with transaction.atomic():
+            lock_admin_accounts()
+            user = get_object_or_404(User.objects.select_for_update(), pk=pk)
+            ensure_admin_can_remove(request.user, user, "delete")
             name = user.full_name
             audit.record(
                 AuditLog.Event.ADMIN_DELETED_USER,
@@ -492,6 +527,41 @@ class AdminUserDeleteView(APIView):
         return Response({"detail": f"{name} deleted."}, status=status.HTTP_204_NO_CONTENT)
 
 
+def lock_admin_accounts():
+    """Serialize admin removals so two concurrent requests cannot remove the last admins."""
+    list(
+        User.objects.select_for_update()
+        .filter(role=User.Role.ADMIN)
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
+
+
+def ensure_admin_can_remove(actor, target, action):
+    if actor.pk == target.pk:
+        raise ValidationError({"detail": f"You cannot {action} your own admin account."})
+    if (
+        target.role == User.Role.ADMIN
+        and target.is_active
+        and User.objects.filter(role=User.Role.ADMIN, is_active=True).count() <= 1
+    ):
+        raise ValidationError({"detail": f"The last active admin account cannot be {action}d."})
+
+
+def user_record(user):
+    row = with_verification_status(User.objects.filter(pk=user.pk)).get()
+    return {
+        "id": row.pk,
+        "full_name": row.full_name,
+        "email": row.email or "",
+        "phone_number": str(row.phone_number),
+        "role": row.role,
+        "verification_status": row.verification_status,
+        "created_at": row.date_joined,
+        "last_login": row.last_login,
+    }
+
+
 class AdminUserDetailView(APIView):
     """Retrieve or update a single user."""
 
@@ -503,12 +573,7 @@ class AdminUserDetailView(APIView):
 
     @staticmethod
     def representation(user):
-        return {
-            "id": user.pk, "full_name": user.full_name, "email": user.email or "",
-            "phone_number": str(user.phone_number), "role": user.role,
-            "verification_status": "verified", "created_at": user.date_joined,
-            "last_login": user.last_login,
-        }
+        return user_record(user)
 
     def patch(self, request, pk):
         user = get_object_or_404(User, pk=pk)

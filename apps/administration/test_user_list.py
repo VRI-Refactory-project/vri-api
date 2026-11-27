@@ -12,7 +12,11 @@ from apps.institutions.models import (
     OrganisationType,
     StaffRole,
 )
-from apps.interpreters.models import InterpreterProfile, VerificationStatus
+from apps.interpreters.models import (
+    InterpreterProfile,
+    VerificationDecision,
+    VerificationStatus,
+)
 
 User = get_user_model()
 PASSWORD = "Sign-Connect-2026"
@@ -55,6 +59,7 @@ class AdminUserListAccessTests(TestCase):
 
     def test_signed_out_is_refused(self):
         self.assertEqual(self.client.get(URL).status_code, 401)
+        self.assertEqual(self.client.delete(f"{URL}999/delete/").status_code, 401)
 
     def test_only_administrators_can_list_users(self):
         for i, role in enumerate(User.Role.values):
@@ -62,6 +67,12 @@ class AdminUserListAccessTests(TestCase):
             self.client.force_authenticate(user=user)
             expected = 200 if role == User.Role.ADMIN else 403
             self.assertEqual(self.client.get(URL).status_code, expected, role)
+            if role != User.Role.ADMIN:
+                self.assertEqual(
+                    self.client.delete(f"{URL}999/delete/").status_code,
+                    403,
+                    role,
+                )
 
 
 class AdminUserListTests(TestCase):
@@ -112,6 +123,12 @@ class AdminUserListTests(TestCase):
         make_interpreter("0700000012", VerificationStatus.APPROVED, full_name="Int Ok")
         make_interpreter("0700000013", VerificationStatus.INACTIVE, full_name="Int New")
         make_interpreter("0700000014", VerificationStatus.REJECTED, full_name="Int No")
+        inactive_rejected = make_user(
+            User.Role.INTERPRETER, "0700000021", "Int Rejected and Disabled", is_active=False
+        )
+        InterpreterProfile.objects.create(
+            user=inactive_rejected, verification_status=VerificationStatus.REJECTED
+        )
         make_interpreter(
             "0700000015", VerificationStatus.DEACTIVATED, full_name="Int Off"
         )
@@ -137,16 +154,17 @@ class AdminUserListTests(TestCase):
         expected = {
             "Ada Admin": "verified",
             "Deaf Active": "verified",
-            "Deaf Off": "suspended",
+            "Deaf Off": "deactivated",
             "Int Ok": "verified",
             "Int New": "pending",
             "Int No": "rejected",
-            "Int Off": "suspended",
+            "Int Rejected and Disabled": "rejected",
+            "Int Off": "deactivated",
             "Inst Ok": "verified",
             "Inst New": "pending",
             "Inst No": "rejected",
-            "Inst Gone": "suspended",
-            "Inst Revoked": "suspended",
+            "Inst Gone": "deactivated",
+            "Inst Revoked": "deactivated",
         }
         for name, status in expected.items():
             self.assertEqual(rows[name]["verification_status"], status, name)
@@ -169,6 +187,11 @@ class AdminUserListTests(TestCase):
         make_interpreter("0700000051", VerificationStatus.APPROVED, full_name="Done")
         self.assertEqual(list(self.by_name(status="pending")), ["Waiting"])
         self.assertNotIn("Waiting", self.by_name(status="verified"))
+
+    def test_deactivated_status_filter_accepts_current_and_legacy_values(self):
+        make_user(User.Role.DEAF_HOH, "0700000052", "Disabled", is_active=False)
+        self.assertEqual(list(self.by_name(status="deactivated")), ["Disabled"])
+        self.assertEqual(list(self.by_name(status="suspended")), ["Disabled"])
 
     def test_search_by_name_email_and_phone(self):
         make_user(
@@ -252,3 +275,50 @@ class AdminUserListTests(TestCase):
         response = self.client.delete(f"{URL}{user.pk}/delete/")
         self.assertEqual(response.status_code, 204)
         self.assertFalse(User.objects.filter(pk=user.pk).exists())
+
+    def test_activation_returns_updated_user_record(self):
+        user = make_user(User.Role.DEAF_HOH, "0700000293", "Disabled", is_active=False)
+        response = self.client.post(f"{URL}{user.pk}/activate/")
+        self.assertEqual(response.status_code, 200, response.json())
+        user.refresh_from_db()
+        self.assertTrue(user.is_active)
+        self.assertEqual(response.json()["id"], user.pk)
+        self.assertEqual(response.json()["verification_status"], "verified")
+        self.assertEqual(set(response.json()), set(self.by_name()["Disabled"]))
+
+    def test_activation_reactivates_deactivated_interpreter_without_approval_flow(self):
+        user = make_interpreter(
+            "0700000294", VerificationStatus.DEACTIVATED, is_active=False
+        )
+        response = self.client.post(f"{URL}{user.pk}/activate/")
+        self.assertEqual(response.status_code, 200, response.json())
+        user.refresh_from_db()
+        user.interpreter_profile.refresh_from_db()
+        self.assertTrue(user.is_active)
+        self.assertEqual(user.interpreter_profile.verification_status, VerificationStatus.APPROVED)
+        self.assertEqual(response.json()["verification_status"], "verified")
+        self.assertEqual(
+            user.interpreter_profile.decisions.get().action,
+            VerificationDecision.Action.REACTIVATE,
+        )
+
+    def test_admin_cannot_deactivate_or_delete_self(self):
+        for method, suffix in ((self.client.post, "deactivate/"), (self.client.delete, "delete/")):
+            response = method(f"{URL}{self.admin.pk}/{suffix}")
+            self.assertEqual(response.status_code, 400)
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.is_active)
+
+    def test_last_active_admin_cannot_be_deactivated_or_deleted(self):
+        target = make_user(User.Role.ADMIN, "0700000295", "Last Admin")
+        self.admin.is_active = False
+        self.admin.save(update_fields=["is_active"])
+        self.client.force_authenticate(user=self.admin)
+
+        deactivate = self.client.post(f"{URL}{target.pk}/deactivate/")
+        delete = self.client.delete(f"{URL}{target.pk}/delete/")
+        self.assertEqual(deactivate.status_code, 400)
+        self.assertEqual(delete.status_code, 400)
+        target.refresh_from_db()
+        self.assertTrue(target.is_active)
+        self.assertTrue(User.objects.filter(pk=target.pk).exists())
