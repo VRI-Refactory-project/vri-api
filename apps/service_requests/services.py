@@ -131,7 +131,7 @@ def max_wait_seconds(priority=ServiceRequest.Priority.NORMAL):
     """How long a request may wait for an interpreter before it is marked failed. Emergencies fail sooner (V2-024)."""
     if priority == ServiceRequest.Priority.EMERGENCY:
         return getattr(settings, "EMERGENCY_MAX_WAIT_SECONDS", 120)
-    return getattr(settings, "REQUEST_MAX_WAIT_SECONDS", 300)
+    return getattr(settings, "REQUEST_MAX_WAIT_SECONDS", 120)
 
 
 class EmergencyLimitReached(Exception):

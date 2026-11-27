@@ -175,7 +175,7 @@ WEB_PUSH_CONTACT = env("WEB_PUSH_CONTACT", default="")  # e.g. mailto:you@exampl
 # --- Interpreter requests (V2-022) ---
 # How long an interpreter has to answer an offer, and how long a request may wait before it fails.
 REQUEST_OFFER_EXPIRY_SECONDS = env.int("REQUEST_OFFER_EXPIRY_SECONDS", default=60)
-REQUEST_MAX_WAIT_SECONDS = env.int("REQUEST_MAX_WAIT_SECONDS", default=300)
+REQUEST_MAX_WAIT_SECONDS = env.int("REQUEST_MAX_WAIT_SECONDS", default=120)
 # Emergency requests (V2-024): a shorter wait, quicker re-offers, and a cap per person per hour.
 EMERGENCY_MAX_WAIT_SECONDS = env.int("EMERGENCY_MAX_WAIT_SECONDS", default=120)
 EMERGENCY_OFFER_EXPIRY_SECONDS = env.int("EMERGENCY_OFFER_EXPIRY_SECONDS", default=30)
