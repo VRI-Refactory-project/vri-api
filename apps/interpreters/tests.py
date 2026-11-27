@@ -12,6 +12,7 @@ from .models import (
     CertificationDocument,
     InterpreterAvailability,
     InterpreterProfile,
+    VerificationDecision,
 )
 
 User = get_user_model()
@@ -114,6 +115,32 @@ class CertificationUploadTests(APITestCase):
             cert.interpreter,
             InterpreterProfile.objects.get(user=self.user),
         )
+
+    def test_rejected_interpreter_resubmission_returns_to_admin_review(self):
+        profile = InterpreterProfile.objects.create(
+            user=self.user, verification_status="REJECTED"
+        )
+        admin = User.objects.create_superuser(
+            "0700000199", PASSWORD, full_name="Review Admin", email="admin@example.com"
+        )
+        prior_decision = VerificationDecision.objects.create(
+            interpreter=profile,
+            admin=admin,
+            action=VerificationDecision.Action.REJECT,
+            reason="Unreadable certificate",
+            previous_status="INACTIVE",
+            new_status="REJECTED",
+        )
+
+        self.client.force_authenticate(self.user)
+        response = self.post(self.pdf())
+
+        self.assertEqual(response.status_code, 201, response.content)
+        profile.refresh_from_db()
+        self.assertEqual(profile.verification_status, "INACTIVE")
+        self.assertFalse(profile.is_available)
+        self.assertEqual(list(profile.decisions.all()), [prior_decision])
+        self.assertEqual(CertificationDocument.objects.filter(interpreter=profile).count(), 1)
 
     def test_type_and_organisation_are_required(self):
         self.client.force_authenticate(self.user)

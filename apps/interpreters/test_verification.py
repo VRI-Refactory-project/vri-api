@@ -303,6 +303,15 @@ class ApproveRejectApiTests(DecisionApiMixin, APITestCase):
         self.assertIn("certificate", str(response.data["detail"]))
         self.assertFalse(VerificationDecision.objects.exists())
 
+    def test_rejected_interpreter_without_a_certificate_cannot_be_approved(self):
+        rejected = make_interpreter("0772000014", status=VerificationStatus.REJECTED)
+        response = self.act("approve", rejected)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("certificate", str(response.data["detail"]))
+        rejected.refresh_from_db()
+        self.assertEqual(rejected.verification_status, VerificationStatus.REJECTED)
+        self.assertFalse(VerificationDecision.objects.exists())
+
     def test_reject_needs_a_reason(self):
         for body in (None, "", "   "):
             response = self.act("reject", self.profile, body)
