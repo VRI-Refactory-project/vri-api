@@ -101,7 +101,7 @@ def notify_institution(profile, decision):
         return
 
     approved = decision == InstitutionStatus.APPROVED
-    frontend_url = settings.WEB_APP_URL.rstrip("/")
+    frontend_url = settings.FRONTEND_URL.rstrip("/")
     subject = (
         "Institution account approved"
         if approved
@@ -112,6 +112,7 @@ def notify_institution(profile, decision):
             f"Hello {profile.user.full_name},\n\n"
             f"Your application for {profile.organisation_name} has been approved. "
             "You can now sign in to your institution account:\n"
+            "Log in: "
             f"{frontend_url}/sign-in"
         )
     else:
@@ -120,13 +121,20 @@ def notify_institution(profile, decision):
             f"Your application for {profile.organisation_name} has been rejected.\n\n"
             f"Reason: {profile.rejection_reason}\n\n"
             "You may update your application and apply again here:\n"
-            f"{frontend_url}/register/institution"
+            f"{settings.WEB_APP_URL.rstrip('/')}/register/institution"
         )
     try:
+        html = branded_html(message)
+        if approved:
+            login_url = f"{frontend_url}/sign-in"
+            html = html.replace(
+                f"Log in: {login_url}",
+                f'<a href="{login_url}">Log in</a>',
+            )
         send_branded_email(
             subject,
             message,
-            branded_html(message),
+            html,
             profile.user.email,
             profile.user.full_name,
             log=logger,

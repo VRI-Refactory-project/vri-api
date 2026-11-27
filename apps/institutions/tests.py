@@ -269,7 +269,7 @@ class InstitutionApprovalTests(APITestCase):
 
     @override_settings(
         EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
-        WEB_APP_URL="https://web.test",
+        FRONTEND_URL="https://web.test",
     )
     def test_admin_can_approve_and_notification_is_sent(self):
         self.institution_user.email_verified_at = timezone.now()
@@ -301,6 +301,12 @@ class InstitutionApprovalTests(APITestCase):
             ["grace@mulago.example"],
         )
         self.assertIn("https://web.test/sign-in", mail.outbox[0].body)
+        self.assertIn("Log in: https://web.test/sign-in", mail.outbox[0].body)
+        self.assertIn(
+            '<a href="https://web.test/sign-in">Log in</a>',
+            mail.outbox[0].alternatives[0][0],
+        )
+        self.assertNotIn("token", mail.outbox[0].body.lower())
 
     @override_settings(
         EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",

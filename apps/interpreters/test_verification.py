@@ -444,11 +444,15 @@ class VerificationEmailTests(DecisionApiMixin, APITestCase):
         add_certificate(self.profile)
 
     def test_approval_email(self):
-        self.act("approve", self.profile)
+        with self.settings(FRONTEND_URL="https://web.test"):
+            self.act("approve", self.profile)
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
         self.assertEqual(email.to, [self.profile.user.email])
         self.assertIn("approved", email.subject)
+        self.assertIn("Log in: https://web.test/sign-in", email.body)
+        self.assertIn('<a href="https://web.test/sign-in">Log in</a>', email.alternatives[0][0])
+        self.assertNotIn("token", email.body.lower())
 
     def test_rejection_email_includes_the_reason(self):
         self.act("reject", self.profile, "Please upload a certificate issued by UNAD.")
