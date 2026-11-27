@@ -13,7 +13,7 @@ from rest_framework import serializers, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import RetrieveAPIView
 from rest_framework.parsers import FormParser, MultiPartParser  # ADDED
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -59,7 +59,6 @@ from .serializers import (
     InstitutionAlertSerializer,
     OwnProfileUpdateSerializer,
     StaffCreateSerializer,
-    StaffInvitationAcceptSerializer,
     StaffSerializer,
     StaffUpdateSerializer,
     TutorialSerializer,
@@ -501,7 +500,7 @@ class InstitutionStaffMixin:
 
 
 class StaffListCreateView(InstitutionStaffMixin, APIView):
-    """List your institution's staff, or invite a staff member to set a password."""
+    """List your institution's staff, or create an account with a temporary password."""
 
     @extend_schema(
         tags=["Institution Staff"],
@@ -529,7 +528,7 @@ class StaffListCreateView(InstitutionStaffMixin, APIView):
 
     @extend_schema(
         tags=["Institution Staff"],
-        summary="Add a staff member and email a password setup invitation",
+        summary="Add a staff member and email login details",
         request=StaffCreateSerializer,
         responses={
             201: StaffSerializer,
@@ -537,7 +536,7 @@ class StaffListCreateView(InstitutionStaffMixin, APIView):
                 description="Invalid or duplicate details (same rules as registration)."
             ),
             503: OpenApiResponse(
-                description="The invitation email could not be sent; nothing was created."
+                description="The login email could not be sent; nothing was created."
             ),
             **STAFF_ERRORS,
         },
@@ -553,7 +552,7 @@ class StaffListCreateView(InstitutionStaffMixin, APIView):
         except staff.StaffEmailError:
             return Response(
                 {
-                    "detail": "The invitation could not be emailed, so the staff account was not created. "
+                    "detail": "The login details could not be emailed, so the staff account was not created. "
                     "Please try again later."
                 },
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -561,33 +560,6 @@ class StaffListCreateView(InstitutionStaffMixin, APIView):
         return Response(
             StaffSerializer(membership).data, status=status.HTTP_201_CREATED
         )
-
-
-class StaffInvitationAcceptView(APIView):
-    permission_classes = [AllowAny]
-    throttle_scope = "staff_invitation_accept"
-
-    @extend_schema(
-        tags=["Institution Staff"],
-        summary="Accept a staff invitation and set a password",
-        request=StaffInvitationAcceptSerializer,
-        responses={200: OpenApiResponse(description="Login session and user details.")},
-    )
-    def post(self, request):
-        from apps.accounts.serializers import TokenPairSerializer
-
-        serializer = StaffInvitationAcceptSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = staff.accept_staff_invitation(
-            serializer.validated_data["token"],
-            serializer.validated_data["new_password"],
-            ip=audit.client_ip(request),
-        )
-        response = Response(TokenPairSerializer.for_user(user))
-        response.set_cookie(
-            "active_platform_user", str(user.id), samesite="Lax", httponly=True
-        )
-        return response
 
 
 class StaffDetailView(InstitutionStaffMixin, APIView):

@@ -360,6 +360,9 @@ class StaffSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source="user.full_name", read_only=True)
     phone_number = serializers.CharField(source="user.phone_number", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
+    must_change_password = serializers.BooleanField(
+        source="user.must_change_password", read_only=True
+    )
     status = serializers.SerializerMethodField(help_text="ACTIVE or REVOKED.")
     last_login = serializers.DateTimeField(source="user.last_login", read_only=True)
     department_name = serializers.SerializerMethodField()
@@ -373,6 +376,7 @@ class StaffSerializer(serializers.ModelSerializer):
             "full_name",
             "phone_number",
             "email",
+            "must_change_password",
             "role",
             "job_title",
             "department_name",
@@ -396,8 +400,8 @@ class StaffSerializer(serializers.ModelSerializer):
 class StaffCreateSerializer(BaseRegistrationSerializer):
     """An institution administrator adds a staff member (V2-006).
 
-    Same checks as registration for name, phone and email (email is required for the invitation).
-    No password is set until the invitation is accepted. Needs `institution` and `request` in the context.
+    Same checks as registration for name, phone and email (email is required for login details).
+    Needs `institution` and `request` in the context.
     `save()` returns the new InstitutionStaff.
     """
 
@@ -483,15 +487,6 @@ class StaffUpdateSerializer(serializers.Serializer):
 
         instance.save()
         return instance
-
-
-class StaffInvitationAcceptSerializer(serializers.Serializer):
-    token = serializers.CharField(trim_whitespace=False, write_only=True)
-    new_password = serializers.CharField(
-        trim_whitespace=False,
-        write_only=True,
-        style={"input_type": "password"},
-    )
 
 
 class OwnProfileUpdateSerializer(serializers.Serializer):

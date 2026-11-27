@@ -61,11 +61,6 @@ urlpatterns = [
     ),
 
     # Staff management routes
-    path(
-        "staff/invitations/accept/",
-        views.StaffInvitationAcceptView.as_view(),
-        name="institution-staff-invitation-accept",
-    ),
     path("me/staff/", views.StaffListCreateView.as_view(), name="institution-staff"),
     path(
         "me/staff/<int:pk>/",

@@ -2,12 +2,8 @@
 
 import logging
 import secrets
-from urllib.parse import quote
 
-from django.contrib.auth.password_validation import validate_password
-from django.contrib.auth.hashers import check_password, make_password
 from django.conf import settings
-from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
@@ -18,132 +14,38 @@ from apps.audit.models import AuditLog
 from apps.core.emailing import branded_html, send_branded_email
 
 from .alerts import staff_member_added
-from .models import (
-    InstitutionStaff,
-    InstitutionStaffInvitation,
-    InstitutionStatus,
-    StaffRole,
-)
+from .models import InstitutionStaff, StaffRole
 
 logger = logging.getLogger("apps.institutions")
 
-INVITATION_TOKEN_INVALID = "This invitation is invalid, expired, or has already been used."
-
 
 class StaffEmailError(Exception):
-    """The invitation email could not be sent. The staff account was not created."""
+    """The login details email could not be sent. The staff account was not created."""
 
 
 def create_staff(serializer, admin, request=None):
-    """Save a validated StaffCreateSerializer, email an invitation and audit it.
+    """Save a validated staff account, email its temporary password and audit it.
 
-    The invitation and account are rolled back if the email cannot be sent.
+    The account is rolled back if the email cannot be sent.
     """
     with transaction.atomic():
         membership = serializer.save()
         user = membership.user
+        temporary_password = secrets.token_urlsafe(24)
+        user.set_password(temporary_password)
         user.must_change_password = True
-        user.save(update_fields=["must_change_password"])
+        user.email_verified_at = timezone.now()
+        user.save(
+            update_fields=["password", "must_change_password", "email_verified_at"]
+        )
         try:
-            issue_staff_invitation(membership, admin)
+            _send_login_details(membership, admin, temporary_password)
         except Exception as exc:
-            logger.exception("staff_invitation_email_failed admin=%s", admin.pk)
+            logger.exception("staff_login_email_failed admin=%s", admin.pk)
             raise StaffEmailError from exc
         audit.record(AuditLog.Event.STAFF_CREATED, admin, request, target_user=user)
         staff_member_added(membership)
     return membership
-
-
-@transaction.atomic
-def issue_staff_invitation(membership, admin):
-    """Invalidate previous invitations and send a hashed, expiring setup link."""
-    now = timezone.now()
-    token_selector = secrets.token_urlsafe(9)
-    token_secret = secrets.token_urlsafe(32)
-    token = f"{token_selector}.{token_secret}"
-    InstitutionStaffInvitation.objects.filter(
-        staff=membership, used_at__isnull=True
-    ).update(expires_at=now)
-    InstitutionStaffInvitation.objects.create(
-        staff=membership,
-        token_selector=token_selector,
-        token_hash=make_password(token_secret),
-        expires_at=now + InstitutionStaffInvitation.LIFETIME,
-    )
-    link = (
-        f"{settings.FRONTEND_URL.rstrip('/')}/staff/accept-invitation?"
-        f"token={quote(token, safe='')}"
-    )
-    user = membership.user
-    body = (
-        f"Hello {user.full_name},\n\n"
-        f"{admin.full_name} has invited you to join SignConnect at "
-        f"{membership.institution.organisation_name} ({membership.get_role_display()}).\n\n"
-        "Set your password using this secure invitation link. It expires in 24 hours and can only be used once:\n\n"
-        f"{link}\n\n"
-        "If you were not expecting this invitation, contact your institution's administrator.\n"
-    )
-    send_branded_email(
-        "Set up your SignConnect staff account",
-        body,
-        branded_html(body, highlight=link),
-        user.email,
-        user.full_name,
-        log=logger,
-    )
-
-
-@transaction.atomic
-def accept_staff_invitation(token, new_password, ip=None):
-    """Consume an active staff invitation and return the newly authenticated user."""
-    try:
-        selector, secret = token.split(".", 1)
-    except (AttributeError, ValueError):
-        raise ValidationError({"token": [INVITATION_TOKEN_INVALID]})
-
-    try:
-        invitation = (
-            InstitutionStaffInvitation.objects.select_for_update()
-            .select_related("staff__user", "staff__institution")
-            .get(token_selector=selector)
-        )
-    except InstitutionStaffInvitation.DoesNotExist:
-        raise ValidationError({"token": [INVITATION_TOKEN_INVALID]})
-
-    now = timezone.now()
-    membership = invitation.staff
-    user = membership.user
-    valid = (
-        invitation.used_at is None
-        and invitation.expires_at > now
-        and membership.is_active
-        and membership.revoked_at is None
-        and membership.institution.status == InstitutionStatus.APPROVED
-        and user.is_active
-        and check_password(secret, invitation.token_hash)
-    )
-    if not valid:
-        raise ValidationError({"token": [INVITATION_TOKEN_INVALID]})
-
-    try:
-        validate_password(new_password, user=user)
-    except DjangoValidationError as exc:
-        raise ValidationError({"new_password": list(exc.messages)})
-
-    user.set_password(new_password)
-    user.must_change_password = False
-    user.save(update_fields=["password", "must_change_password"])
-    invitation.used_at = now
-    invitation.save(update_fields=["used_at"])
-
-    result = recovery.issue_code(
-        user, recovery.RecoveryCode.Purpose.EMAIL_VERIFY, ip=ip
-    )
-    if result != "sent":
-        raise ValidationError(
-            {"detail": "We could not send your email verification code. Please try again."}
-        )
-    return user
 
 
 def update_staff(membership, data, admin, request=None):
@@ -242,19 +144,24 @@ def _keep_an_admin(membership):
 
 def _send_login_details(membership, admin, temporary_password):
     user = membership.user
+    login_url = f"{settings.FRONTEND_URL.rstrip('/')}/sign-in"
     body = (
         f"Hello {user.full_name},\n\n"
         f"{admin.full_name} has given you a SignConnect account at {membership.institution.organisation_name} "
         f"({membership.get_role_display()}).\n\n"
         f"Sign in with your email ({user.email}) or phone number ({user.phone_number}) and this temporary "
         f"password:\n\n    {temporary_password}\n\n"
-        "You will be asked to choose your own password when you first sign in.\n"
+        "You may change this password after signing in, or later in Settings.\n\n"
+        f"Log in: {login_url}\n\n"
         "If you were not expecting this email, contact your institution's administrator.\n"
     )
+    html = branded_html(body, highlight=temporary_password).replace(
+        f"Log in: {login_url}", f'<a href="{login_url}">Log in</a>'
+    )
     send_branded_email(
-        "Your SignConnect staff account",
+        "Your SignConnect staff account login details",
         body,
-        branded_html(body, highlight=temporary_password),
+        html,
         user.email,
         user.full_name,
         log=logger,
