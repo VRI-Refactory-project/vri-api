@@ -302,3 +302,73 @@ class AdminInstitutionManagementTests(APITestCase):
             )
         )
         self.assertEqual(detail_response.data["status"], "deactivated")
+
+    def test_activation_restores_institution_account_and_owner_membership(self):
+        self.institution.status = InstitutionStatus.APPROVED
+        self.institution.save(update_fields=["status"])
+        self.client.post(
+            reverse(
+                "administration:admin-institution-deactivate",
+                args=[self.institution.pk],
+            )
+        )
+
+        response = self.client.post(
+            reverse(
+                "administration:admin-institution-activate",
+                args=[self.institution.pk],
+            )
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(response.data["is_active"])
+        self.assertEqual(response.data["status"], InstitutionStatus.APPROVED)
+        self.institution_user.refresh_from_db()
+        self.membership.refresh_from_db()
+        self.staff_user.refresh_from_db()
+        self.staff_membership.refresh_from_db()
+        self.assertTrue(self.institution_user.is_active)
+        self.assertIsNone(self.membership.revoked_at)
+        self.assertFalse(self.staff_user.is_active)
+        self.assertIsNotNone(self.staff_membership.revoked_at)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                event=AuditLog.Event.INSTITUTION_ACTIVATED,
+                user=self.admin,
+                target_user=self.institution_user,
+            ).exists()
+        )
+
+    def test_activation_of_deleted_institution_does_not_use_initial_approval_route(self):
+        self.institution.status = InstitutionStatus.DELETED
+        self.institution_user.is_active = False
+        self.institution.save(update_fields=["status"])
+        self.institution_user.save(update_fields=["is_active"])
+
+        response = self.client.post(
+            reverse(
+                "administration:admin-institution-activate",
+                args=[self.institution.pk],
+            )
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(response.data["is_active"])
+        self.assertEqual(response.data["status"], InstitutionStatus.APPROVED)
+
+    def test_institution_activation_requires_admin_authorization(self):
+        url = reverse(
+            "administration:admin-institution-activate",
+            args=[self.institution.pk],
+        )
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self.client.post(url).status_code, status.HTTP_401_UNAUTHORIZED)
+        user = User.objects.create_user(
+            email="ordinary@example.com",
+            full_name="Ordinary user",
+            phone_number="+256700000003",
+            password="Password123!",
+            role=User.Role.DEAF_HOH,
+        )
+        self.client.force_authenticate(user=user)
+        self.assertEqual(self.client.post(url).status_code, status.HTTP_403_FORBIDDEN)

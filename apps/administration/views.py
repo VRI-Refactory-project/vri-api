@@ -16,6 +16,7 @@ from apps.audit.models import AuditLog
 from apps.institutions.models import (
     InstitutionProfile,
     InstitutionStaff,
+    InstitutionStatus,
     InstitutionVerificationDocument,
     canonical_organisation_type,
 )
@@ -28,6 +29,7 @@ from .serializers import (
     AdminInstitutionSerializer,
     AdminProfileSerializer,
 )
+from .user_list import ensure_admin_can_remove, lock_admin_accounts
 
 
 class IsAdminUserPermission(permissions.BasePermission):
@@ -121,8 +123,17 @@ class AdminInstitutionDetailView(generics.RetrieveUpdateAPIView):
         )
 
     def delete(self, request, *args, **kwargs):
-        institution = self.get_object()
-        institution.user.delete()
+        with transaction.atomic():
+            lock_admin_accounts()
+            institution = get_object_or_404(
+                InstitutionProfile.objects.select_for_update().select_related("user"),
+                pk=kwargs["pk"],
+            )
+            user = get_object_or_404(
+                get_user_model().objects.select_for_update(), pk=institution.user_id
+            )
+            ensure_admin_can_remove(request.user, user, "delete")
+            user.delete()
         return Response({"detail": "Institution deleted successfully."}, status=status.HTTP_200_OK)
 
 
@@ -290,4 +301,42 @@ class AdminInstitutionDeactivateView(APIView):
                 details={"institution_id": institution.pk},
             )
 
+        return Response(AdminInstitutionSerializer(institution).data)
+
+
+@extend_schema(
+    tags=["Administration Institutions"],
+    summary="Reactivate a deactivated institution account",
+    request=None,
+    responses={200: AdminInstitutionSerializer},
+)
+class AdminInstitutionActivateView(APIView):
+    permission_classes = [IsAdminUserPermission]
+
+    def post(self, request, pk):
+        with transaction.atomic():
+            institution = get_object_or_404(
+                InstitutionProfile.objects.select_for_update().select_related("user"),
+                pk=pk,
+            )
+            user = institution.user
+            changed = not user.is_active or institution.status == InstitutionStatus.DELETED
+            user.is_active = True
+            user.save(update_fields=["is_active"])
+            if institution.status == InstitutionStatus.DELETED:
+                institution.status = InstitutionStatus.APPROVED
+                institution.save(update_fields=["status", "updated_at"])
+            # The institution administrator's membership was revoked by deactivate.
+            # Restore that account's own access while leaving other staff revocations intact.
+            InstitutionStaff.objects.filter(
+                institution=institution, user=user, revoked_at__isnull=False
+            ).update(revoked_at=None, revoked_by=None)
+            if changed:
+                audit.record(
+                    AuditLog.Event.INSTITUTION_ACTIVATED,
+                    request.user,
+                    request,
+                    target_user=user,
+                    details={"institution_id": institution.pk},
+                )
         return Response(AdminInstitutionSerializer(institution).data)
