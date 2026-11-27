@@ -93,10 +93,20 @@ class CertificationUploadView(generics.CreateAPIView):
         document_name = (
             uploaded_file.name if uploaded_file else "Certification Document"
         )
-        serializer.save(
-            interpreter=profile,
-            document_name=document_name,
-        )
+        with transaction.atomic():
+            serializer.save(
+                interpreter=profile,
+                document_name=document_name,
+            )
+            # A rejected interpreter can resubmit through this same upload endpoint.
+            # Put the application back in the admin review queue only after the
+            # certificate has passed validation and has been saved successfully.
+            if profile.verification_status == VerificationStatus.REJECTED:
+                profile.verification_status = VerificationStatus.INACTIVE
+                profile.is_available = False
+                profile.save(
+                    update_fields=["verification_status", "is_available", "updated_at"]
+                )
 
 
 @extend_schema(
