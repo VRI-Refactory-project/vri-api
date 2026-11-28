@@ -58,6 +58,8 @@ class EndSessionTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["status"], "COMPLETED")
+        self.assertIsNotNone(response.data["ended_at"])
+
         self.service_request.refresh_from_db()
         self.assertEqual(self.service_request.status, Status.COMPLETED)
         self.assertIsNotNone(self.service_request.ended_at)
