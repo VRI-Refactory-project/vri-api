@@ -21,6 +21,7 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
     requester_id = serializers.IntegerField(source="requester.id", read_only=True)
     interpreter_id = serializers.SerializerMethodField()
     interpreter = serializers.SerializerMethodField()
+    ended_at = serializers.SerializerMethodField()
     # How the call is going (waiting, connecting, connected, ended, failed). Apps show this; `status` is unchanged.
     display_status = serializers.SerializerMethodField()
     # V2-013: the institution a staff member asked for; null for Deaf users. Set by the server, never sent.
@@ -41,6 +42,7 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
             "status",
             "display_status",
             "assigned_at",
+            "ended_at",
             "cancelled_at",
             "cancel_reason",
             "created_at",
@@ -55,6 +57,7 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
             "status",
             "display_status",
             "assigned_at",
+            "ended_at",
             "cancelled_at",
             "cancel_reason",
             "created_at",
@@ -94,6 +97,10 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
             "name": profile.user.full_name,
             "languages": ", ".join(profile.sign_languages or []),
         }
+
+    def get_ended_at(self, obj):
+        video = getattr(obj, "video_session", None)
+        return (video.ended_at if video else None) or obj.ended_at
 
     def validate_specialisation_required(self, value):
         if value not in REQUEST_CONTEXTS:
